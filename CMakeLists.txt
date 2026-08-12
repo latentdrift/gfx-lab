@@ -9,7 +9,11 @@ find_package(glfw3 REQUIRED)
 find_package(glm REQUIRED)
 find_package(imgui REQUIRED)
 
-add_executable(graphics-lab src/main.cpp)
+add_executable(graphics-lab
+  src/main.cpp
+  src/handbook/Handbook.cpp
+)
+target_include_directories(graphics-lab PRIVATE src)
 target_compile_features(graphics-lab PRIVATE cxx_std_20)
 target_link_libraries(graphics-lab PRIVATE
   OpenGL::GL

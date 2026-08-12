@@ -9,6 +9,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "handbook/Handbook.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -126,6 +128,99 @@ void applyRecommendedSetup(TestScene scene, RendererState& state, CameraOrbit& c
       camera.yaw = 0.0f;
       camera.pitch = 0.0f;
       camera.distance = 5.0f;
+      break;
+  }
+}
+
+void applyHandbookExample(handbook::Example example, bool alternative, RendererState& state,
+    CameraOrbit& camera, TestScene& scene, Category& category) {
+  switch (example) {
+    case handbook::Example::None:
+      return;
+    case handbook::Example::VertexQuantization:
+      scene = TestScene::Torus; category = Category::Geometry;
+      applyRecommendedSetup(scene, state, camera);
+      state.geometry.vertexQuantization = alternative ? 1.0f / 8.0f : 0.0f;
+      break;
+    case handbook::Example::Projection:
+      scene = TestScene::Torus; category = Category::Camera;
+      applyRecommendedSetup(scene, state, camera);
+      state.camera.orthographic = alternative;
+      break;
+    case handbook::Example::AffineMapping:
+      scene = TestScene::Torus; category = Category::Rasterization;
+      applyRecommendedSetup(scene, state, camera);
+      state.rasterization.affineMapping = alternative;
+      break;
+    case handbook::Example::TextureMinification:
+      scene = TestScene::TexturePlane; category = Category::Texture;
+      applyRecommendedSetup(scene, state, camera);
+      if (!alternative) {
+        state.texture.mipmapping = false;
+        state.texture.trilinear = false;
+        state.texture.anisotropy = 1.0f;
+      }
+      break;
+    case handbook::Example::NormalMapping:
+      scene = TestScene::Torus; category = Category::Surface;
+      applyRecommendedSetup(scene, state, camera);
+      state.lighting.model = 4;
+      state.surface.normalMapping = alternative;
+      state.surface.normalStrength = alternative ? 1.5f : 1.0f;
+      break;
+    case handbook::Example::LightingInterpolation:
+      scene = TestScene::Lighting; category = Category::Lighting;
+      applyRecommendedSetup(scene, state, camera);
+      state.lighting.shadows = false;
+      state.lighting.model = alternative ? 4 : 1;
+      break;
+    case handbook::Example::DepthPrecision:
+      scene = TestScene::DepthPrecision; category = Category::Depth;
+      applyRecommendedSetup(scene, state, camera);
+      state.camera.nearPlane = alternative ? 0.01f : 0.1f;
+      state.depth.precision = alternative ? 16 : 24;
+      break;
+    case handbook::Example::Transparency:
+      scene = TestScene::Transparency; category = Category::Surface;
+      applyRecommendedSetup(scene, state, camera);
+      if (!alternative) {
+        state.surface.transparency = 0;
+        state.depth.writing = true;
+      }
+      break;
+    case handbook::Example::Stencil:
+      scene = TestScene::StencilMask; category = Category::Stencil;
+      applyRecommendedSetup(scene, state, camera);
+      state.stencil.enabled = alternative;
+      break;
+    case handbook::Example::LinearLight:
+      scene = TestScene::Lighting; category = Category::Color;
+      applyRecommendedSetup(scene, state, camera);
+      state.lighting.shadows = false;
+      state.color.linearLight = alternative;
+      break;
+    case handbook::Example::ColorQuantization:
+      scene = TestScene::Torus; category = Category::Color;
+      applyRecommendedSetup(scene, state, camera);
+      state.color.bitsPerChannel = alternative ? 5 : 8;
+      state.color.dithering = alternative;
+      break;
+    case handbook::Example::InternalResolution:
+      scene = TestScene::Torus; category = Category::Output;
+      applyRecommendedSetup(scene, state, camera);
+      state.output.width = alternative ? 160 : 640;
+      state.output.height = alternative ? 120 : 480;
+      state.output.nearestUpscaling = alternative;
+      break;
+    case handbook::Example::ShadowMapping:
+      scene = TestScene::Lighting; category = Category::Lighting;
+      applyRecommendedSetup(scene, state, camera);
+      state.lighting.shadows = alternative;
+      break;
+    case handbook::Example::Overdraw:
+      scene = TestScene::Transparency; category = Category::Post;
+      applyRecommendedSetup(scene, state, camera);
+      state.post.overdraw = alternative;
       break;
   }
 }
@@ -1551,6 +1646,26 @@ int main() {
   CompareMode compare = CompareMode::A;
   bool viewportHovered = false;
   double configCopiedAt = -10.0;
+  handbook::Handbook graphicsHandbook;
+
+  if (std::getenv("GRAPHICS_LAB_VALIDATE_HANDBOOK")) {
+    constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,
+      handbook::Example::AffineMapping, handbook::Example::TextureMinification, handbook::Example::NormalMapping,
+      handbook::Example::LightingInterpolation, handbook::Example::DepthPrecision, handbook::Example::Transparency,
+      handbook::Example::Stencil, handbook::Example::LinearLight, handbook::Example::ColorQuantization,
+      handbook::Example::InternalResolution, handbook::Example::ShadowMapping, handbook::Example::Overdraw};
+    for (handbook::Example example : examples) {
+      for (bool alternative : {false, true}) {
+        applyHandbookExample(example, alternative, current, camera, scene, category);
+        renderer.render(current, camera, scene, alternative);
+      }
+    }
+    current = RendererState{};
+    reference = current;
+    camera = CameraOrbit{};
+    scene = TestScene::Torus;
+    category = Category::Geometry;
+  }
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
@@ -1604,6 +1719,8 @@ int main() {
       ImGui::SameLine();
       ImGui::TextDisabled("Copied");
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Handbook")) graphicsHandbook.open();
     ImGui::SameLine();
     ImGui::TextDisabled("Compare:");
     ImGui::SameLine();
@@ -1672,6 +1789,27 @@ int main() {
     inspector(category, current);
     ImGui::EndChild();
     ImGui::End();
+
+    const handbook::Action handbookAction = graphicsHandbook.draw();
+    if (handbookAction.type == handbook::ActionType::ApplyToA) {
+      applyHandbookExample(handbookAction.example, false, current, camera, scene, category);
+    } else if (handbookAction.type == handbook::ActionType::ApplyToB) {
+      RendererState exampleState;
+      applyHandbookExample(handbookAction.example, true, exampleState, camera, scene, category);
+      reference = exampleState;
+    } else if (handbookAction.type == handbook::ActionType::LoadComparison) {
+      applyHandbookExample(handbookAction.example, false, current, camera, scene, category);
+      RendererState comparisonState;
+      CameraOrbit comparisonCamera = camera;
+      TestScene comparisonScene = scene;
+      Category comparisonCategory = category;
+      applyHandbookExample(handbookAction.example, true, comparisonState, comparisonCamera, comparisonScene, comparisonCategory);
+      reference = comparisonState;
+      camera = comparisonCamera;
+      scene = comparisonScene;
+      category = comparisonCategory;
+      compare = CompareMode::Split;
+    }
 
     ImGui::Render();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

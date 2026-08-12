@@ -23,6 +23,8 @@ The current renderer state is **A**. Use **Copy A to B** to preserve it, change 
 
 Use **Copy config JSON** to place a human-readable `graphics-lab.renderer-state.v1` document on the clipboard. It includes the complete current renderer state, selected test scene, and orbit-camera view using explicit algorithm names suitable for sharing with other tools or coding agents.
 
+Use **Handbook** to open the built-in technical reference. Its chapters follow the renderer pipeline and cover definitions, pipeline location, visible results, interactions, engine vocabulary, technical diagrams, and explicit live A/B examples. Reading never changes renderer state; example buttons apply configurations deliberately.
+
 The toolbar scene selector provides purpose-built geometry for texture minification, depth precision, transparency ordering, and lighting interpolation experiments in addition to the default torus.
 
 Changing the selected scene preserves the current renderer state and camera. **Reset scene setup** explicitly applies that scene's recommended starting state and camera framing:

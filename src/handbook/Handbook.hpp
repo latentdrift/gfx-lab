@@ -1,0 +1,45 @@
+#pragma once
+
+#include <array>
+
+namespace handbook {
+
+enum class Example {
+  None,
+  VertexQuantization,
+  Projection,
+  AffineMapping,
+  TextureMinification,
+  NormalMapping,
+  LightingInterpolation,
+  DepthPrecision,
+  Transparency,
+  Stencil,
+  LinearLight,
+  ColorQuantization,
+  InternalResolution,
+  ShadowMapping,
+  Overdraw
+};
+
+enum class ActionType { None, ApplyToA, ApplyToB, LoadComparison };
+
+struct Action {
+  ActionType type = ActionType::None;
+  Example example = Example::None;
+};
+
+class Handbook {
+public:
+  void open();
+  bool isOpen() const;
+  Action draw();
+
+private:
+  bool open_ = false;
+  int chapter_ = 0;
+  int article_ = 0;
+  std::array<char, 96> search_{};
+};
+
+} // namespace handbook
