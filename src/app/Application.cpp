@@ -87,6 +87,22 @@ int runApplication() {
       }
     }
     renderer.renderDifference(4.0f);
+    applyRecommendedSetup(TestScene::Transparency, current, camera);
+    scene = TestScene::Transparency;
+    for (int transparencyMode = 6; transparencyMode <= 9; ++transparencyMode) {
+      current.surface.transparency = transparencyMode;
+      for (bool orderingTable : {false, true}) {
+        current.depth.orderingTable = orderingTable;
+        renderer.render(current, camera, scene, false);
+      }
+    }
+    applyRecommendedSetup(TestScene::Torus, current, camera);
+    scene = TestScene::Torus;
+    current.lighting.depthCue = true;
+    for (int textureColorMode = 0; textureColorMode <= 2; ++textureColorMode) {
+      current.texture.colorMode = textureColorMode;
+      renderer.render(current, camera, scene, false);
+    }
     current = RendererState{};
     reference = current;
     camera = CameraOrbit{};

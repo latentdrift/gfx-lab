@@ -322,7 +322,8 @@ public:
     glStencilMask(0xff);
     glClearStencil(0);
     glDisable(GL_STENCIL_TEST);
-    if (state.depth.testing) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    const bool orderingTableActive = state.depth.orderingTable && scene == TestScene::Transparency;
+    if (state.depth.testing && !orderingTableActive) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     if (state.rasterization.cullMode == 0) {
       glDisable(GL_CULL_FACE);
     } else {
@@ -342,6 +343,19 @@ public:
       if (state.surface.transparency == 3) glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
       if (state.surface.transparency == 4) glBlendFunc(GL_SRC_ALPHA, GL_ONE);
       if (state.surface.transparency == 5) glBlendFunc(GL_DST_COLOR, GL_ZERO);
+      if (state.surface.transparency == 6) {
+        glBlendColor(0.0f, 0.0f, 0.0f, 0.5f);
+        glBlendFunc(GL_CONSTANT_ALPHA, GL_CONSTANT_ALPHA);
+      }
+      if (state.surface.transparency == 7) glBlendFunc(GL_ONE, GL_ONE);
+      if (state.surface.transparency == 8) {
+        glBlendEquation(GL_FUNC_REVERSE_SUBTRACT);
+        glBlendFunc(GL_ONE, GL_ONE);
+      }
+      if (state.surface.transparency == 9) {
+        glBlendColor(0.0f, 0.0f, 0.0f, 0.25f);
+        glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE);
+      }
     } else {
       glDisable(GL_BLEND);
     }
@@ -351,7 +365,7 @@ public:
     const float backgroundB = state.color.linearLight ? std::pow(0.120f, 2.2f) : 0.120f;
     glClearColor(backgroundR, backgroundG, backgroundB, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-    glDepthMask(state.depth.writing ? GL_TRUE : GL_FALSE);
+    glDepthMask(state.depth.writing && !orderingTableActive ? GL_TRUE : GL_FALSE);
 
     glUseProgram(sceneProgram_);
     const glm::mat4 model = glm::rotate(glm::mat4(1.0f), glm::radians(-14.0f), glm::vec3(1, 0, 0));
@@ -448,12 +462,23 @@ public:
       }
       case TestScene::Transparency: {
         const std::array<glm::mat4, 3> transforms = {
-          glm::rotate(identity, glm::radians(28.0f), glm::vec3(0, 1, 0)),
-          glm::rotate(identity, glm::radians(-35.0f), glm::vec3(0, 1, 0)),
-          glm::rotate(identity, glm::radians(90.0f), glm::vec3(1, 0, 0))};
+          glm::translate(identity, glm::vec3(-0.18f, 0.0f, -0.65f)) * glm::rotate(identity, glm::radians(28.0f), glm::vec3(0, 1, 0)),
+          glm::translate(identity, glm::vec3(0.18f, 0.0f, 0.10f)) * glm::rotate(identity, glm::radians(-35.0f), glm::vec3(0, 1, 0)),
+          glm::translate(identity, glm::vec3(0.0f, -0.10f, 0.75f)) * glm::rotate(identity, glm::radians(90.0f), glm::vec3(1, 0, 0))};
         const std::array<glm::vec3, 3> tints = {glm::vec3(0.42f, 0.8f, 1.0f), glm::vec3(1.0f, 0.48f, 0.35f), glm::vec3(0.55f, 1.0f, 0.56f)};
+        std::array<int, 3> drawOrder = {0, 1, 2};
+        if (orderingTableActive) {
+          const int bucketCount = std::clamp(state.depth.orderingBuckets, 4, 256);
+          auto bucket = [&](int objectIndex) {
+            const glm::vec4 viewCenter = view * transforms[objectIndex] * glm::vec4(0, 0, 0, 1);
+            const float normalizedDepth = glm::clamp(-viewCenter.z / 16.0f, 0.0f, 1.0f);
+            return static_cast<int>(normalizedDepth * static_cast<float>(bucketCount - 1));
+          };
+          std::stable_sort(drawOrder.begin(), drawOrder.end(), [&](int a, int b) { return bucket(a) > bucket(b); });
+        }
+        if (state.surface.reverseDrawOrder) std::reverse(drawOrder.begin(), drawOrder.end());
         for (int drawIndex = 0; drawIndex < 3; ++drawIndex) {
-          const int objectIndex = state.surface.reverseDrawOrder ? 2 - drawIndex : drawIndex;
+          const int objectIndex = drawOrder[drawIndex];
           drawMesh(quad_, transforms[objectIndex], tints[objectIndex]);
         }
         break;
@@ -487,6 +512,7 @@ public:
     }
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
     glDisable(GL_POLYGON_OFFSET_FILL);
     glDisable(GL_CLIP_DISTANCE0);
 
