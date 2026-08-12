@@ -29,7 +29,7 @@ struct RendererState {
   struct Depth { bool testing = true; bool writing = true; int precision = 24; int function = 0; int visualization = 0; } depth;
   struct Stencil { bool enabled = false; bool invert = false; int reference = 1; } stencil;
   struct Color { int bitsPerChannel = 8; bool dithering = false; bool linearLight = true; } color;
-  struct Post { bool fog = false; float fogStart = 3.0f; float fogEnd = 7.0f; } post;
+  struct Post { bool fog = false; float fogStart = 3.0f; float fogEnd = 7.0f; bool overdraw = false; float overdrawRange = 8.0f; } post;
   struct Output { int width = 640; int height = 480; bool nearestUpscaling = true; } output;
 };
 
@@ -401,6 +401,9 @@ uniform float uFarPlane;
 uniform bool uOrthographic;
 uniform sampler2D uShadowMap;
 uniform bool uVisualizeShadowMap;
+uniform sampler2D uOverdraw;
+uniform bool uVisualizeOverdraw;
+uniform float uOverdrawRange;
 out vec4 fragColor;
 
 float bayer4(ivec2 p) {
@@ -415,7 +418,12 @@ float bayer4(ivec2 p) {
 
 void main() {
   vec3 color = texture(uScene, vUv).rgb;
-  if (uVisualizeShadowMap) {
+  if (uVisualizeOverdraw) {
+    float count = texture(uOverdraw, vUv).r;
+    float t = clamp(count / max(uOverdrawRange, 1.0), 0.0, 1.0);
+    color = clamp(vec3(1.5 * t, 1.5 - abs(4.0 * t - 2.0), 1.5 * (1.0 - t)), 0.0, 1.0);
+    if (count < 0.5) color = vec3(0.02);
+  } else if (uVisualizeShadowMap) {
     color = vec3(texture(uShadowMap, vUv).r);
   } else if (uDepthVisualization != 0) {
     float rawDepth = texture(uDepth, vUv).r;
@@ -460,6 +468,26 @@ const char* shadowFragmentShader = R"GLSL(
 void main() {}
 )GLSL";
 
+const char* overdrawVertexShader = R"GLSL(
+#version 410 core
+layout(location=0) in vec3 aPosition;
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+uniform float uQuantization;
+void main() {
+  vec3 position = aPosition;
+  if (uQuantization > 0.0) position = round(position / uQuantization) * uQuantization;
+  gl_Position = uProjection * uView * uModel * vec4(position, 1.0);
+}
+)GLSL";
+
+const char* overdrawFragmentShader = R"GLSL(
+#version 410 core
+layout(location=0) out float fragmentCount;
+void main() { fragmentCount = 1.0; }
+)GLSL";
+
 struct RenderTarget {
   GLuint sceneFbo = 0;
   GLuint sceneTexture = 0;
@@ -469,6 +497,8 @@ struct RenderTarget {
   GLuint multisampleDepth = 0;
   GLuint outputFbo = 0;
   GLuint outputTexture = 0;
+  GLuint overdrawFbo = 0;
+  GLuint overdrawTexture = 0;
   int width = 0;
   int height = 0;
   int depthPrecision = 0;
@@ -491,6 +521,8 @@ struct RenderTarget {
       glGenRenderbuffers(1, &multisampleDepth);
       glGenFramebuffers(1, &outputFbo);
       glGenTextures(1, &outputTexture);
+      glGenFramebuffers(1, &overdrawFbo);
+      glGenTextures(1, &overdrawTexture);
     }
 
     glBindTexture(GL_TEXTURE_2D, sceneTexture);
@@ -535,6 +567,15 @@ struct RenderTarget {
 
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
       fail("could not create output render target");
+
+    glBindTexture(GL_TEXTURE_2D, overdrawTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, width, height, 0, GL_RED, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, overdrawFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, overdrawTexture, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+      fail("could not create overdraw analysis target");
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 
@@ -547,6 +588,8 @@ struct RenderTarget {
     glDeleteRenderbuffers(1, &multisampleDepth);
     glDeleteFramebuffers(1, &outputFbo);
     glDeleteTextures(1, &outputTexture);
+    glDeleteFramebuffers(1, &overdrawFbo);
+    glDeleteTextures(1, &overdrawTexture);
   }
 };
 
@@ -556,6 +599,7 @@ public:
     sceneProgram_ = makeProgram(sceneVertexShader, sceneFragmentShader);
     outputProgram_ = makeProgram(outputVertexShader, outputFragmentShader);
     shadowProgram_ = makeProgram(shadowVertexShader, shadowFragmentShader);
+    overdrawProgram_ = makeProgram(overdrawVertexShader, overdrawFragmentShader);
     std::vector<Vertex> vertices;
     auto appendMesh = [&vertices](const std::vector<Vertex>& mesh) {
       const MeshRange range{static_cast<GLint>(vertices.size()), static_cast<GLsizei>(mesh.size())};
@@ -608,6 +652,7 @@ public:
     glDeleteProgram(sceneProgram_);
     glDeleteProgram(outputProgram_);
     glDeleteProgram(shadowProgram_);
+    glDeleteProgram(overdrawProgram_);
   }
 
   GLuint render(const RendererState& state, const CameraOrbit& camera, TestScene scene, bool referenceTarget) {
@@ -825,6 +870,62 @@ public:
         resolveBuffers, GL_NEAREST);
     }
 
+    if (state.post.overdraw) {
+      glBindFramebuffer(GL_FRAMEBUFFER, target.overdrawFbo);
+      glViewport(0, 0, target.width, target.height);
+      glDisable(GL_DEPTH_TEST);
+      glEnable(GL_BLEND);
+      glBlendEquation(GL_FUNC_ADD);
+      glBlendFunc(GL_ONE, GL_ONE);
+      if (state.rasterization.cullMode == 0) glDisable(GL_CULL_FACE); else {
+        glEnable(GL_CULL_FACE);
+        glCullFace(state.rasterization.cullMode == 1 ? GL_BACK : GL_FRONT);
+      }
+      glClearColor(0, 0, 0, 0);
+      glClear(GL_COLOR_BUFFER_BIT);
+      glUseProgram(overdrawProgram_);
+      glUniformMatrix4fv(glGetUniformLocation(overdrawProgram_, "uView"), 1, GL_FALSE, glm::value_ptr(view));
+      glUniformMatrix4fv(glGetUniformLocation(overdrawProgram_, "uProjection"), 1, GL_FALSE, glm::value_ptr(projection));
+      glUniform1f(glGetUniformLocation(overdrawProgram_, "uQuantization"), state.geometry.vertexQuantization);
+      glBindVertexArray(vao_);
+      auto countMesh = [this](const MeshRange& mesh, const glm::mat4& modelMatrix) {
+        glUniformMatrix4fv(glGetUniformLocation(overdrawProgram_, "uModel"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+        glDrawArrays(GL_TRIANGLES, mesh.first, mesh.count);
+      };
+      const glm::mat4 identity(1.0f);
+      switch (scene) {
+        case TestScene::Torus:
+          countMesh(torus_, glm::rotate(identity, glm::radians(-14.0f), glm::vec3(1, 0, 0)));
+          break;
+        case TestScene::TexturePlane:
+          countMesh(plane_, glm::translate(identity, glm::vec3(0, -1.25f, -3.5f)));
+          break;
+        case TestScene::DepthPrecision: {
+          const glm::mat4 horizontal = glm::rotate(identity, glm::radians(-90.0f), glm::vec3(1, 0, 0));
+          countMesh(quad_, glm::scale(horizontal, glm::vec3(2.2f)));
+          countMesh(quad_, glm::translate(horizontal, glm::vec3(0, 0, 0.00015f)) * glm::scale(identity, glm::vec3(1.65f)));
+          countMesh(quad_, glm::translate(horizontal, glm::vec3(0, 0, 0.00030f)) * glm::scale(identity, glm::vec3(1.05f)));
+          break;
+        }
+        case TestScene::Transparency:
+          countMesh(quad_, glm::rotate(identity, glm::radians(28.0f), glm::vec3(0, 1, 0)));
+          countMesh(quad_, glm::rotate(identity, glm::radians(-35.0f), glm::vec3(0, 1, 0)));
+          countMesh(quad_, glm::rotate(identity, glm::radians(90.0f), glm::vec3(1, 0, 0)));
+          break;
+        case TestScene::Lighting:
+          countMesh(plane_, glm::translate(glm::scale(identity, glm::vec3(0.75f)), glm::vec3(0, -1.55f, -0.1f)));
+          countMesh(lowSphere_, glm::translate(identity, glm::vec3(-1.35f, 0, 0)));
+          countMesh(smoothSphere_, glm::translate(identity, glm::vec3(1.35f, 0, 0)));
+          countMesh(torus_, glm::translate(glm::scale(identity, glm::vec3(0.62f)), glm::vec3(0, 1.9f, 0)));
+          break;
+        case TestScene::StencilMask:
+          if (state.stencil.enabled) countMesh(lowSphere_, glm::scale(identity, glm::vec3(1.35f)));
+          countMesh(quad_, glm::translate(glm::scale(identity, glm::vec3(2.0f)), glm::vec3(0, 0, -0.35f)));
+          break;
+      }
+      glDisable(GL_BLEND);
+    }
+
     glBindFramebuffer(GL_FRAMEBUFFER, target.outputFbo);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -848,6 +949,11 @@ public:
     glUniform1i(glGetUniformLocation(outputProgram_, "uShadowMap"), 2);
     glUniform1i(glGetUniformLocation(outputProgram_, "uVisualizeShadowMap"),
       shadowsEnabled && state.lighting.visualizeShadowMap);
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, target.overdrawTexture);
+    glUniform1i(glGetUniformLocation(outputProgram_, "uOverdraw"), 3);
+    glUniform1i(glGetUniformLocation(outputProgram_, "uVisualizeOverdraw"), state.post.overdraw);
+    glUniform1f(glGetUniformLocation(outputProgram_, "uOverdrawRange"), state.post.overdrawRange);
     glBindVertexArray(fullscreenVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindTexture(GL_TEXTURE_2D, target.outputTexture);
@@ -859,7 +965,7 @@ public:
   }
 
 private:
-  GLuint sceneProgram_ = 0, outputProgram_ = 0, shadowProgram_ = 0;
+  GLuint sceneProgram_ = 0, outputProgram_ = 0, shadowProgram_ = 0, overdrawProgram_ = 0;
   GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, normalTexture_ = 0;
   GLsizei vertexCount_ = 0;
   GLint maxSamples_ = 1;
@@ -1168,6 +1274,11 @@ void inspector(Category category, RendererState& state) {
       ImGui::SliderFloat("Fog start", &state.post.fogStart, 0.0f, 12.0f, "%.2f units");
       ImGui::SliderFloat("Fog end", &state.post.fogEnd, 0.0f, 12.0f, "%.2f units");
       description("Start is fully clear; end is fully fogged.");
+      ImGui::Checkbox("Overdraw visualization", &state.post.overdraw);
+      ImGui::BeginDisabled(!state.post.overdraw);
+      ImGui::SliderFloat("Heat-map maximum", &state.post.overdrawRange, 1.0f, 32.0f, "%.0f fragments");
+      ImGui::EndDisabled();
+      description("An additive floating-point pass counts rasterized fragments with depth testing disabled.");
       break;
     case Category::Output: {
       ImGui::TextUnformatted("OUTPUT"); ImGui::Separator();

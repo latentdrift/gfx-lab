@@ -44,6 +44,7 @@ The camera presentation has a fixed 4:3 aspect ratio. It expands to the maximum 
 - Multisample anti-aliasing with 1, 2, 4, or 8 samples
 - Two-pass 8-bit stencil masking with replace, equal, and not-equal operations
 - Directional shadow mapping with resolution, depth bias, 3 x 3 PCF, and light-depth visualization
+- Additive floating-point overdraw counting with a configurable heat-map range
 - Encoded-RGB or linear-light calculations, output color depth, and ordered Bayer dithering
 - Linear distance fog
 - Internal render resolution and independent framebuffer upscaling filter
