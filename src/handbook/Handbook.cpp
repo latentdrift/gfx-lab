@@ -52,6 +52,11 @@ constexpr std::array chapters = {
 };
 
 constexpr std::array articles = {
+  Article{"Foundations", "Start here: from mesh to pixel",
+    "A mesh is a list of vertices connected into triangles. The camera and vertex shader place those vertices on screen, the rasterizer finds the pixel samples covered by each triangle, the fragment shader proposes colors, and framebuffer tests decide which results are stored.",
+    "Whole renderer, in execution order", "Together these steps turn model data into the image in the viewport.",
+    "Each step has a narrow job. Most graphics techniques change one step, its inputs, or the handoff between two steps.",
+    "Start engine conversations by locating a feature in geometry, camera, rasterization, shading, visibility, or output.", Diagram::Pipeline},
   Article{"Foundations", "The realtime rasterization pipeline",
     "A realtime rasterizer transforms mesh vertices, assembles triangles, generates fragments, shades them, tests visibility, and writes pixels to framebuffer attachments.",
     "Whole renderer", "The final image is the accumulated result of several independent operations, not one shader.",
@@ -280,6 +285,64 @@ constexpr std::array articles = {
     "Discuss BLAS/TLAS structure, build/update policy, samples per pixel, maximum depth, importance sampling, accumulation, and denoising.", Diagram::RayTracing},
 };
 
+struct QuickRead {
+  const char* title;
+  const char* text;
+};
+
+constexpr std::array quickReads = {
+  QuickRead{"Start here: from mesh to pixel", "A model is numbers. The GPU positions its vertices, fills the triangles between them, proposes colors for the covered spots, and keeps the results that pass the visibility rules."},
+  QuickRead{"The realtime rasterization pipeline", "Pipeline means ordered handoffs: each stage does one kind of work and passes its result to the next stage."},
+  QuickRead{"Shaders and fixed-function state", "Shaders are programs you write. Fixed-function state is the set of hardware rules—such as depth, blending, and culling—that runs around those programs."},
+  QuickRead{"What a shader program is", "A shader is code for one GPU stage, not a name for everything that makes the rendered image look a certain way."},
+  QuickRead{"Vertex shaders", "For every submitted vertex, this program answers: where should this point end up, and what data should travel onward with it?"},
+  QuickRead{"Fragment shaders", "For every covered sample of a triangle, this program answers: what values should this surface propose writing here?"},
+  QuickRead{"Attributes, uniforms, varyings, and resources", "These names mostly answer how often data changes: per vertex, per draw, across a triangle, or through a separately bound resource."},
+  QuickRead{"Compilation, linking, and shader variants", "The engine turns shader source into executable GPU stages, connects compatible stages, then chooses the version whose features match the draw."},
+  QuickRead{"Compute and optional graphics stages", "Vertex and fragment stages are the common path; these stages exist for workloads that need a different unit of work."},
+  QuickRead{"Vertex attributes", "A vertex is a bundle of facts about one mesh point, not merely a position."},
+  QuickRead{"Vertex position quantization", "Round vertex positions to a grid and the geometry can only move in fixed spatial steps."},
+  QuickRead{"Perspective and orthographic projection", "Perspective makes screen size depend on distance; orthographic projection does not."},
+  QuickRead{"Near plane and depth distribution", "Moving the near plane extremely close spends most available depth precision near the camera."},
+  QuickRead{"Triangle winding and face culling", "The order of a triangle's three projected points tells the renderer which side it is seeing; culling can skip the other side."},
+  QuickRead{"Perspective-correct interpolation", "The rasterizer must account for depth while spreading UVs across a triangle, or the texture bends as perspective changes."},
+  QuickRead{"Multisample anti-aliasing", "Store several coverage tests inside one pixel so triangle edges can be partially covered instead of only on or off."},
+  QuickRead{"Normals and shading interpolation", "Normals tell lighting which way a surface points; interpolating them can make a coarse mesh light as though it were smooth."},
+  QuickRead{"Tangent-space normal mapping", "A normal map changes the direction used for lighting at each texel without moving the actual surface."},
+  QuickRead{"Transparency and compositing", "A transparent fragment combines with color already stored behind it, so order and depth-write choices matter."},
+  QuickRead{"Material versus shader", "The shader is reusable logic; the material is one configured surface that supplies values, textures, and render state to that logic."},
+  QuickRead{"BRDFs and physically based materials", "A BRDF is the rule that decides how much incoming light leaves a surface toward the camera."},
+  QuickRead{"Material inputs and texture semantics", "The engine must know what every texture channel means before it can decode and use those numbers correctly."},
+  QuickRead{"Filtering and reconstruction", "When a sample lands between texels, filtering decides whether to choose one texel or combine nearby texels."},
+  QuickRead{"Mipmaps, trilinear, and anisotropic filtering", "When many texels shrink into a pixel, prefiltered smaller copies help the sampler represent their average instead of flickering."},
+  QuickRead{"Gouraud, Phong shading, and reflection models", "First ask where lighting is calculated—vertices or fragments—then ask which lighting formula is used there."},
+  QuickRead{"Shadow mapping", "Render depth from the light first; later, anything farther than that stored depth is hidden from the light."},
+  QuickRead{"Depth testing and depth writes", "For each covered sample, compare distance with the stored winner, then optionally replace that stored distance."},
+  QuickRead{"Stencil testing", "Stencil is a small per-pixel integer you write in one pass and use as an exact mask in another."},
+  QuickRead{"Overdraw", "Overdraw counts work spent on the same pixel more than once, including work whose result is later hidden."},
+  QuickRead{"Linear light and encoded RGB", "Image files often store brightness nonlinearly for display, but lighting math expects values proportional to actual light."},
+  QuickRead{"Color quantization and dithering", "Fewer allowed colors create bands; dithering rearranges the rounding errors into a controlled spatial pattern."},
+  QuickRead{"Internal resolution and upscaling", "Render the whole scene into a smaller image first, then enlarge that finished image for the window."},
+  QuickRead{"Asset, scene, material, and renderer responsibilities", "Assets provide data, the scene arranges it, materials describe surfaces, and the renderer schedules the work that produces a frame."},
+  QuickRead{"Forward rendering and render passes", "A pass is one scheduled piece of rendering with declared inputs and outputs; a frame is usually made from several passes."},
+  QuickRead{"Forward, deferred, and forward+ rendering", "These architectures mainly differ in when surface lighting happens and how visible surfaces find the lights that affect them."},
+  QuickRead{"Render graphs and pass dependencies", "A render graph makes the frame's passes and intermediate images explicit so the engine can order them safely."},
+  QuickRead{"CPU submission and draw calls", "The CPU must describe and submit GPU work; too many tiny submissions can become the bottleneck before the GPU is full."},
+  QuickRead{"GPU bottlenecks: geometry, fill rate, and bandwidth", "A slow frame only says time was spent; profiling tells whether vertices, pixels, shader math, or moving data consumed it."},
+  QuickRead{"Batching, instancing, and culling", "Send compatible work together, repeat shared geometry cheaply, and reject invisible work before paying to render it."},
+  QuickRead{"Skeletal animation and skinning", "Animate a hierarchy of bones, then blend each vertex among the bone transforms it is weighted to follow."},
+  QuickRead{"Morph targets and procedural deformation", "Instead of—or before—moving a mesh with bones, blend stored vertex shapes or calculate new vertex positions from a rule."},
+  QuickRead{"Rasterization versus ray tracing", "Rasterization asks which pixels a triangle covers; ray tracing asks what surface a ray encounters."},
+  QuickRead{"Acceleration structures and path tracing", "A BVH makes intersection searches practical; path tracing repeats those searches to estimate how light travels through the scene."},
+};
+
+const char* quickReadFor(std::string_view title) {
+  const auto match = std::find_if(quickReads.begin(), quickReads.end(), [title](const QuickRead& quickRead) {
+    return title == quickRead.title;
+  });
+  return match == quickReads.end() ? nullptr : match->text;
+}
+
 bool containsInsensitive(std::string_view text, std::string_view query) {
   if (query.empty()) return true;
   std::string lowerText(text), lowerQuery(query);
@@ -459,6 +522,7 @@ void drawDiagram(Diagram diagram) {
 }
 
 std::array<const char*, 4> branchesFor(std::string_view title) {
+  if (title == "Start here: from mesh to pixel") return {"The realtime rasterization pipeline", "Vertex attributes", "Perspective and orthographic projection", "What a shader program is"};
   if (title == "The realtime rasterization pipeline") return {"What a shader program is", "Vertex attributes", "Render graphs and pass dependencies", nullptr};
   if (title == "Shaders and fixed-function state") return {"What a shader program is", "Material versus shader", "Depth testing and depth writes", nullptr};
   if (title == "What a shader program is") return {"Vertex shaders", "Fragment shaders", "Attributes, uniforms, varyings, and resources", "Compilation, linking, and shader variants"};
@@ -546,6 +610,12 @@ Action Handbook::draw() {
     ImGui::TextUnformatted(article.title);
     ImGui::Separator();
     ImGui::Spacing();
+    if (const char* quickRead = quickReadFor(article.title)) {
+      ImGui::TextDisabled("QUICK READ");
+      wrappedText(quickRead, ImVec4(0.78f, 0.89f, 0.89f, 1.0f));
+      ImGui::Spacing();
+      ImGui::TextDisabled("PRECISE DEFINITION");
+    }
     wrappedText(article.definition);
     ImGui::Spacing();
     drawDiagram(article.diagram);
