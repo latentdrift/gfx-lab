@@ -13,6 +13,28 @@ cmake --build build
 
 Or build the package directly with `nix build` and run `./result/bin/graphics-lab`.
 
+## Source architecture
+
+The executable is divided by rendering responsibility:
+
+```text
+src/
+  main.cpp                    process entry point only
+  app/
+    Application.cpp           GLFW/ImGui lifecycle and workspace orchestration
+    State.cpp                 explicit renderer state, scene setups, JSON export
+  renderer/
+    Renderer.cpp              OpenGL resources, state application, and render passes
+    Shaders.hpp               scene, output, shadow, and analysis GLSL programs
+    TestGeometry.cpp          procedural diagnostic meshes
+  ui/
+    Inspector.cpp             pipeline-category controls and visual styling
+  handbook/
+    Handbook.cpp              searchable articles, diagrams, and A/B lessons
+```
+
+`Renderer.hpp` is the narrow boundary between application code and OpenGL implementation. `State.hpp` is the shared, serializable vocabulary used by the renderer, inspector, handbook examples, and clipboard export.
+
 ## Controls
 
 - Left drag in the viewport: orbit
