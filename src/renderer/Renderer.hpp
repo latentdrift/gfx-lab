@@ -16,6 +16,7 @@ public:
 
   unsigned int render(const RendererState& state, const CameraOrbit& camera, TestScene scene,
     bool referenceTarget);
+  unsigned int renderDifference(float exposure);
 
 private:
   class Impl;

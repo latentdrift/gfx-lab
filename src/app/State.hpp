@@ -23,7 +23,7 @@ struct RendererState {
 };
 
 enum class Category { Geometry, Camera, Rasterization, Surface, Texture, Lighting, Depth, Stencil, Color, Post, Output };
-enum class CompareMode { A, B, Split };
+enum class CompareMode { A, B, Split, Difference };
 enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask };
 
 struct CameraOrbit {

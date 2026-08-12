@@ -183,6 +183,7 @@ public:
   Impl() {
     sceneProgram_ = makeProgram(sceneVertexShader, sceneFragmentShader);
     outputProgram_ = makeProgram(outputVertexShader, outputFragmentShader);
+    differenceProgram_ = makeProgram(outputVertexShader, differenceFragmentShader);
     shadowProgram_ = makeProgram(shadowVertexShader, shadowFragmentShader);
     overdrawProgram_ = makeProgram(overdrawVertexShader, overdrawFragmentShader);
     std::vector<Vertex> vertices;
@@ -215,6 +216,20 @@ public:
     glEnableVertexAttribArray(5);
     glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, tangent)));
     glGenVertexArrays(1, &fullscreenVao_);
+    glGenFramebuffers(1, &differenceFbo_);
+    glGenTextures(1, &differenceTexture_);
+    glBindTexture(GL_TEXTURE_2D, differenceTexture_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, differenceWidth_, differenceHeight_, 0, GL_RGBA,
+      GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindFramebuffer(GL_FRAMEBUFFER, differenceFbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, differenceTexture_, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+      failRenderer("could not create difference render target");
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glGetIntegerv(GL_MAX_SAMPLES, &maxSamples_);
     if (GLEW_EXT_texture_filter_anisotropic)
       glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAnisotropy_);
@@ -245,8 +260,11 @@ public:
     glDeleteBuffers(1, &vbo_);
     glDeleteVertexArrays(1, &vao_);
     glDeleteVertexArrays(1, &fullscreenVao_);
+    glDeleteFramebuffers(1, &differenceFbo_);
+    glDeleteTextures(1, &differenceTexture_);
     glDeleteProgram(sceneProgram_);
     glDeleteProgram(outputProgram_);
+    glDeleteProgram(differenceProgram_);
     glDeleteProgram(shadowProgram_);
     glDeleteProgram(overdrawProgram_);
   }
@@ -560,8 +578,28 @@ public:
     return target.outputTexture;
   }
 
+  GLuint renderDifference(float exposure) {
+    glBindFramebuffer(GL_FRAMEBUFFER, differenceFbo_);
+    glViewport(0, 0, differenceWidth_, differenceHeight_);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glUseProgram(differenceProgram_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, targetA_.outputTexture);
+    glUniform1i(glGetUniformLocation(differenceProgram_, "uImageA"), 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, targetB_.outputTexture);
+    glUniform1i(glGetUniformLocation(differenceProgram_, "uImageB"), 1);
+    glUniform1f(glGetUniformLocation(differenceProgram_, "uExposure"), exposure);
+    glBindVertexArray(fullscreenVao_);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return differenceTexture_;
+  }
+
 private:
-  GLuint sceneProgram_ = 0, outputProgram_ = 0, shadowProgram_ = 0, overdrawProgram_ = 0;
+  GLuint sceneProgram_ = 0, outputProgram_ = 0, differenceProgram_ = 0, shadowProgram_ = 0, overdrawProgram_ = 0;
   GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, normalTexture_ = 0;
   GLsizei vertexCount_ = 0;
   GLint maxSamples_ = 1;
@@ -570,6 +608,9 @@ private:
   GLuint shadowFbo_ = 0, shadowTexture_ = 0;
   int shadowResolution_ = 0;
   RenderTarget targetA_, targetB_;
+  GLuint differenceFbo_ = 0, differenceTexture_ = 0;
+  static constexpr int differenceWidth_ = 960;
+  static constexpr int differenceHeight_ = 720;
 
   GLint location(const char* name) const { return glGetUniformLocation(sceneProgram_, name); }
   void matrix(const char* name, const glm::mat4& value) { glUniformMatrix4fv(location(name), 1, GL_FALSE, glm::value_ptr(value)); }
@@ -647,5 +688,7 @@ unsigned int Renderer::render(const RendererState& state, const CameraOrbit& cam
     bool referenceTarget) {
   return impl_->render(state, camera, scene, referenceTarget);
 }
+
+unsigned int Renderer::renderDifference(float exposure) { return impl_->renderDifference(exposure); }
 
 } // namespace gfxlab

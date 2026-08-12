@@ -239,6 +239,20 @@ void main() {
 }
 )GLSL";
 
+inline constexpr const char* differenceFragmentShader = R"GLSL(
+#version 410 core
+in vec2 vUv;
+uniform sampler2D uImageA;
+uniform sampler2D uImageB;
+uniform float uExposure;
+out vec4 fragColor;
+
+void main() {
+  vec3 difference = abs(texture(uImageA, vUv).rgb - texture(uImageB, vUv).rgb);
+  fragColor = vec4(clamp(difference * uExposure, 0.0, 1.0), 1.0);
+}
+)GLSL";
+
 inline constexpr const char* shadowVertexShader = R"GLSL(
 #version 410 core
 layout(location=0) in vec3 aPosition;

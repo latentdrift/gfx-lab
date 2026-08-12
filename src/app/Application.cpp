@@ -69,6 +69,7 @@ int runApplication() {
   Category category = Category::Geometry;
   TestScene scene = TestScene::Torus;
   CompareMode compare = CompareMode::A;
+  float differenceExposure = 4.0f;
   bool viewportHovered = false;
   double configCopiedAt = -10.0;
   handbook::Handbook graphicsHandbook;
@@ -85,6 +86,7 @@ int runApplication() {
         renderer.render(current, camera, scene, alternative);
       }
     }
+    renderer.renderDifference(4.0f);
     current = RendererState{};
     reference = current;
     camera = CameraOrbit{};
@@ -154,6 +156,15 @@ int runApplication() {
     if (ImGui::RadioButton("B", compare == CompareMode::B)) compare = CompareMode::B;
     ImGui::SameLine();
     if (ImGui::RadioButton("Split A/B", compare == CompareMode::Split)) compare = CompareMode::Split;
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Difference", compare == CompareMode::Difference)) compare = CompareMode::Difference;
+    if (compare == CompareMode::Difference) {
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(70.0f);
+      ImGui::SliderFloat("##difference-exposure", &differenceExposure, 1.0f, 16.0f, "%.0fx");
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Difference exposure. Multiplies abs(A - B) so subtle pixel changes remain visible.");
+    }
     ImGui::SameLine(ImGui::GetWindowWidth() - 260);
     ImGui::TextDisabled("LMB orbit   MMB/RMB pan   Wheel zoom");
     ImGui::Separator();
@@ -200,9 +211,12 @@ int runApplication() {
       draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240,240,240,220), "A  CURRENT");
       draw->AddText(ImVec2(middle + 10, origin.y + 8), IM_COL32(240,240,240,220), "B  REFERENCE");
     } else {
-      const GLuint texture = compare == CompareMode::A ? textureA : textureB;
+      const GLuint texture = compare == CompareMode::A ? textureA
+        : compare == CompareMode::Difference ? renderer.renderDifference(differenceExposure) : textureB;
       draw->AddImage(static_cast<ImTextureID>(texture), origin, end, ImVec2(0, 1), ImVec2(1, 0));
-      draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240,240,240,220), compare == CompareMode::A ? "A  CURRENT" : "B  REFERENCE");
+      const char* label = compare == CompareMode::A ? "A  CURRENT"
+        : compare == CompareMode::B ? "B  REFERENCE" : "ABSOLUTE RGB DIFFERENCE  |  BLACK = IDENTICAL";
+      draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240,240,240,220), label);
     }
     ImGui::SetCursorScreenPos(origin);
     ImGui::InvisibleButton("viewport-input", presentationSize);

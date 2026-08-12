@@ -41,7 +41,7 @@ src/
 - Middle or right drag: pan
 - Mouse wheel: zoom
 
-The current renderer state is **A**. Use **Copy A to B** to preserve it, change A, then choose **B** or **Split A/B** in the toolbar.
+The current renderer state is **A**. Use **Copy A to B** to preserve it, change A, then choose **B** for an instant toggle, **Split A/B** for a spatial comparison, or **Difference** for an exposure-adjustable absolute RGB difference image. Black difference pixels are identical.
 
 Use **Copy config JSON** to place a human-readable `graphics-lab.renderer-state.v1` document on the clipboard. It includes the complete current renderer state, selected test scene, and orbit-camera view using explicit algorithm names suitable for sharing with other tools or coding agents.
 
