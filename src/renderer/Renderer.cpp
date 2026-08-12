@@ -254,6 +254,8 @@ public:
     targetA_.destroy();
     targetB_.destroy();
     glDeleteTextures(1, &checkerTexture_);
+    glDeleteTextures(1, &indexedTexture_);
+    glDeleteTextures(1, &clutTexture_);
     glDeleteTextures(1, &normalTexture_);
     glDeleteFramebuffers(1, &shadowFbo_);
     glDeleteTextures(1, &shadowTexture_);
@@ -379,6 +381,10 @@ public:
     glUniform1f(location("uNormalStrength"), state.surface.normalStrength);
     glUniform1i(location("uLightingModel"), state.lighting.model);
     glUniform1f(location("uAmbient"), state.lighting.ambient);
+    glUniform1i(location("uDepthCueEnabled"), state.lighting.depthCue);
+    glUniform1f(location("uDepthCueStart"), state.lighting.depthCueStart);
+    glUniform1f(location("uDepthCueEnd"), state.lighting.depthCueEnd);
+    glUniform3fv(location("uFarColor"), 1, glm::value_ptr(state.lighting.farColor));
     glUniform1f(location("uShininess"), state.lighting.shininess);
     glUniform1i(location("uLinearLight"), state.color.linearLight);
     glUniform3fv(location("uLightDirection"), 1, glm::value_ptr(lightDirection));
@@ -403,6 +409,15 @@ public:
     if (GLEW_EXT_texture_filter_anisotropic)
       glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, std::clamp(state.texture.anisotropy, 1.0f, maxAnisotropy_));
     glUniform1i(location("uTexture"), 0);
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_2D, indexedTexture_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, state.texture.repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, state.texture.repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+    glUniform1i(location("uIndexedTexture"), 4);
+    glActiveTexture(GL_TEXTURE5);
+    glBindTexture(GL_TEXTURE_2D, clutTexture_);
+    glUniform1i(location("uClut"), 5);
+    glUniform1i(location("uTextureColorMode"), state.texture.colorMode);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, normalTexture_);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, state.texture.mipmapping ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
@@ -600,7 +615,8 @@ public:
 
 private:
   GLuint sceneProgram_ = 0, outputProgram_ = 0, differenceProgram_ = 0, shadowProgram_ = 0, overdrawProgram_ = 0;
-  GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, normalTexture_ = 0;
+  GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, indexedTexture_ = 0,
+    clutTexture_ = 0, normalTexture_ = 0;
   GLsizei vertexCount_ = 0;
   GLint maxSamples_ = 1;
   GLfloat maxAnisotropy_ = 1.0f;
@@ -618,13 +634,33 @@ private:
   void makeCheckerTexture() {
     constexpr int size = 64;
     std::array<unsigned char, size * size * 4> pixels{};
+    std::array<unsigned char, size * size> indices{};
+    std::array<unsigned char, 256 * 4> palette{};
+    constexpr std::array<glm::u8vec3, 16> baseColors = {
+      glm::u8vec3(28, 34, 39), glm::u8vec3(205, 188, 146), glm::u8vec3(53, 68, 72), glm::u8vec3(165, 76, 65),
+      glm::u8vec3(71, 120, 145), glm::u8vec3(98, 145, 88), glm::u8vec3(157, 112, 61), glm::u8vec3(128, 89, 142),
+      glm::u8vec3(214, 215, 203), glm::u8vec3(99, 105, 107), glm::u8vec3(225, 141, 121), glm::u8vec3(116, 169, 190),
+      glm::u8vec3(151, 190, 125), glm::u8vec3(215, 176, 101), glm::u8vec3(180, 141, 190), glm::u8vec3(66, 49, 46)};
+    for (int index = 0; index < 256; ++index) {
+      const glm::ivec3 base(baseColors[index & 15]);
+      const int variation = ((index >> 4) - 7) * 3;
+      const glm::u8vec3 color(glm::clamp(base + variation, glm::ivec3(0), glm::ivec3(255)));
+      palette[index * 4] = color.r;
+      palette[index * 4 + 1] = color.g;
+      palette[index * 4 + 2] = color.b;
+      palette[index * 4 + 3] = (index & 1) ? 255 : 96;
+    }
     for (int y = 0; y < size; ++y) {
       for (int x = 0; x < size; ++x) {
-        const bool checker = ((x / 8) + (y / 8)) % 2 == 0;
-        const glm::u8vec3 color = checker ? glm::u8vec3(205, 188, 146) : glm::u8vec3(53, 68, 72);
+        const int low = ((x / 8) + (y / 8) * 3) & 15;
+        const int high = ((x & 7) + (y & 7)) & 15;
+        const unsigned char paletteIndex = static_cast<unsigned char>((high << 4) | low);
+        indices[y * size + x] = paletteIndex;
         const int offset = (y * size + x) * 4;
-        pixels[offset] = color.r; pixels[offset + 1] = color.g; pixels[offset + 2] = color.b;
-        pixels[offset + 3] = checker ? 255 : 72;
+        pixels[offset] = palette[paletteIndex * 4];
+        pixels[offset + 1] = palette[paletteIndex * 4 + 1];
+        pixels[offset + 2] = palette[paletteIndex * 4 + 2];
+        pixels[offset + 3] = palette[paletteIndex * 4 + 3];
       }
     }
     glGenTextures(1, &checkerTexture_);
@@ -633,6 +669,22 @@ private:
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glGenerateMipmap(GL_TEXTURE_2D);
+
+    glGenTextures(1, &indexedTexture_);
+    glBindTexture(GL_TEXTURE_2D, indexedTexture_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, size, size, 0, GL_RED, GL_UNSIGNED_BYTE, indices.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    glGenTextures(1, &clutTexture_);
+    glBindTexture(GL_TEXTURE_2D, clutTexture_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 256, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, palette.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   }
 
   void makeNormalTexture() {

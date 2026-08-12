@@ -20,6 +20,9 @@ uniform bool uClipEnabled;
 uniform vec4 uClipPlane;
 uniform vec3 uLightDirection;
 uniform float uAmbient;
+uniform bool uDepthCueEnabled;
+uniform float uDepthCueStart;
+uniform float uDepthCueEnd;
 
 out vec3 vWorldPosition;
 out vec3 vNormal;
@@ -28,6 +31,7 @@ noperspective out vec2 vUvAffine;
 out vec3 vBarycentric;
 out vec3 vColor;
 out float vVertexLighting;
+out float vDepthCue;
 out vec4 vTangent;
 out vec4 vLightPosition;
 
@@ -46,6 +50,10 @@ void main() {
   vLightPosition = uLightSpace * world;
   float vertexDiffuse = max(dot(vNormal, normalize(uLightDirection)), 0.0);
   vVertexLighting = uAmbient + (1.0 - uAmbient) * vertexDiffuse;
+  float viewDepth = -(uView * world).z;
+  vDepthCue = uDepthCueEnabled
+    ? smoothstep(uDepthCueStart, max(uDepthCueEnd, uDepthCueStart + 0.001), viewDepth)
+    : 0.0;
   gl_ClipDistance[0] = uClipEnabled ? dot(world, uClipPlane) : 1.0;
   gl_Position = uProjection * uView * world;
 }
@@ -60,10 +68,14 @@ noperspective in vec2 vUvAffine;
 in vec3 vBarycentric;
 in vec3 vColor;
 in float vVertexLighting;
+in float vDepthCue;
 in vec4 vTangent;
 in vec4 vLightPosition;
 
 uniform sampler2D uTexture;
+uniform sampler2D uIndexedTexture;
+uniform sampler2D uClut;
+uniform int uTextureColorMode;
 uniform sampler2D uNormalMap;
 uniform sampler2D uShadowMap;
 uniform bool uAffineMapping;
@@ -88,7 +100,15 @@ uniform bool uFogEnabled;
 uniform float uFogStart;
 uniform float uFogEnd;
 uniform vec3 uCameraPosition;
+uniform vec3 uFarColor;
 out vec4 fragColor;
+
+vec4 sampleSurfaceTexture(vec2 uv) {
+  if (uTextureColorMode == 0) return texture(uTexture, uv);
+  int index = int(round(texture(uIndexedTexture, uv).r * 255.0));
+  if (uTextureColorMode == 2) index &= 15;
+  return texelFetch(uClut, ivec2(index, 0), 0);
+}
 
 float shadowAmount() {
   vec3 projected = vLightPosition.xyz / vLightPosition.w * 0.5 + 0.5;
@@ -118,7 +138,7 @@ void main() {
     tangentNormal = normalize(tangentNormal);
     normal = normalize(mat3(tangent, bitangent, normal) * tangentNormal);
   }
-  vec4 texel = texture(uTexture, uv);
+  vec4 texel = sampleSurfaceTexture(uv);
   float alpha = uVisualization == 0 ? texel.a : 1.0;
   if (uTransparencyMode == 1 && alpha < uAlphaCutoff) discard;
   if (uTransparencyMode == 0) alpha = 1.0;
@@ -161,6 +181,7 @@ void main() {
     if (uLinearLight) fogColor = pow(fogColor, vec3(2.2));
     color = mix(color, fogColor, fogAmount);
   }
+  color = mix(color, uFarColor, vDepthCue);
   fragColor = vec4(uPremultiplyAlpha ? color * alpha : color, alpha);
 }
 )GLSL";
