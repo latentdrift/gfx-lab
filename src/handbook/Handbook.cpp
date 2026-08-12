@@ -1,4 +1,5 @@
 #include "handbook/Handbook.hpp"
+#include "app/HardwareProfile.hpp"
 
 #include <imgui.h>
 
@@ -272,6 +273,11 @@ constexpr std::array articles = {
     "CPU-side frame scheduling and GPU synchronization", "The graph itself is architectural; its passes collectively determine the visible frame.",
     "A render graph does not define the shading model. Incorrect dependencies cause hazards, stale data, or unnecessary synchronization.",
     "Describe each pass by inputs, outputs, formats, clear/load/store behavior, and dependency edges.", Diagram::RenderGraph},
+  Article{"Engine architecture", "Hardware capability profiles",
+    "A hardware profile describes which renderer operations a target can represent, which choices are restricted, and which unavailable values must be normalized to a supported equivalent.",
+    "Renderer configuration, material validation, and tool UI", "A constrained profile prevents an image from quietly depending on features the target does not provide.",
+    "Hiding a control is insufficient unless serialized state and rendering are normalized too. An approximation should be labelled when the lab's implementation differs from original hardware.",
+    "Export a stable target identifier plus complete normalized state; distinguish hardware capability, engine policy, and emulation approximation.", Diagram::RenderGraph},
   Article{"Performance", "CPU submission and draw calls",
     "Before the GPU can render, the CPU builds command buffers, binds pipelines and resources, and submits draws or dispatches. Too many small state changes and draw calls can make the frame CPU-bound.",
     "Application and rendering API submission", "CPU bottlenecks reduce frame rate even when shader or pixel complexity is low.",
@@ -355,6 +361,7 @@ constexpr std::array quickReads = {
   QuickRead{"Forward rendering and render passes", "A pass is one scheduled piece of rendering with declared inputs and outputs; a frame is usually made from several passes."},
   QuickRead{"Forward, deferred, and forward+ rendering", "These architectures mainly differ in when surface lighting happens and how visible surfaces find the lights that affect them."},
   QuickRead{"Render graphs and pass dependencies", "A render graph makes the frame's passes and intermediate images explicit so the engine can order them safely."},
+  QuickRead{"Hardware capability profiles", "A target profile turns impossible settings into supported ones, then removes controls that can no longer change anything."},
   QuickRead{"CPU submission and draw calls", "The CPU must describe and submit GPU work; too many tiny submissions can become the bottleneck before the GPU is full."},
   QuickRead{"GPU bottlenecks: geometry, fill rate, and bandwidth", "A slow frame only says time was spent; profiling tells whether vertices, pixels, shader math, or moving data consumed it."},
   QuickRead{"Batching, instancing, and culling", "Send compatible work together, repeat shared geometry cheaply, and reject invisible work before paying to render it."},
@@ -369,6 +376,34 @@ const char* quickReadFor(std::string_view title) {
     return title == quickRead.title;
   });
   return match == quickReads.end() ? nullptr : match->text;
+}
+
+bool exampleAvailableForProfile(gfxlab::HardwareProfile profile, Example example) {
+  if (profile == gfxlab::HardwareProfile::Unrestricted) return true;
+  switch (example) {
+    case Example::None:
+    case Example::VertexQuantization:
+    case Example::InternalResolution:
+    case Example::ClutTextures:
+    case Example::VertexDepthCue:
+    case Example::Ps1Semitransparency:
+    case Example::OrderingTable:
+      return true;
+    case Example::Projection:
+    case Example::AffineMapping:
+    case Example::TextureMinification:
+    case Example::NormalMapping:
+    case Example::LightingInterpolation:
+    case Example::DepthPrecision:
+    case Example::Transparency:
+    case Example::Stencil:
+    case Example::LinearLight:
+    case Example::ColorQuantization:
+    case Example::ShadowMapping:
+    case Example::Overdraw:
+      return false;
+  }
+  return false;
 }
 
 bool containsInsensitive(std::string_view text, std::string_view query) {
@@ -564,6 +599,7 @@ std::array<const char*, 4> branchesFor(std::string_view title) {
   if (title == "Forward rendering and render passes") return {"Forward, deferred, and forward+ rendering", "Render graphs and pass dependencies", "Shadow mapping", nullptr};
   if (title == "Forward, deferred, and forward+ rendering") return {"Render graphs and pass dependencies", "GPU bottlenecks: geometry, fill rate, and bandwidth", "Rasterization versus ray tracing", nullptr};
   if (title == "Asset, scene, material, and renderer responsibilities") return {"Material versus shader", "Render graphs and pass dependencies", "CPU submission and draw calls", nullptr};
+  if (title == "Render graphs and pass dependencies") return {"Hardware capability profiles", "Forward, deferred, and forward+ rendering", nullptr, nullptr};
   if (title == "Skeletal animation and skinning") return {"Vertex shaders", "Morph targets and procedural deformation", nullptr, nullptr};
   if (title == "Rasterization versus ray tracing") return {"Acceleration structures and path tracing", "The realtime rasterization pipeline", nullptr, nullptr};
   return {nullptr, nullptr, nullptr, nullptr};
@@ -577,7 +613,7 @@ void Handbook::open() {
 }
 bool Handbook::isOpen() const { return open_; }
 
-Action Handbook::draw() {
+Action Handbook::draw(gfxlab::HardwareProfile profile) {
   Action action;
   if (!open_) return action;
 
@@ -693,15 +729,19 @@ Action Handbook::draw() {
       ImGui::Text("A  %s", article.baseline);
       ImGui::Text("B  %s", article.alternative);
       ImGui::Spacing();
-      if (ImGui::Button("Apply example to A")) action = {ActionType::ApplyToA, article.example};
-      ImGui::SameLine();
-      if (ImGui::Button("Apply comparison to B")) action = {ActionType::ApplyToB, article.example};
-      ImGui::SameLine();
-      if (ImGui::Button("Load split A/B")) {
-        action = {ActionType::LoadComparison, article.example};
-        open_ = false;
+      if (exampleAvailableForProfile(profile, article.example)) {
+        if (ImGui::Button("Apply example to A")) action = {ActionType::ApplyToA, article.example};
+        ImGui::SameLine();
+        if (ImGui::Button("Apply comparison to B")) action = {ActionType::ApplyToB, article.example};
+        ImGui::SameLine();
+        if (ImGui::Button("Load split A/B")) {
+          action = {ActionType::LoadComparison, article.example};
+          open_ = false;
+        }
+        ImGui::TextDisabled("Applying is explicit. Opening or reading an article never changes the renderer.");
+      } else {
+        ImGui::TextDisabled("Live example unavailable for the active hardware target. The article remains reference material.");
       }
-      ImGui::TextDisabled("Applying is explicit. Opening or reading an article never changes the renderer.");
     }
   }
   ImGui::EndChild();

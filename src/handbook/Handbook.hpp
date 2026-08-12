@@ -2,6 +2,8 @@
 
 #include <array>
 
+namespace gfxlab { enum class HardwareProfile; }
+
 namespace handbook {
 
 enum class Example {
@@ -37,7 +39,7 @@ class Handbook {
 public:
   void open();
   bool isOpen() const;
-  Action draw();
+  Action draw(gfxlab::HardwareProfile profile);
 
 private:
   bool open_ = false;

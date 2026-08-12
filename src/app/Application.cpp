@@ -294,7 +294,7 @@ int runApplication() {
     ImGui::EndChild();
     ImGui::End();
 
-    const handbook::Action handbookAction = graphicsHandbook.draw();
+    const handbook::Action handbookAction = graphicsHandbook.draw(hardwareProfile);
     if (handbookAction.type == handbook::ActionType::ApplyToA) {
       applyHandbookExample(handbookAction.example, false, current, camera, scene, category);
     } else if (handbookAction.type == handbook::ActionType::ApplyToB) {

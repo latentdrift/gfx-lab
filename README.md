@@ -22,6 +22,7 @@ src/
   main.cpp                    process entry point only
   app/
     Application.cpp           GLFW/ImGui lifecycle and workspace orchestration
+    HardwareProfile.cpp       target capabilities and state normalization
     State.cpp                 explicit renderer state, scene setups, JSON export
   renderer/
     Renderer.cpp              OpenGL resources, state application, and render passes
@@ -43,7 +44,9 @@ src/
 
 The current renderer state is **A**. Use **Copy A to B** to preserve it, change A, then choose **B** for an instant toggle, **Split A/B** for a spatial comparison, or **Difference** for an exposure-adjustable absolute RGB difference image. Black difference pixels are identical.
 
-Use **Copy config JSON** to place a human-readable `graphics-lab.renderer-state.v1` document on the clipboard. It includes the complete current renderer state, selected test scene, and orbit-camera view using explicit algorithm names suitable for sharing with other tools or coding agents.
+The **Target** selector defaults to **Unrestricted**. **PlayStation (PS1)** normalizes A and B to hardware-representable state, removes unavailable categories and controls, narrows shared controls to supported choices, and displays important forced values as profile facts. Switching back to Unrestricted unlocks the controls but does not restore values discarded during normalization. Reset buttons are also normalized by the active target.
+
+Use **Copy config JSON** to place a human-readable `graphics-lab.renderer-state.v1` document on the clipboard. It includes a stable hardware-target identifier, the complete normalized renderer state, selected test scene, and orbit-camera view using explicit algorithm names suitable for sharing with other tools or coding agents.
 
 Use **Handbook** to open the built-in technical reference. Start with **From mesh to pixel**, then follow its related-concept links or browse the knowledge map. Every article begins with a plain causal **Quick read** before preserving the precise definition, pipeline location, visible results, interactions, engine vocabulary, and technical diagram. The map groups the pipeline, shading, visibility and output, engine systems, animation, and ray tracing. Reading never changes renderer state; example buttons apply configurations deliberately.
 
