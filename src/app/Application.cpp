@@ -79,7 +79,9 @@ int runApplication() {
       handbook::Example::AffineMapping, handbook::Example::TextureMinification, handbook::Example::NormalMapping,
       handbook::Example::LightingInterpolation, handbook::Example::DepthPrecision, handbook::Example::Transparency,
       handbook::Example::Stencil, handbook::Example::LinearLight, handbook::Example::ColorQuantization,
-      handbook::Example::InternalResolution, handbook::Example::ShadowMapping, handbook::Example::Overdraw};
+      handbook::Example::InternalResolution, handbook::Example::ShadowMapping, handbook::Example::Overdraw,
+      handbook::Example::ClutTextures, handbook::Example::VertexDepthCue,
+      handbook::Example::Ps1Semitransparency, handbook::Example::OrderingTable};
     for (handbook::Example example : examples) {
       for (bool alternative : {false, true}) {
         applyHandbookExample(example, alternative, current, camera, scene, category);

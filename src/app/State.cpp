@@ -185,6 +185,38 @@ void applyHandbookExample(handbook::Example example, bool alternative, RendererS
       applyRecommendedSetup(scene, state, camera);
       state.post.overdraw = alternative;
       break;
+    case handbook::Example::ClutTextures:
+      scene = TestScene::Torus; category = Category::Texture;
+      applyRecommendedSetup(scene, state, camera);
+      state.texture.nearestFiltering = true;
+      state.texture.colorMode = alternative ? 2 : 0;
+      break;
+    case handbook::Example::VertexDepthCue:
+      scene = TestScene::TexturePlane; category = Category::Lighting;
+      applyRecommendedSetup(scene, state, camera);
+      state.lighting.model = 1;
+      state.lighting.depthCue = alternative;
+      state.lighting.depthCueStart = 4.0f;
+      state.lighting.depthCueEnd = 12.0f;
+      state.lighting.farColor = glm::vec3(0.12f, 0.16f, 0.22f);
+      break;
+    case handbook::Example::Ps1Semitransparency:
+      scene = TestScene::Transparency; category = Category::Surface;
+      applyRecommendedSetup(scene, state, camera);
+      state.surface.transparency = alternative ? 6 : 0;
+      state.depth.writing = !alternative;
+      state.color.linearLight = false;
+      break;
+    case handbook::Example::OrderingTable:
+      scene = TestScene::Transparency; category = Category::Depth;
+      applyRecommendedSetup(scene, state, camera);
+      state.surface.transparency = 6;
+      state.depth.writing = false;
+      state.surface.reverseDrawOrder = !alternative;
+      state.depth.orderingTable = alternative;
+      state.depth.orderingBuckets = 32;
+      state.color.linearLight = false;
+      break;
   }
 }
 

@@ -19,7 +19,11 @@ enum class Example {
   ColorQuantization,
   InternalResolution,
   ShadowMapping,
-  Overdraw
+  Overdraw,
+  ClutTextures,
+  VertexDepthCue,
+  Ps1Semitransparency,
+  OrderingTable
 };
 
 enum class ActionType { None, ApplyToA, ApplyToB, LoadComparison };

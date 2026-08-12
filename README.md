@@ -74,6 +74,10 @@ The camera presentation has a fixed 4:3 aspect ratio. It expands to the maximum 
 - Tangent-space normal mapping with normal, tangent, and bitangent visualization
 - Alpha discard and source-alpha blending
 - Straight alpha, premultiplied alpha, additive, and multiply blend factors with reversible object order
+- Original PlayStation average, additive, subtractive, and quarter-add semitransparency equations
+- Direct-color, 8-bit indexed, and 4-bit indexed texture storage with actual CLUT palette lookup
+- Vertex-evaluated depth cueing toward a configurable far color
+- Object-granularity ordering-table submission with configurable depth buckets
 - Polygon offset factor and units for coplanar depth conflicts
 - Depth testing, depth writes, comparison functions, 16- or 24-bit attachments, and depth visualization
 - Multisample anti-aliasing with 1, 2, 4, or 8 samples
