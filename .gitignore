@@ -1,0 +1,5 @@
+/build/
+/result
+.direnv/
+imgui.ini
+.envrc
