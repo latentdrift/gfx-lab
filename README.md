@@ -42,6 +42,7 @@ The camera presentation has a fixed 4:3 aspect ratio. It expands to the maximum 
 - Polygon offset factor and units for coplanar depth conflicts
 - Depth testing, depth writes, comparison functions, 16- or 24-bit attachments, and depth visualization
 - Multisample anti-aliasing with 1, 2, 4, or 8 samples
+- Two-pass 8-bit stencil masking with replace, equal, and not-equal operations
 - Encoded-RGB or linear-light calculations, output color depth, and ordered Bayer dithering
 - Linear distance fog
 - Internal render resolution and independent framebuffer upscaling filter

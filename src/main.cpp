@@ -27,14 +27,15 @@ struct RendererState {
   struct Texture { bool nearestFiltering = false; bool repeat = true; bool mipmapping = false; bool trilinear = false; float anisotropy = 1.0f; } texture;
   struct Lighting { int model = 2; float ambient = 0.22f; float azimuth = 34.0f; float elevation = 52.0f; float shininess = 32.0f; } lighting;
   struct Depth { bool testing = true; bool writing = true; int precision = 24; int function = 0; int visualization = 0; } depth;
+  struct Stencil { bool enabled = false; bool invert = false; int reference = 1; } stencil;
   struct Color { int bitsPerChannel = 8; bool dithering = false; bool linearLight = true; } color;
   struct Post { bool fog = false; float fogStart = 3.0f; float fogEnd = 7.0f; } post;
   struct Output { int width = 640; int height = 480; bool nearestUpscaling = true; } output;
 };
 
-enum class Category { Geometry, Camera, Rasterization, Surface, Texture, Lighting, Depth, Color, Post, Output };
+enum class Category { Geometry, Camera, Rasterization, Surface, Texture, Lighting, Depth, Stencil, Color, Post, Output };
 enum class CompareMode { A, B, Split };
-enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting };
+enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask };
 
 struct CameraOrbit {
   float yaw = 0.72f;
@@ -426,13 +427,15 @@ struct RenderTarget {
   int height = 0;
   int depthPrecision = 0;
   int samples = 0;
+  bool packedStencil = false;
 
-  void resize(int newWidth, int newHeight, int newDepthPrecision, int newSamples) {
-    if (width == newWidth && height == newHeight && depthPrecision == newDepthPrecision && samples == newSamples) return;
+  void resize(int newWidth, int newHeight, int newDepthPrecision, int newSamples, bool needsStencil) {
+    if (width == newWidth && height == newHeight && depthPrecision == newDepthPrecision && samples == newSamples && packedStencil == needsStencil) return;
     width = newWidth;
     height = newHeight;
     depthPrecision = newDepthPrecision;
     samples = newSamples;
+    packedStencil = needsStencil;
     if (!sceneFbo) {
       glGenFramebuffers(1, &sceneFbo);
       glGenTextures(1, &sceneTexture);
@@ -449,16 +452,18 @@ struct RenderTarget {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glBindTexture(GL_TEXTURE_2D, depthTexture);
-    const GLint depthFormat = depthPrecision == 16 ? GL_DEPTH_COMPONENT16 : GL_DEPTH_COMPONENT24;
-    const GLenum depthType = depthPrecision == 16 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
-    glTexImage2D(GL_TEXTURE_2D, 0, depthFormat, width, height, 0, GL_DEPTH_COMPONENT, depthType, nullptr);
+    const GLint depthFormat = packedStencil ? GL_DEPTH24_STENCIL8 : depthPrecision == 16 ? GL_DEPTH_COMPONENT16 : GL_DEPTH_COMPONENT24;
+    const GLenum depthType = packedStencil ? GL_UNSIGNED_INT_24_8 : depthPrecision == 16 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
+    const GLenum depthExternalFormat = packedStencil ? GL_DEPTH_STENCIL : GL_DEPTH_COMPONENT;
+    glTexImage2D(GL_TEXTURE_2D, 0, depthFormat, width, height, 0, depthExternalFormat, depthType, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindFramebuffer(GL_FRAMEBUFFER, sceneFbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTexture, 0);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTexture, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, packedStencil ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT,
+      GL_TEXTURE_2D, depthTexture, 0);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
       fail("could not create resolved scene render target");
 
@@ -469,7 +474,8 @@ struct RenderTarget {
       glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, depthFormat, width, height);
       glBindFramebuffer(GL_FRAMEBUFFER, multisampleFbo);
       glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, multisampleColor);
-      glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, multisampleDepth);
+      glFramebufferRenderbuffer(GL_FRAMEBUFFER, packedStencil ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT,
+        GL_RENDERBUFFER, multisampleDepth);
       if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         fail("could not create multisampled render target");
     }
@@ -555,13 +561,17 @@ public:
   GLuint render(const RendererState& state, const CameraOrbit& camera, TestScene scene, bool referenceTarget) {
     RenderTarget& target = referenceTarget ? targetB_ : targetA_;
     const int samples = state.rasterization.samples == 1 ? 1 : std::min(state.rasterization.samples, maxSamples_);
-    target.resize(state.output.width, state.output.height, state.depth.precision, samples);
+    const bool needsStencil = scene == TestScene::StencilMask && state.stencil.enabled;
+    target.resize(state.output.width, state.output.height, state.depth.precision, samples, needsStencil);
     glBindFramebuffer(GL_FRAMEBUFFER, samples > 1 ? target.multisampleFbo : target.sceneFbo);
     glViewport(0, 0, target.width, target.height);
     glDepthMask(GL_TRUE);
     const GLenum depthFunctions[] = {GL_LESS, GL_LEQUAL, GL_GREATER, GL_ALWAYS};
     glDepthFunc(depthFunctions[std::clamp(state.depth.function, 0, 3)]);
     glClearDepth(state.depth.function == 2 ? 0.0 : 1.0);
+    glStencilMask(0xff);
+    glClearStencil(0);
+    glDisable(GL_STENCIL_TEST);
     if (state.depth.testing) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     if (state.rasterization.cullMode == 0) {
       glDisable(GL_CULL_FACE);
@@ -590,7 +600,7 @@ public:
     const float backgroundG = state.color.linearLight ? std::pow(0.112f, 2.2f) : 0.112f;
     const float backgroundB = state.color.linearLight ? std::pow(0.120f, 2.2f) : 0.120f;
     glClearColor(backgroundR, backgroundG, backgroundB, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
     glDepthMask(state.depth.writing ? GL_TRUE : GL_FALSE);
 
     glUseProgram(sceneProgram_);
@@ -687,6 +697,26 @@ public:
         drawMesh(smoothSphere_, glm::translate(identity, glm::vec3(1.35f, 0, 0)), glm::vec3(0.45f, 0.68f, 1.0f));
         drawMesh(torus_, glm::translate(glm::scale(identity, glm::vec3(0.62f)), glm::vec3(0, 1.9f, 0)), glm::vec3(0.7f, 1.0f, 0.6f));
         break;
+      case TestScene::StencilMask:
+        if (state.stencil.enabled) {
+          glEnable(GL_STENCIL_TEST);
+          glStencilMask(0xff);
+          glStencilFunc(GL_ALWAYS, state.stencil.reference, 0xff);
+          glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+          glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+          glDepthMask(GL_FALSE);
+          drawMesh(lowSphere_, glm::scale(identity, glm::vec3(1.35f)), glm::vec3(1.0f));
+          glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+          glDepthMask(state.depth.writing ? GL_TRUE : GL_FALSE);
+          glStencilMask(0x00);
+          glStencilFunc(state.stencil.invert ? GL_NOTEQUAL : GL_EQUAL, state.stencil.reference, 0xff);
+          glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+        }
+        drawMesh(quad_, glm::translate(glm::scale(identity, glm::vec3(2.0f)), glm::vec3(0, 0, -0.35f)),
+          glm::vec3(0.45f, 0.8f, 1.0f));
+        glStencilMask(0xff);
+        glDisable(GL_STENCIL_TEST);
+        break;
     }
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
@@ -696,8 +726,10 @@ public:
     if (samples > 1) {
       glBindFramebuffer(GL_READ_FRAMEBUFFER, target.multisampleFbo);
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target.sceneFbo);
+      const GLbitfield resolveBuffers = GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT |
+        (needsStencil ? GL_STENCIL_BUFFER_BIT : 0);
       glBlitFramebuffer(0, 0, target.width, target.height, 0, 0, target.width, target.height,
-        GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+        resolveBuffers, GL_NEAREST);
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, target.outputFbo);
@@ -968,6 +1000,18 @@ void inspector(Category category, RendererState& state) {
       description("Raw perspective depth is nonlinear; linearization reconstructs camera-space distance.");
       break;
     }
+    case Category::Stencil:
+      ImGui::TextUnformatted("STENCIL"); ImGui::Separator();
+      ImGui::Checkbox("Two-pass stencil mask", &state.stencil.enabled);
+      description("First pass writes a projected sphere silhouette while color and depth writes are disabled.");
+      ImGui::SliderInt("Reference value", &state.stencil.reference, 0, 255);
+      radioPair("Equal", "Not equal", state.stencil.invert);
+      description("Second pass compares each stored 8-bit stencil value against the reference before shading.");
+      ImGui::TextDisabled("Pass 1: Always / Replace");
+      ImGui::TextDisabled("Pass 2: Equal or Not equal / Keep");
+      ImGui::TextDisabled("Attachment: DEPTH24_STENCIL8");
+      description("Select the Stencil mask scene to isolate this operation.");
+      break;
     case Category::Color: {
       ImGui::TextUnformatted("COLOR"); ImGui::Separator();
       ImGui::TextUnformatted("Output color depth");
@@ -1017,6 +1061,7 @@ const char* categoryName(Category category) {
     case Category::Texture: return "Texture";
     case Category::Lighting: return "Lighting";
     case Category::Depth: return "Depth";
+    case Category::Stencil: return "Stencil";
     case Category::Color: return "Color";
     case Category::Post: return "Post";
     case Category::Output: return "Output";
@@ -1089,9 +1134,9 @@ int main() {
     ImGui::TextUnformatted("GRAPHICS LAB");
     ImGui::SameLine(150);
     ImGui::SetNextItemWidth(180.0f);
-    const char* sceneLabels[] = {"Torus", "Texture minification", "Depth precision", "Transparency", "Lighting comparison"};
+    const char* sceneLabels[] = {"Torus", "Texture minification", "Depth precision", "Transparency", "Lighting comparison", "Stencil mask"};
     int sceneIndex = static_cast<int>(scene);
-    if (ImGui::Combo("##test-scene", &sceneIndex, sceneLabels, 5)) scene = static_cast<TestScene>(sceneIndex);
+    if (ImGui::Combo("##test-scene", &sceneIndex, sceneLabels, 6)) scene = static_cast<TestScene>(sceneIndex);
     ImGui::SameLine();
     if (ImGui::Button("Reset neutral")) current = RendererState{};
     ImGui::SameLine();
@@ -1112,9 +1157,9 @@ int main() {
     ImGui::BeginChild("Pipeline", ImVec2(145, contentHeight), true);
     ImGui::TextDisabled("PIPELINE");
     ImGui::Spacing();
-    constexpr std::array<Category, 10> categories = {Category::Geometry, Category::Camera, Category::Rasterization,
-      Category::Surface, Category::Texture, Category::Lighting, Category::Depth, Category::Color, Category::Post,
-      Category::Output};
+    constexpr std::array<Category, 11> categories = {Category::Geometry, Category::Camera, Category::Rasterization,
+      Category::Surface, Category::Texture, Category::Lighting, Category::Depth, Category::Stencil, Category::Color,
+      Category::Post, Category::Output};
     for (Category candidate : categories) {
       if (ImGui::Selectable(categoryName(candidate), category == candidate, 0, ImVec2(0, 28))) category = candidate;
     }
