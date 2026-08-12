@@ -29,12 +29,35 @@ constexpr ProfileCapabilities playStationCapabilities{
   .overdrawAnalysis = false,
 };
 
+constexpr ProfileCapabilities nintendo64Capabilities{
+  .projectionModes = true,
+  .multisampling = false,
+  .polygonOffset = false,
+  .surfaceDiagnostics = false,
+  .smoothAndFlatNormals = false,
+  .wireframeOverlay = false,
+  .normalMapping = false,
+  .generalBlendModes = false,
+  .textureFiltering = false,
+  .mipmapping = false,
+  .anisotropy = false,
+  .perFragmentLighting = false,
+  .shadowMapping = false,
+  .depthBuffer = true,
+  .stencilBuffer = false,
+  .configurableColorDepth = false,
+  .linearLight = false,
+  .fragmentFog = false,
+  .overdrawAnalysis = false,
+};
+
 } // namespace
 
 const char* hardwareProfileName(HardwareProfile profile) {
   switch (profile) {
     case HardwareProfile::Unrestricted: return "Unrestricted";
     case HardwareProfile::PlayStation: return "PlayStation (PS1)";
+    case HardwareProfile::Nintendo64: return "Nintendo 64";
   }
   return "Unknown";
 }
@@ -43,6 +66,7 @@ const char* hardwareProfileId(HardwareProfile profile) {
   switch (profile) {
     case HardwareProfile::Unrestricted: return "unrestricted";
     case HardwareProfile::PlayStation: return "sony_playstation_ps1";
+    case HardwareProfile::Nintendo64: return "nintendo_64";
   }
   return "unknown";
 }
@@ -53,16 +77,58 @@ const char* hardwareProfileDescription(HardwareProfile profile) {
       return "All implemented renderer operations are independently available.";
     case HardwareProfile::PlayStation:
       return "Restricts the lab to PS1-representable operations and normalizes unavailable state.";
+    case HardwareProfile::Nintendo64:
+      return "Restricts the lab to the standard RSP/RDP pipeline and exposes N64-specific pipeline state.";
   }
   return "";
 }
 
 const ProfileCapabilities& hardwareProfileCapabilities(HardwareProfile profile) {
-  return profile == HardwareProfile::PlayStation ? playStationCapabilities : unrestrictedCapabilities;
+  if (profile == HardwareProfile::PlayStation) return playStationCapabilities;
+  if (profile == HardwareProfile::Nintendo64) return nintendo64Capabilities;
+  return unrestrictedCapabilities;
 }
 
 void normalizeForHardwareProfile(HardwareProfile profile, RendererState& state) {
+  state.n64.enabled = profile == HardwareProfile::Nintendo64;
   if (profile == HardwareProfile::Unrestricted) return;
+
+  if (profile == HardwareProfile::Nintendo64) {
+    state.rasterization.samples = state.n64.coverageAntialiasing ? 4 : 1;
+    state.rasterization.polygonOffset = state.n64.surfaceMode == 2;
+    state.rasterization.polygonOffsetFactor = -1.0f;
+    state.rasterization.polygonOffsetUnits = -1.0f;
+    state.surface.visualization = 0;
+    state.surface.smoothShading = true;
+    state.surface.wireframe = false;
+    state.surface.normalMapping = false;
+    state.surface.normalStrength = 1.0f;
+    state.surface.transparency = state.n64.surfaceMode == 1 ? 2 : 0;
+    state.texture.nearestFiltering = state.n64.textureFilter == 0;
+    state.texture.mipmapping = state.n64.mipmapMode != 0;
+    state.texture.trilinear = state.n64.mipmapMode >= 2;
+    state.texture.anisotropy = 1.0f;
+    if (state.lighting.model > 1) state.lighting.model = 1;
+    state.lighting.shadows = false;
+    state.lighting.visualizeShadowMap = false;
+    state.depth.testing = true;
+    state.depth.writing = state.n64.surfaceMode != 1;
+    state.depth.function = state.n64.surfaceMode == 2 ? 1 : 0;
+    state.depth.visualization = 0;
+    state.depth.orderingTable = false;
+    state.stencil.enabled = false;
+    state.color.bitsPerChannel = state.n64.framebufferFormat == 0 ? 5 : 8;
+    state.color.dithering = state.n64.colorDither != 0;
+    state.color.linearLight = false;
+    state.post.fog = false;
+    state.post.overdraw = false;
+    if (state.output.width > 640 || state.output.height > 480) {
+      state.output.width = 320;
+      state.output.height = 240;
+    }
+    state.output.nearestUpscaling = true;
+    return;
+  }
 
   state.camera.orthographic = false;
   state.rasterization.affineMapping = true;

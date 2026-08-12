@@ -5,7 +5,7 @@ namespace gfxlab {
 struct RendererState;
 enum class Category;
 
-enum class HardwareProfile { Unrestricted, PlayStation };
+enum class HardwareProfile { Unrestricted, PlayStation, Nintendo64 };
 
 struct ProfileCapabilities {
   bool projectionModes = true;

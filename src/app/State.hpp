@@ -10,6 +10,7 @@
 namespace gfxlab {
 
 struct RendererState {
+  struct CombinerCycle { int a = 1; int b = 0; int c = 3; int d = 0; };
   struct Geometry { float vertexQuantization = 0.0f; bool clipping = false; float clipHeight = 0.0f; bool clipAbove = false; } geometry;
   struct Camera { float fieldOfView = 45.0f; float nearPlane = 0.05f; bool orthographic = false; float orthographicSize = 4.0f; } camera;
   struct Rasterization { bool affineMapping = false; int cullMode = 1; int samples = 1; bool polygonOffset = false; float polygonOffsetFactor = 1.0f; float polygonOffsetUnits = 1.0f; } rasterization;
@@ -21,6 +22,32 @@ struct RendererState {
   struct Color { int bitsPerChannel = 8; bool dithering = false; bool linearLight = true; } color;
   struct Post { bool fog = false; float fogStart = 3.0f; float fogEnd = 7.0f; bool overdraw = false; float overdrawRange = 8.0f; } post;
   struct Output { int width = 640; int height = 480; bool nearestUpscaling = true; } output;
+  struct N64 {
+    bool enabled = false;
+    int cycleType = 1;
+    CombinerCycle cycle0{};
+    CombinerCycle cycle1{7, 0, 2, 0};
+    glm::vec4 primitiveColor{1.0f};
+    glm::vec4 environmentColor{0.18f, 0.24f, 0.30f, 1.0f};
+    int textureFormat = 0;
+    int textureFilter = 1;
+    int mipmapMode = 0;
+    int tileWidth = 32;
+    int tileHeight = 32;
+    bool mirrorS = false;
+    bool mirrorT = false;
+    int shiftS = 0;
+    int shiftT = 0;
+    bool textureGeneration = false;
+    int surfaceMode = 0;
+    int alphaCompare = 0;
+    float alphaThreshold = 0.5f;
+    bool coverageAntialiasing = true;
+    int framebufferFormat = 0;
+    int colorDither = 1;
+    bool viReconstruction = true;
+    bool viDivot = true;
+  } n64;
 };
 
 enum class Category { Geometry, Camera, Rasterization, Surface, Texture, Lighting, Depth, Stencil, Color, Post, Output };
