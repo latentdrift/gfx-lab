@@ -124,7 +124,7 @@ int runApplication() {
     normalizeForHardwareProfile(HardwareProfile::PlayStation, current);
     if (current.camera.orthographic || !current.rasterization.affineMapping || current.rasterization.samples != 1 ||
         current.surface.normalMapping || !current.texture.nearestFiltering || current.texture.mipmapping ||
-        current.lighting.model > 1 || current.lighting.shadows || current.depth.testing || !current.depth.orderingTable ||
+        current.lighting.model > 1 || current.lighting.shadows || !current.depth.testing || !current.depth.writing ||
         current.stencil.enabled || current.color.bitsPerChannel != 5 || current.color.linearLight || current.post.fog ||
         current.output.width > 320 || current.output.height > 240 || !current.output.nearestUpscaling)
       fail("PlayStation hardware profile did not normalize renderer state");

@@ -88,11 +88,13 @@ void normalizeForHardwareProfile(HardwareProfile profile, RendererState& state) 
   state.lighting.shadows = false;
   state.lighting.visualizeShadowMap = false;
 
-  state.depth.testing = false;
-  state.depth.writing = false;
+  // The lab's ordering table is object-granularity and only meaningful for the
+  // transparency scene. Keep conventional opaque visibility stable elsewhere
+  // until a true per-polygon ordering path exists.
+  state.depth.testing = true;
+  state.depth.writing = true;
   state.depth.function = 0;
   state.depth.visualization = 0;
-  state.depth.orderingTable = true;
 
   state.stencil.enabled = false;
   state.color.bitsPerChannel = 5;

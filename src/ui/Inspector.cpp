@@ -270,7 +270,8 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
         ImGui::Combo("##depth-view", &state.depth.visualization, viewLabels, 3);
         description("Raw perspective depth is nonlinear; linearization reconstructs camera-space distance.");
       } else {
-        fixedProfileValue("Depth buffer", "Unavailable");
+        fixedProfileValue("Opaque visibility", "Depth-buffer emulation");
+        description("The PS1 had no depth buffer. The lab keeps opaque objects stable because its ordering table currently sorts objects, not individual mesh triangles.");
       }
       ImGui::Checkbox("Object ordering table", &state.depth.orderingTable);
       ImGui::BeginDisabled(!state.depth.orderingTable);
