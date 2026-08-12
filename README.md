@@ -21,6 +21,8 @@ Or build the package directly with `nix build` and run `./result/bin/graphics-la
 
 The current renderer state is **A**. Use **Copy A to B** to preserve it, change A, then choose **B** or **Split A/B** in the toolbar.
 
+Use **Copy config JSON** to place a human-readable `graphics-lab.renderer-state.v1` document on the clipboard. It includes the complete current renderer state, selected test scene, and orbit-camera view using explicit algorithm names suitable for sharing with other tools or coding agents.
+
 The toolbar scene selector provides purpose-built geometry for texture minification, depth precision, transparency ordering, and lighting interpolation experiments in addition to the default torus.
 
 The camera presentation has a fixed 4:3 aspect ratio. It expands to the maximum size that fits the viewport pane, then letterboxes the remaining width or height instead of stretching the rendered image.

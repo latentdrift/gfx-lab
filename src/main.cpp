@@ -14,6 +14,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -50,6 +52,123 @@ struct CameraOrbit {
 
   glm::mat4 view() const { return glm::lookAt(eye(), target, glm::vec3(0, 1, 0)); }
 };
+
+const char* testSceneName(TestScene scene) {
+  switch (scene) {
+    case TestScene::Torus: return "torus";
+    case TestScene::TexturePlane: return "texture_minification";
+    case TestScene::DepthPrecision: return "depth_precision";
+    case TestScene::Transparency: return "transparency";
+    case TestScene::Lighting: return "lighting_comparison";
+    case TestScene::StencilMask: return "stencil_mask";
+  }
+  return "unknown";
+}
+
+std::string configJson(const RendererState& state, const CameraOrbit& camera, TestScene scene) {
+  const char* cullModes[] = {"none", "back", "front"};
+  const char* visualizations[] = {"texture", "uv_coordinates", "normals", "vertex_colors", "tangents", "bitangents"};
+  const char* transparencyModes[] = {"opaque", "alpha_test", "straight_alpha", "premultiplied_alpha", "additive", "multiply"};
+  const char* lightingModels[] = {"unlit", "gouraud_lambert", "phong_shaded_lambert", "phong_reflection", "blinn_phong_reflection"};
+  const char* depthFunctions[] = {"less", "less_or_equal", "greater", "always"};
+  const char* depthViews[] = {"off", "raw_window_space", "linear_camera_space_0_to_10_units"};
+  const char* minificationFilter = state.texture.nearestFiltering ? "nearest" : "bilinear";
+  if (state.texture.mipmapping && state.texture.nearestFiltering) minificationFilter = "nearest_mipmap_nearest";
+  if (state.texture.mipmapping && !state.texture.nearestFiltering)
+    minificationFilter = state.texture.trilinear ? "linear_mipmap_linear" : "linear_mipmap_nearest";
+  auto boolean = [](bool value) { return value ? "true" : "false"; };
+  std::ostringstream json;
+  json << std::boolalpha << std::fixed << std::setprecision(5);
+  json << "{\n";
+  json << "  \"schema\": \"graphics-lab.renderer-state.v1\",\n";
+  json << "  \"test_scene\": \"" << testSceneName(scene) << "\",\n";
+  json << "  \"view\": {\n";
+  json << "    \"orbit_yaw_radians\": " << camera.yaw << ",\n";
+  json << "    \"orbit_pitch_radians\": " << camera.pitch << ",\n";
+  json << "    \"distance_units\": " << camera.distance << ",\n";
+  json << "    \"target\": [" << camera.target.x << ", " << camera.target.y << ", " << camera.target.z << "]\n";
+  json << "  },\n";
+  json << "  \"geometry\": {\n";
+  json << "    \"vertex_position_quantization_step_units\": " << state.geometry.vertexQuantization << ",\n";
+  json << "    \"world_space_clipping_plane\": {\"enabled\": " << boolean(state.geometry.clipping)
+       << ", \"axis\": \"y\", \"height_units\": " << state.geometry.clipHeight
+       << ", \"keep\": \"" << (state.geometry.clipAbove ? "below" : "above") << "\"}\n";
+  json << "  },\n";
+  json << "  \"camera\": {\n";
+  json << "    \"projection\": \"" << (state.camera.orthographic ? "orthographic" : "perspective") << "\",\n";
+  json << "    \"vertical_field_of_view_degrees\": " << state.camera.fieldOfView << ",\n";
+  json << "    \"orthographic_view_height_units\": " << state.camera.orthographicSize << ",\n";
+  json << "    \"near_plane_units\": " << state.camera.nearPlane << ",\n";
+  json << "    \"far_plane_units\": 100.00000\n";
+  json << "  },\n";
+  json << "  \"rasterization\": {\n";
+  json << "    \"texture_coordinate_interpolation\": \"" << (state.rasterization.affineMapping ? "affine" : "perspective_correct") << "\",\n";
+  json << "    \"face_culling\": \"" << cullModes[std::clamp(state.rasterization.cullMode, 0, 2)] << "\",\n";
+  json << "    \"multisample_count\": " << state.rasterization.samples << ",\n";
+  json << "    \"polygon_offset\": {\"enabled\": " << boolean(state.rasterization.polygonOffset)
+       << ", \"factor\": " << state.rasterization.polygonOffsetFactor << ", \"units\": " << state.rasterization.polygonOffsetUnits << "}\n";
+  json << "  },\n";
+  json << "  \"surface\": {\n";
+  json << "    \"visualization\": \"" << visualizations[std::clamp(state.surface.visualization, 0, 5)] << "\",\n";
+  json << "    \"normal_interpolation\": \"" << (state.surface.smoothShading ? "smooth" : "flat") << "\",\n";
+  json << "    \"wireframe_overlay\": " << boolean(state.surface.wireframe) << ",\n";
+  json << "    \"normal_mapping\": {\"enabled\": " << boolean(state.surface.normalMapping)
+       << ", \"space\": \"tangent\", \"strength\": " << state.surface.normalStrength << "},\n";
+  json << "    \"transparency\": {\"operation\": \"" << transparencyModes[std::clamp(state.surface.transparency, 0, 5)]
+       << "\", \"alpha_cutoff\": " << state.surface.alphaCutoff
+       << ", \"reverse_object_draw_order\": " << boolean(state.surface.reverseDrawOrder) << "}\n";
+  json << "  },\n";
+  json << "  \"texture\": {\n";
+  json << "    \"magnification_filter\": \"" << (state.texture.nearestFiltering ? "nearest" : "bilinear") << "\",\n";
+  json << "    \"minification_filter\": \"" << minificationFilter << "\",\n";
+  json << "    \"address_mode\": \"" << (state.texture.repeat ? "repeat" : "clamp_to_edge") << "\",\n";
+  json << "    \"mipmapping\": " << boolean(state.texture.mipmapping) << ",\n";
+  json << "    \"mip_level_interpolation\": \"" << (state.texture.trilinear ? "linear" : "nearest") << "\",\n";
+  json << "    \"anisotropy\": " << state.texture.anisotropy << "\n";
+  json << "  },\n";
+  json << "  \"lighting\": {\n";
+  json << "    \"model\": \"" << lightingModels[std::clamp(state.lighting.model, 0, 4)] << "\",\n";
+  json << "    \"ambient_term\": " << state.lighting.ambient << ",\n";
+  json << "    \"direction_degrees\": {\"azimuth\": " << state.lighting.azimuth << ", \"elevation\": " << state.lighting.elevation << "},\n";
+  json << "    \"specular_exponent\": " << state.lighting.shininess << ",\n";
+  json << "    \"shadow_map\": {\"enabled\": " << boolean(state.lighting.shadows)
+       << ", \"resolution\": " << state.lighting.shadowResolution << ", \"depth_bias\": " << state.lighting.shadowBias
+       << ", \"filter\": \"" << (state.lighting.shadowPcf ? "pcf_3x3" : "nearest")
+       << "\", \"visualize_light_depth\": " << boolean(state.lighting.visualizeShadowMap) << "}\n";
+  json << "  },\n";
+  json << "  \"depth\": {\n";
+  json << "    \"test_enabled\": " << boolean(state.depth.testing) << ",\n";
+  json << "    \"write_enabled\": " << boolean(state.depth.writing) << ",\n";
+  json << "    \"comparison\": \"" << depthFunctions[std::clamp(state.depth.function, 0, 3)] << "\",\n";
+  json << "    \"buffer_precision_bits\": " << state.depth.precision << ",\n";
+  json << "    \"visualization\": \"" << depthViews[std::clamp(state.depth.visualization, 0, 2)] << "\"\n";
+  json << "  },\n";
+  json << "  \"stencil\": {\n";
+  json << "    \"two_pass_mask_enabled\": " << boolean(state.stencil.enabled) << ",\n";
+  json << "    \"reference\": " << state.stencil.reference << ",\n";
+  json << "    \"comparison\": \"" << (state.stencil.invert ? "not_equal" : "equal") << "\",\n";
+  json << "    \"write_pass\": {\"comparison\": \"always\", \"pass_operation\": \"replace\"}\n";
+  json << "  },\n";
+  json << "  \"color\": {\n";
+  json << "    \"bits_per_channel\": " << state.color.bitsPerChannel << ",\n";
+  json << "    \"ordered_dithering\": " << boolean(state.color.dithering) << ",\n";
+  json << "    \"dithering_matrix\": \"bayer_4x4\",\n";
+  json << "    \"lighting_color_space\": \"" << (state.color.linearLight ? "linear_light" : "encoded_rgb") << "\"\n";
+  json << "  },\n";
+  json << "  \"post\": {\n";
+  json << "    \"linear_distance_fog\": {\"enabled\": " << boolean(state.post.fog)
+       << ", \"start_units\": " << state.post.fogStart << ", \"end_units\": " << state.post.fogEnd << "},\n";
+  json << "    \"overdraw_visualization\": {\"enabled\": " << boolean(state.post.overdraw)
+       << ", \"heat_map_maximum_fragments\": " << state.post.overdrawRange << "}\n";
+  json << "  },\n";
+  json << "  \"output\": {\n";
+  json << "    \"internal_resolution\": [" << state.output.width << ", " << state.output.height << "],\n";
+  json << "    \"viewport_upscaling_filter\": \"" << (state.output.nearestUpscaling ? "nearest" : "bilinear") << "\",\n";
+  json << "    \"presentation_aspect_ratio\": \"4:3\"\n";
+  json << "  }\n";
+  json << "}\n";
+  return json.str();
+}
 
 struct Vertex {
   glm::vec3 position;
@@ -1348,6 +1467,7 @@ int main() {
   TestScene scene = TestScene::Torus;
   CompareMode compare = CompareMode::A;
   bool viewportHovered = false;
+  double configCopiedAt = -10.0;
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
@@ -1387,6 +1507,16 @@ int main() {
     if (ImGui::Button("Reset neutral")) current = RendererState{};
     ImGui::SameLine();
     if (ImGui::Button("Copy A to B")) reference = current;
+    ImGui::SameLine();
+    if (ImGui::Button("Copy config JSON")) {
+      const std::string exportedConfig = configJson(current, camera, scene);
+      ImGui::SetClipboardText(exportedConfig.c_str());
+      configCopiedAt = glfwGetTime();
+    }
+    if (glfwGetTime() - configCopiedAt < 2.0) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("Copied");
+    }
     ImGui::SameLine();
     ImGui::TextDisabled("Compare:");
     ImGui::SameLine();
