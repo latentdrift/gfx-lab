@@ -25,6 +25,15 @@ Use **Copy config JSON** to place a human-readable `graphics-lab.renderer-state.
 
 The toolbar scene selector provides purpose-built geometry for texture minification, depth precision, transparency ordering, and lighting interpolation experiments in addition to the default torus.
 
+Changing the selected scene preserves the current renderer state and camera. **Reset scene setup** explicitly applies that scene's recommended starting state and camera framing:
+
+- Torus: conventional neutral rendering
+- Texture minification: trilinear mipmapping and 8x anisotropy
+- Depth precision: 16-bit depth with a near plane at 0.01 units
+- Transparency: straight-alpha blending, depth testing, and disabled depth writes
+- Lighting comparison: linear-light Blinn-Phong, mipmapping, and filtered directional shadows
+- Stencil mask: unlit two-pass equal-reference masking
+
 The camera presentation has a fixed 4:3 aspect ratio. It expands to the maximum size that fits the viewport pane, then letterboxes the remaining width or height instead of stretching the rendered image.
 
 ## Pipeline controls

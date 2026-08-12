@@ -65,6 +65,71 @@ const char* testSceneName(TestScene scene) {
   return "unknown";
 }
 
+void applyRecommendedSetup(TestScene scene, RendererState& state, CameraOrbit& camera) {
+  state = RendererState{};
+  camera = CameraOrbit{};
+
+  switch (scene) {
+    case TestScene::Torus:
+      // Conventional neutral rendering: this is the general-purpose baseline.
+      break;
+    case TestScene::TexturePlane:
+      state.texture.mipmapping = true;
+      state.texture.trilinear = true;
+      state.texture.anisotropy = 8.0f;
+      camera.yaw = 0.18f;
+      camera.pitch = 0.30f;
+      camera.distance = 8.5f;
+      camera.target = glm::vec3(0.0f, -1.25f, -3.5f);
+      break;
+    case TestScene::DepthPrecision:
+      state.camera.nearPlane = 0.01f;
+      state.depth.precision = 16;
+      state.depth.testing = true;
+      state.depth.writing = true;
+      state.depth.function = 0;
+      state.rasterization.polygonOffset = false;
+      camera.yaw = 0.62f;
+      camera.pitch = 0.58f;
+      camera.distance = 4.6f;
+      break;
+    case TestScene::Transparency:
+      state.rasterization.cullMode = 0;
+      state.surface.transparency = 2;
+      state.surface.reverseDrawOrder = false;
+      state.depth.testing = true;
+      state.depth.writing = false;
+      state.lighting.model = 0;
+      camera.yaw = 0.25f;
+      camera.pitch = 0.18f;
+      camera.distance = 5.0f;
+      break;
+    case TestScene::Lighting:
+      state.texture.mipmapping = true;
+      state.texture.trilinear = true;
+      state.lighting.model = 4;
+      state.lighting.shininess = 48.0f;
+      state.lighting.shadows = true;
+      state.lighting.shadowPcf = true;
+      state.color.linearLight = true;
+      camera.yaw = 0.66f;
+      camera.pitch = 0.34f;
+      camera.distance = 7.2f;
+      camera.target = glm::vec3(0.0f, 0.0f, -0.4f);
+      break;
+    case TestScene::StencilMask:
+      state.stencil.enabled = true;
+      state.stencil.invert = false;
+      state.stencil.reference = 1;
+      state.rasterization.cullMode = 0;
+      state.lighting.model = 0;
+      camera.yaw = 0.0f;
+      camera.pitch = 0.0f;
+      camera.distance = 5.0f;
+      break;
+  }
+}
+
 std::string configJson(const RendererState& state, const CameraOrbit& camera, TestScene scene) {
   const char* cullModes[] = {"none", "back", "front"};
   const char* visualizations[] = {"texture", "uv_coordinates", "normals", "vertex_colors", "tangents", "bitangents"};
@@ -1505,6 +1570,10 @@ int main() {
     if (ImGui::Combo("##test-scene", &sceneIndex, sceneLabels, 6)) scene = static_cast<TestScene>(sceneIndex);
     ImGui::SameLine();
     if (ImGui::Button("Reset neutral")) current = RendererState{};
+    ImGui::SameLine();
+    if (ImGui::Button("Reset scene setup")) applyRecommendedSetup(scene, current, camera);
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("Apply the recommended renderer state and camera framing for the selected scene.");
     ImGui::SameLine();
     if (ImGui::Button("Copy A to B")) reference = current;
     ImGui::SameLine();
