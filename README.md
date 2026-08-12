@@ -45,7 +45,7 @@ The current renderer state is **A**. Use **Copy A to B** to preserve it, change 
 
 Use **Copy config JSON** to place a human-readable `graphics-lab.renderer-state.v1` document on the clipboard. It includes the complete current renderer state, selected test scene, and orbit-camera view using explicit algorithm names suitable for sharing with other tools or coding agents.
 
-Use **Handbook** to open the built-in technical reference. Its chapters follow the renderer pipeline and cover definitions, pipeline location, visible results, interactions, engine vocabulary, technical diagrams, and explicit live A/B examples. Reading never changes renderer state; example buttons apply configurations deliberately.
+Use **Handbook** to open the built-in technical reference. Its knowledge map groups the pipeline, shading, visibility and output, engine systems, animation, and ray tracing. Dedicated shader and material branches distinguish programs, stages, data interfaces, resources, BRDFs, and render state. Articles include concise definitions, pipeline location, visible results, interactions, engine vocabulary, technical diagrams, and links into related concepts. Reading never changes renderer state; example buttons apply configurations deliberately.
 
 The toolbar scene selector provides purpose-built geometry for texture minification, depth precision, transparency ordering, and lighting interpolation experiments in addition to the default torus.
 

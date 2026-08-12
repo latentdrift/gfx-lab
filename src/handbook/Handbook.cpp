@@ -6,6 +6,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <string_view>
@@ -14,7 +15,16 @@
 namespace handbook {
 namespace {
 
-enum class Diagram { Pipeline, Attributes, Projection, Triangle, Mipmaps, Tbn, Lighting, Depth, Blend, Stencil, Color, Shadow, Output, Overdraw };
+enum class Diagram {
+  Pipeline, Attributes, Projection, Triangle, Mipmaps, Tbn, Lighting, Depth, Blend,
+  Stencil, Color, Shadow, Output, Overdraw, ShaderProgram, ShaderData, RenderGraph,
+  Performance, Animation, RayTracing
+};
+
+struct Chapter {
+  const char* domain;
+  const char* name;
+};
 
 struct Article {
   const char* chapter;
@@ -31,8 +41,14 @@ struct Article {
 };
 
 constexpr std::array chapters = {
-  "Foundations", "Geometry", "Camera", "Rasterization", "Surface", "Texture", "Lighting",
-  "Visibility", "Color", "Output", "Engine architecture"
+  Chapter{"PIPELINE", "Foundations"}, Chapter{"PIPELINE", "Geometry"},
+  Chapter{"PIPELINE", "Camera"}, Chapter{"PIPELINE", "Rasterization"},
+  Chapter{"SHADING", "Shaders"}, Chapter{"SHADING", "Surface"},
+  Chapter{"SHADING", "Materials"}, Chapter{"SHADING", "Texture"},
+  Chapter{"SHADING", "Lighting"}, Chapter{"VISIBILITY & OUTPUT", "Visibility"},
+  Chapter{"VISIBILITY & OUTPUT", "Color"}, Chapter{"VISIBILITY & OUTPUT", "Output"},
+  Chapter{"ENGINE SYSTEMS", "Engine architecture"}, Chapter{"ENGINE SYSTEMS", "Performance"},
+  Chapter{"BEYOND THIS LAB", "Animation"}, Chapter{"BEYOND THIS LAB", "Ray tracing"}
 };
 
 constexpr std::array articles = {
@@ -46,6 +62,36 @@ constexpr std::array articles = {
     "Shader stages and output-merger state", "Two identical shaders can produce different images when their depth, blend, cull, or sampler state differs.",
     "Material systems usually bundle shader programs with required render state.",
     "Specify shader logic and render state separately; do not call the entire pipeline a shader.", Diagram::Pipeline},
+  Article{"Shaders", "What a shader program is",
+    "A shader is a small GPU program for one programmable pipeline stage. A linked graphics program combines compatible stages; it does not include the mesh, textures, framebuffer, or most fixed-function state.",
+    "Programmable GPU stages", "Changing shader code can move vertices, calculate surface color, write auxiliary values, or discard fragments.",
+    "The program's declared inputs must match vertex layouts, resource bindings, stage interfaces, and render-target formats.",
+    "Name the stage and responsibility: vertex transformation, fragment material evaluation, compute work, or another specific stage.", Diagram::ShaderProgram},
+  Article{"Shaders", "Vertex shaders",
+    "A vertex shader runs once for each submitted vertex. It must produce a clip-space position and commonly transforms or forwards attributes needed by later stages.",
+    "After vertex fetch, before primitive assembly", "It can deform geometry or change projected positions, but cannot directly create a final pixel color.",
+    "Shared triangle vertices run independently; neighboring vertices only become connected when primitives are assembled afterward.",
+    "Discuss model, world, view, clip, and normalized-device coordinate spaces explicitly.", Diagram::ShaderProgram},
+  Article{"Shaders", "Fragment shaders",
+    "A fragment shader runs for rasterizer-generated samples covered by primitives. It evaluates material and lighting inputs, then writes color or other render-target values; a fragment is only a candidate pixel until tests and blending finish.",
+    "After rasterization, before per-fragment output operations", "It determines surface appearance and can discard coverage, but depth, stencil, and blending still govern the final framebuffer update.",
+    "Invocation count depends on coverage, overdraw, sample count, early tests, and helper invocations used for derivatives.",
+    "Use fragment shader in OpenGL/Vulkan terminology and pixel shader in Direct3D terminology.", Diagram::ShaderProgram},
+  Article{"Shaders", "Attributes, uniforms, varyings, and resources",
+    "Attributes vary per vertex. Uniform or constant data stays fixed across a draw. Varyings carry vertex-stage outputs into interpolated fragment-stage inputs. Textures, samplers, storage buffers, and images are bound resources.",
+    "Stage interfaces and resource binding", "These data paths control what a shader can know; they are not visual effects by themselves.",
+    "Interpolation qualifiers apply to varyings, sampler state is distinct from a texture, and resource layouts must match the program interface.",
+    "Describe vertex attributes, per-draw constants, interpolants, descriptors/bind groups, textures, samplers, and buffers separately.", Diagram::ShaderData},
+  Article{"Shaders", "Compilation, linking, and shader variants",
+    "Shader source compiles into stage code, compatible stages link into a program or pipeline, and reflection can expose its inputs. Variants are separately compiled combinations for materially different features.",
+    "Asset build and runtime pipeline creation", "Compilation does not normally change a frame, but variant selection determines the executed code and supported features.",
+    "Unbounded feature switches cause variant explosion; dynamic branches avoid some variants but can increase GPU work or divergence.",
+    "Ask whether a feature is a compile-time define, specialization constant, uniform branch, separate material, or separate pass.", Diagram::ShaderData},
+  Article{"Shaders", "Compute and optional graphics stages",
+    "Compute shaders launch general workgroups outside the draw pipeline. Tessellation stages subdivide patches, geometry shaders process whole primitives, and mesh/task shaders reorganize geometry work on supported hardware.",
+    "Separate compute dispatches or optional pre-raster stages", "They enable simulation, culling, image processing, generated geometry, and specialized subdivision.",
+    "They require explicit synchronization and are not automatically faster than vertex/fragment processing.",
+    "Name the workload first; only prescribe a stage when its execution and data model fit that workload.", Diagram::ShaderProgram},
   Article{"Geometry", "Vertex attributes",
     "A vertex can carry position, normal, texture coordinates, color, tangent, skin weights, and other attributes. Rasterization interpolates selected attributes across each triangle.",
     "Asset data and vertex input", "Different attributes reveal different descriptions of the same surface.",
@@ -103,6 +149,21 @@ constexpr std::array articles = {
     "Straight and premultiplied alpha require different source blend factors.",
     "Specify alpha representation, blend equation/factors, sort order, depth test, and depth writes.", Diagram::Blend,
     Example::Transparency, "Opaque surfaces with depth writes", "Straight-alpha blending, back-to-front order, depth writes disabled"},
+  Article{"Materials", "Material versus shader",
+    "A shader defines executable GPU logic. A material selects that logic and supplies surface parameters, textures, keywords, and required render state for a particular kind of surface.",
+    "Engine asset layer over shader programs and GPU state", "Many materials can look different while executing the same shader program.",
+    "A material may need multiple pass-specific programs for depth, shadows, and camera rendering while retaining one conceptual surface definition.",
+    "Request a material model and its parameters; identify custom shader code only where the model requires new computation.", Diagram::ShaderData},
+  Article{"Materials", "BRDFs and physically based materials",
+    "A BRDF describes how opaque surface reflection varies with incoming and outgoing direction. Common PBR workflows parameterize diffuse/base color, metalness, roughness, and a microfacet specular model.",
+    "Material evaluation inside lighting", "Roughness broadens highlights; metalness changes the relationship between colored specular reflection and diffuse response.",
+    "Physically based does not mean photorealistic: lighting units, tone mapping, authored values, and artistic constraints still shape the image.",
+    "Specify the BRDF and workflow, such as metallic-roughness Cook-Torrance with GGX distribution.", Diagram::Lighting},
+  Article{"Materials", "Material inputs and texture semantics",
+    "A texture's meaning determines decoding and use: base color is normally color data, while normals, roughness, metalness, occlusion, and masks are numeric data.",
+    "Asset import, material binding, and shader evaluation", "Incorrect semantics can distort normals, roughness, masks, or brightness even when the source image looks plausible.",
+    "Channel packing, UV set, scale/bias, color space, normal convention, and sampler state are independent metadata.",
+    "List each material input with semantic, channel, UV set, encoding, range, and fallback value.", Diagram::ShaderData},
   Article{"Texture", "Filtering and reconstruction",
     "Nearest filtering selects one texel. Bilinear filtering combines four neighboring texels. These describe reconstruction within one mip level.",
     "Texture sampler state", "Nearest sampling preserves hard texel boundaries; bilinear sampling softens them.",
@@ -172,6 +233,51 @@ constexpr std::array articles = {
     "Render architecture", "Pass ordering determines which intermediate data exists and when it can be consumed.",
     "Deferred, forward+, tiled, and clustered renderers organize lighting data differently.",
     "Ask which passes exist, their inputs and outputs, attachment formats, and ordering constraints.", Diagram::Pipeline},
+  Article{"Engine architecture", "Forward, deferred, and forward+ rendering",
+    "Forward rendering evaluates lighting while drawing surfaces. Deferred rendering first stores surface attributes in a G-buffer, then lights screen-space samples. Forward+ keeps forward shading but builds per-tile or per-cluster light lists.",
+    "Whole renderer architecture", "The choice affects transparency, material flexibility, anti-aliasing, memory traffic, and the practical number of lights.",
+    "These architectures can coexist by pass; transparent objects commonly use forward shading even in a deferred renderer.",
+    "Ask which path handles opaque, transparent, shadow, and special materials, and why.", Diagram::RenderGraph},
+  Article{"Engine architecture", "Render graphs and pass dependencies",
+    "A render graph represents passes, resources, and read/write dependencies. It can determine ordering, transitions, lifetimes, and when temporary images may safely share memory.",
+    "CPU-side frame scheduling and GPU synchronization", "The graph itself is architectural; its passes collectively determine the visible frame.",
+    "A render graph does not define the shading model. Incorrect dependencies cause hazards, stale data, or unnecessary synchronization.",
+    "Describe each pass by inputs, outputs, formats, clear/load/store behavior, and dependency edges.", Diagram::RenderGraph},
+  Article{"Performance", "CPU submission and draw calls",
+    "Before the GPU can render, the CPU builds command buffers, binds pipelines and resources, and submits draws or dispatches. Too many small state changes and draw calls can make the frame CPU-bound.",
+    "Application and rendering API submission", "CPU bottlenecks reduce frame rate even when shader or pixel complexity is low.",
+    "Draw count alone is not a universal budget; driver model, command recording, state sorting, and platform matter.",
+    "Profile CPU frame time, render-thread time, draw/dispatch count, and pipeline changes.", Diagram::Performance},
+  Article{"Performance", "GPU bottlenecks: geometry, fill rate, and bandwidth",
+    "GPU time may be limited by vertex/primitive work, fragment arithmetic, raster fill rate, texture access, or memory bandwidth. Resolution mostly magnifies pixel and bandwidth costs, not CPU submission cost.",
+    "GPU execution and memory system", "Different bottlenecks can produce the same low frame rate while requiring opposite fixes.",
+    "Use timing queries and controlled experiments: change resolution, mesh density, shader complexity, or texture traffic one variable at a time.",
+    "Ask whether a pass is vertex-bound, fragment-bound, bandwidth-bound, latency-bound, or occupancy-limited—and require measurement.", Diagram::Performance},
+  Article{"Performance", "Batching, instancing, and culling",
+    "Batching combines compatible work, instancing draws repeated geometry with per-instance data, and culling rejects work known not to contribute to the view.",
+    "Scene traversal, command construction, and sometimes GPU compute", "These primarily improve performance; aggressive batching can constrain material or visibility choices.",
+    "Frustum, occlusion, backface, and small-object culling reject different kinds of work. Instancing does not remove pixel overdraw.",
+    "Specify batch compatibility, instance data, culling granularity, and whether decisions happen on CPU or GPU.", Diagram::Performance},
+  Article{"Animation", "Skeletal animation and skinning",
+    "A skeleton is a hierarchy of animated transforms. Skinning blends each vertex among one or more bone transforms using authored weights, usually before world and camera transforms.",
+    "Animation evaluation followed by vertex deformation", "A shared mesh bends with an articulated pose while retaining its topology.",
+    "Bind pose, inverse-bind matrices, weight normalization, blend count, and matrix versus dual-quaternion skinning affect results.",
+    "Separate clip sampling, pose blending, inverse kinematics, skeleton transforms, and mesh skinning.", Diagram::Animation},
+  Article{"Animation", "Morph targets and procedural deformation",
+    "Morph targets store alternate vertex attributes and blend their deltas by weights. Procedural deformation computes positions or attributes from rules, simulation, or shader inputs instead of a bone hierarchy.",
+    "CPU animation systems or vertex/compute processing", "They support facial shapes, corrective forms, waves, cloth, and other non-rigid changes.",
+    "Morph targets require matching topology; deformed normals and tangents must be updated or transformed consistently.",
+    "State whether deformation is skeletal, morph-based, simulated, or procedural, and where it is evaluated.", Diagram::Animation},
+  Article{"Ray tracing", "Rasterization versus ray tracing",
+    "Rasterization projects primitives onto pixels. Ray tracing starts from rays and finds scene intersections, making visibility queries such as reflections and shadows more direct but computationally different.",
+    "Alternative or hybrid visibility architecture", "Ray tracing can produce accurate indirect visibility, reflections, refractions, and soft shadows, usually with sampling noise and denoising concerns.",
+    "Modern renderers frequently mix rasterized primary visibility with selected ray-traced effects.",
+    "Specify which effects use rays, ray count, bounce count, sampling strategy, denoiser, and fallback path.", Diagram::RayTracing},
+  Article{"Ray tracing", "Acceleration structures and path tracing",
+    "A bounding-volume hierarchy accelerates ray-scene intersection by rejecting large regions. Path tracing estimates the rendering equation by following randomized light transport paths across multiple bounces.",
+    "Scene acceleration, intersection, shading, accumulation, and denoising", "More samples converge toward a stable image; too few produce variance seen as noise.",
+    "Static and dynamic geometry have different build/update costs, while material branching and incoherent rays affect traversal efficiency.",
+    "Discuss BLAS/TLAS structure, build/update policy, samples per pixel, maximum depth, importance sampling, accumulation, and denoising.", Diagram::RayTracing},
 };
 
 bool containsInsensitive(std::string_view text, std::string_view query) {
@@ -300,12 +406,72 @@ void drawDiagram(Diagram diagram) {
     draw->AddText(ImVec2(center.x - 180, center.y - 95), text, "light direction L");
     draw->AddText(ImVec2(center.x + 10, center.y - 100), text, "surface normal N");
     draw->AddText(ImVec2(center.x - 72, center.y + 68), text, "diffuse = max(dot(N,L), 0)");
+  } else if (diagram == Diagram::ShaderProgram) {
+    box(22, 58, 105, 54, "vertices"); box(165, 58, 125, 54, "vertex shader");
+    box(328, 58, 105, 54, "rasterizer"); box(471, 58, 135, 54, "fragment shader");
+    for (float x : {132.0f, 295.0f, 438.0f})
+      arrow(draw, ImVec2(origin.x + x, origin.y + 85), ImVec2(origin.x + x + 28, origin.y + 85), line);
+    draw->AddText(ImVec2(origin.x + 165, origin.y + 125), text, "programmable");
+    draw->AddText(ImVec2(origin.x + 328, origin.y + 125), text, "fixed operation");
+  } else if (diagram == Diagram::ShaderData) {
+    box(22, 28, 120, 42, "attributes"); box(22, 96, 120, 42, "uniforms");
+    box(size.x * 0.5f - 72, 56, 144, 58, "shader stage");
+    box(size.x - 150, 28, 125, 42, "varyings"); box(size.x - 150, 96, 125, 42, "resources");
+    arrow(draw, ImVec2(origin.x + 147, origin.y + 49), ImVec2(origin.x + size.x * 0.5f - 78, origin.y + 73), line);
+    arrow(draw, ImVec2(origin.x + 147, origin.y + 117), ImVec2(origin.x + size.x * 0.5f - 78, origin.y + 97), line);
+    arrow(draw, ImVec2(origin.x + size.x * 0.5f + 77, origin.y + 73), ImVec2(origin.x + size.x - 155, origin.y + 49), line);
+    arrow(draw, ImVec2(origin.x + size.x - 155, origin.y + 117), ImVec2(origin.x + size.x * 0.5f + 77, origin.y + 97), line);
+  } else if (diagram == Diagram::RenderGraph) {
+    box(24, 58, 115, 50, "shadow pass"); box(190, 28, 125, 50, "depth / G-buffer");
+    box(190, 112, 125, 40, "light lists"); box(370, 58, 120, 50, "lighting pass");
+    box(540, 58, 105, 50, "post / output");
+    arrow(draw, ImVec2(origin.x + 144, origin.y + 83), ImVec2(origin.x + 365, origin.y + 83), line);
+    arrow(draw, ImVec2(origin.x + 320, origin.y + 53), ImVec2(origin.x + 365, origin.y + 74), line);
+    arrow(draw, ImVec2(origin.x + 320, origin.y + 132), ImVec2(origin.x + 365, origin.y + 98), line);
+    arrow(draw, ImVec2(origin.x + 495, origin.y + 83), ImVec2(origin.x + 535, origin.y + 83), line);
+  } else if (diagram == Diagram::Performance) {
+    box(24, 30, 125, 44, "CPU submission"); box(24, 106, 125, 44, "scene culling");
+    box(205, 65, 120, 50, "GPU commands"); box(380, 25, 120, 44, "geometry work");
+    box(380, 111, 120, 44, "fragment work"); box(555, 65, 105, 50, "memory");
+    arrow(draw, ImVec2(origin.x + 154, origin.y + 52), ImVec2(origin.x + 200, origin.y + 82), line);
+    arrow(draw, ImVec2(origin.x + 154, origin.y + 128), ImVec2(origin.x + 200, origin.y + 98), line);
+    arrow(draw, ImVec2(origin.x + 330, origin.y + 90), ImVec2(origin.x + 375, origin.y + 47), line);
+    arrow(draw, ImVec2(origin.x + 330, origin.y + 90), ImVec2(origin.x + 375, origin.y + 133), line);
+  } else if (diagram == Diagram::Animation) {
+    box(22, 65, 100, 48, "clip time"); box(165, 65, 105, 48, "local pose");
+    box(313, 65, 115, 48, "world bones"); box(471, 65, 105, 48, "skinning");
+    for (float x : {127.0f, 275.0f, 433.0f})
+      arrow(draw, ImVec2(origin.x + x, origin.y + 89), ImVec2(origin.x + x + 33, origin.y + 89), line);
+    draw->AddText(ImVec2(origin.x + 315, origin.y + 126), text, "hierarchy");
+  } else if (diagram == Diagram::RayTracing) {
+    box(22, 62, 95, 48, "camera ray"); box(162, 62, 105, 48, "BVH query");
+    box(312, 62, 105, 48, "intersection"); box(462, 62, 105, 48, "shade / bounce");
+    arrow(draw, ImVec2(origin.x + 122, origin.y + 86), ImVec2(origin.x + 157, origin.y + 86), line);
+    arrow(draw, ImVec2(origin.x + 272, origin.y + 86), ImVec2(origin.x + 307, origin.y + 86), line);
+    arrow(draw, ImVec2(origin.x + 422, origin.y + 86), ImVec2(origin.x + 457, origin.y + 86), line);
+    draw->AddText(ImVec2(origin.x + 300, origin.y + 128), text, "repeat and accumulate samples");
   } else {
     const ImVec2 a(origin.x + size.x * 0.25f, origin.y + 140), b(origin.x + size.x * 0.50f, origin.y + 35), c(origin.x + size.x * 0.75f, origin.y + 140);
     draw->AddTriangleFilled(a, b, c, fill); draw->AddTriangle(a, b, c, line, 2.0f);
     draw->AddCircleFilled(a, 5, text); draw->AddCircleFilled(b, 5, text); draw->AddCircleFilled(c, 5, text);
     draw->AddText(ImVec2(a.x - 20, a.y + 8), text, "vertex 0"); draw->AddText(ImVec2(b.x - 20, b.y - 20), text, "vertex 1"); draw->AddText(ImVec2(c.x - 20, c.y + 8), text, "vertex 2");
   }
+}
+
+std::array<const char*, 4> branchesFor(std::string_view title) {
+  if (title == "The realtime rasterization pipeline") return {"What a shader program is", "Vertex attributes", "Render graphs and pass dependencies", nullptr};
+  if (title == "Shaders and fixed-function state") return {"What a shader program is", "Material versus shader", "Depth testing and depth writes", nullptr};
+  if (title == "What a shader program is") return {"Vertex shaders", "Fragment shaders", "Attributes, uniforms, varyings, and resources", "Compilation, linking, and shader variants"};
+  if (title == "Vertex shaders") return {"Vertex attributes", "Skeletal animation and skinning", "Vertex position quantization", nullptr};
+  if (title == "Fragment shaders") return {"Material versus shader", "Gouraud, Phong shading, and reflection models", "Transparency and compositing", nullptr};
+  if (title == "Attributes, uniforms, varyings, and resources") return {"Material inputs and texture semantics", "Perspective-correct interpolation", "Compute and optional graphics stages", nullptr};
+  if (title == "Material versus shader") return {"BRDFs and physically based materials", "Material inputs and texture semantics", "Forward, deferred, and forward+ rendering", nullptr};
+  if (title == "Forward rendering and render passes") return {"Forward, deferred, and forward+ rendering", "Render graphs and pass dependencies", "Shadow mapping", nullptr};
+  if (title == "Forward, deferred, and forward+ rendering") return {"Render graphs and pass dependencies", "GPU bottlenecks: geometry, fill rate, and bandwidth", "Rasterization versus ray tracing", nullptr};
+  if (title == "Asset, scene, material, and renderer responsibilities") return {"Material versus shader", "Render graphs and pass dependencies", "CPU submission and draw calls", nullptr};
+  if (title == "Skeletal animation and skinning") return {"Vertex shaders", "Morph targets and procedural deformation", nullptr, nullptr};
+  if (title == "Rasterization versus ray tracing") return {"Acceleration structures and path tracing", "The realtime rasterization pipeline", nullptr, nullptr};
+  return {nullptr, nullptr, nullptr, nullptr};
 }
 
 } // namespace
@@ -335,11 +501,14 @@ Action Handbook::draw() {
   ImGui::Separator();
 
   const float height = ImGui::GetContentRegionAvail().y;
-  ImGui::BeginChild("handbook-chapters", ImVec2(175, height), true);
-  ImGui::TextDisabled("CHAPTERS");
-  ImGui::Spacing();
+  ImGui::BeginChild("handbook-chapters", ImVec2(190, height), true);
+  ImGui::TextDisabled("KNOWLEDGE MAP");
   for (int i = 0; i < static_cast<int>(chapters.size()); ++i) {
-    if (ImGui::Selectable(chapters[i], chapter_ == i, 0, ImVec2(0, 27))) {
+    if (i == 0 || std::string_view(chapters[i].domain) != chapters[i - 1].domain) {
+      ImGui::Spacing();
+      ImGui::TextDisabled("%s", chapters[i].domain);
+    }
+    if (ImGui::Selectable(chapters[i].name, chapter_ == i, 0, ImVec2(0, 25))) {
       chapter_ = i;
       article_ = 0;
       search_[0] = '\0';
@@ -351,7 +520,7 @@ Action Handbook::draw() {
   std::vector<const Article*> visible;
   const std::string_view query(search_.data());
   for (const Article& article : articles) {
-    const bool chapterMatch = query.empty() && article.chapter == std::string_view(chapters[chapter_]);
+    const bool chapterMatch = query.empty() && article.chapter == std::string_view(chapters[chapter_].name);
     const bool searchMatch = !query.empty() && (containsInsensitive(article.title, query) || containsInsensitive(article.definition, query) ||
       containsInsensitive(article.engineVocabulary, query) || containsInsensitive(article.chapter, query));
     if (chapterMatch || searchMatch) visible.push_back(&article);
@@ -392,6 +561,22 @@ Action Handbook::draw() {
     ImGui::Spacing();
     ImGui::TextDisabled("ENGINE VOCABULARY");
     wrappedText(article.engineVocabulary, ImVec4(0.66f, 0.82f, 0.83f, 1.0f));
+
+    const auto branches = branchesFor(article.title);
+    if (branches[0] != nullptr) {
+      ImGui::Spacing();
+      ImGui::TextDisabled("CONTINUE INTO");
+      for (const char* target : branches) {
+        if (target == nullptr) continue;
+        ImGui::PushID(target);
+        const std::string label = std::string("-> ") + target;
+        if (ImGui::Selectable(label.c_str(), false, 0, ImVec2(0, 22))) {
+          std::snprintf(search_.data(), search_.size(), "%s", target);
+          article_ = 0;
+        }
+        ImGui::PopID();
+      }
+    }
 
     if (article.example != Example::None) {
       ImGui::Spacing();
