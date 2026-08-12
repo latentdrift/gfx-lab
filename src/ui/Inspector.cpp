@@ -80,7 +80,7 @@ void drawCombinerCycle(const char* label, RendererState::CombinerCycle& cycle) {
 int n64TextureBytes(const RendererState::N64& state) {
   constexpr int bitsPerTexel[] = {16, 32, 4, 8, 4, 8, 16, 4, 8};
   const int textureBytes = state.tileWidth * state.tileHeight * bitsPerTexel[std::clamp(state.textureFormat, 0, 8)] / 8;
-  const int paletteBytes = state.textureFormat == 2 ? 32 : state.textureFormat == 3 ? 512 : 0;
+  const int paletteBytes = state.textureFormat == 2 ? 128 : state.textureFormat == 3 ? 2048 : 0;
   return textureBytes + paletteBytes;
 }
 
@@ -397,7 +397,9 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
         ImGui::Combo("##n64-framebuffer", &state.n64.framebufferFormat, framebufferFormats, 2);
         ImGui::TextUnformatted("RDP color dithering");
         const char* ditherModes[] = {"Disabled", "Magic-square 4 x 4", "Bayer 4 x 4", "Noise"};
+        ImGui::BeginDisabled(state.n64.framebufferFormat == 1);
         ImGui::Combo("##n64-color-dither", &state.n64.colorDither, ditherModes, 4);
+        ImGui::EndDisabled();
         description("Dither is applied before reduced-precision framebuffer storage. Patterns are signal-level approximations.");
         fixedProfileValue("Lighting color space", "Encoded RGB");
       } else if (capabilities.configurableColorDepth) {

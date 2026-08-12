@@ -68,6 +68,11 @@ constexpr std::array articles = {
     "Shader stages and output-merger state", "Two identical shaders can produce different images when their depth, blend, cull, or sampler state differs.",
     "Material systems usually bundle shader programs with required render state.",
     "Specify shader logic and render state separately; do not call the entire pipeline a shader.", Diagram::Pipeline},
+  Article{"Foundations", "Nintendo 64: RSP, RDP, and VI",
+    "The N64 CPU builds display lists; graphics microcode on the Reality Signal Processor transforms and lights vertices; the Reality Display Processor rasterizes, textures, combines, tests, and blends pixels; the Video Interface reconstructs the framebuffer for display.",
+    "Whole N64 graphics architecture", "The visible image reflects three distinct processing domains rather than one programmable shader.",
+    "RSP microcode choice, RDP cycle state, memory traffic, framebuffer format, and VI state impose different constraints.",
+    "Separate RSP geometry work, RDP pixel work, and VI output processing when specifying an N64 target.", Diagram::Pipeline},
   Article{"Shaders", "What a shader program is",
     "A shader is a small GPU program for one programmable pipeline stage. A linked graphics program combines compatible stages; it does not include the mesh, textures, framebuffer, or most fixed-function state.",
     "Programmable GPU stages", "Changing shader code can move vertices, calculate surface color, write auxiliary values, or discard fragments.",
@@ -137,6 +142,12 @@ constexpr std::array articles = {
     "Rasterization, framebuffer storage, resolve pass", "Silhouette edges become smoother without increasing the logical output dimensions.",
     "MSAA does not solve texture aliasing; mipmaps and anisotropy address texture minification.",
     "Specify sample count, attachment compatibility, and when the multisample target resolves.", Diagram::Triangle},
+  Article{"Rasterization", "N64 coverage antialiasing",
+    "The RDP tracks subpixel coverage for rasterized pixels, the blender conditionally updates framebuffer color and coverage, and the VI uses that information during final reconstruction.",
+    "RDP rasterizer/blender plus Video Interface", "Polygon silhouettes become smoother, with a different signal path and artifact profile than conventional MSAA.",
+    "Coverage storage, Z mode, surface submission order, framebuffer format, and VI filtering interact; the lab uses four-sample coverage as an approximation.",
+    "Call it RDP coverage antialiasing, not N64 MSAA, and identify whether VI reconstruction is also enabled.", Diagram::Triangle,
+    Example::N64Coverage, "One raster sample; coverage AA disabled", "Four-sample approximation of RDP coverage AA"},
   Article{"Surface", "Normals and shading interpolation",
     "A geometric face normal is constant per triangle. Smooth shading interpolates authored vertex normals, while flat shading derives or selects one normal for the face.",
     "Mesh attributes and fragment shading", "Smooth normals make coarse geometry appear curved without changing its silhouette.",
@@ -161,6 +172,12 @@ constexpr std::array articles = {
     "The operation is order-dependent, saturates at the framebuffer range, and is not equivalent to general source-alpha blending.",
     "Name the exact PS1 equation instead of requesting generic alpha blending.", Diagram::Blend,
     Example::Ps1Semitransparency, "Opaque intersecting surfaces", "PS1 average equation: background/2 + foreground/2"},
+  Article{"Surface", "N64 RDP color combiner and cycle types",
+    "Each RDP color-combiner cycle evaluates a restricted expression of the form (A - B) x C + D using sources such as TEXEL0, TEXEL1, SHADE, PRIMITIVE, ENVIRONMENT, COMBINED, and LOD fraction.",
+    "RDP color/alpha combiner before the framebuffer blender", "It constructs textured, vertex-lit, tinted, detail, environment, and two-layer materials without arbitrary shader code.",
+    "Two-cycle mode permits a second expression but reduces nominal pixel throughput; trilinear and detail modes consume parts of the same two-cycle machinery.",
+    "Export cycle type, all four operands per cycle, primitive/environment registers, and separate blender/Z state.", Diagram::ShaderData,
+    Example::N64Combiner, "TEXEL0 x ONE: texture without vertex lighting", "TEXEL0 x SHADE: Gouraud-lit texture modulation"},
   Article{"Materials", "Material versus shader",
     "A shader defines executable GPU logic. A material selects that logic and supplies surface parameters, textures, keywords, and required render state for a particular kind of surface.",
     "Engine asset layer over shader programs and GPU state", "Many materials can look different while executing the same shader program.",
@@ -193,6 +210,24 @@ constexpr std::array articles = {
     "Index precision, palette contents, transparency flags, texture-window addressing, and filtering are separate concerns.",
     "Specify index depth and CLUT size: 4-bit indices with 16 entries, or 8-bit indices with 256 entries.", Diagram::Mipmaps,
     Example::ClutTextures, "Direct-color texture sampling", "4-bit indices sampling a 16-entry CLUT"},
+  Article{"Texture", "N64 TMEM, tiles, and texture formats",
+    "The RDP samples active texture tiles from 4096 bytes of on-chip TMEM. Tile descriptors define format and addressing; CI textures also reserve TMEM for a texture lookup table.",
+    "RDP texture engine and display-list texture uploads", "Smaller or indexed formats permit larger active tiles and more simultaneous texture data.",
+    "TMEM is a working set, not a maximum asset size. Oversized images require tiled uploads, subdivision, or another format; mip and second-texture data share the same budget.",
+    "Specify RGBA16/32, CI4/CI8, IA, or I format; tile dimensions; TLUT format; calculated TMEM bytes; and upload boundaries.", Diagram::Mipmaps,
+    Example::N64TextureFormats, "RGBA32 direct-color tile", "CI4 indices with a 16-entry RGBA16 TLUT"},
+  Article{"Texture", "N64 three-point filtering and mip modes",
+    "The usual RDP filtered mode interpolates the three nearest texels rather than performing true four-sample bilinear filtering. The RDP can also point-sample, select mip levels, interpolate levels, sharpen, or apply detail texture behavior.",
+    "RDP texture engine, filter, and two-cycle combiner", "Three-point filtering softens texels with a subtle diagonal bias; mip modes stabilize or reshape receding texture detail.",
+    "Trilinear, sharpen, and detail modes require two-cycle resources, and every active level must fit the TMEM working set.",
+    "Request point, N64 three-point, or box filtering separately from nearest-mip, trilinear, sharpen, or detail mode.", Diagram::Mipmaps,
+    Example::N64ThreePoint, "RDP point sampling", "RDP three-point approximate bilinear filtering"},
+  Article{"Texture", "N64 trilinear mipmapping",
+    "Two-cycle RDP operation can sample adjacent mip levels and interpolate them using the fractional level-of-detail value before subsequent color combination.",
+    "RDP TX0/TX1 texture paths and color combiner", "Transitions between mip levels become gradual and distant surfaces shimmer less.",
+    "Both levels occupy TMEM, two-cycle mode halves nominal pixel throughput, and combiner inputs compete with other two-texture effects.",
+    "State mip count, TMEM layout, LOD range, two-cycle combiner configuration, and whether interpolation, detail, or sharpen mode is active.", Diagram::Mipmaps,
+    Example::N64Mipmap, "Three-point filtering at base level only", "Two-cycle trilinear mip interpolation"},
   Article{"Lighting", "Gouraud, Phong shading, and reflection models",
     "Gouraud computes lighting at vertices and interpolates color. Phong shading interpolates normals and computes lighting per fragment. Phong and Blinn-Phong also name related specular reflection formulas.",
     "Vertex or fragment shader", "Per-fragment lighting preserves smaller highlights and reduces interpolation artifacts.",
@@ -235,6 +270,11 @@ constexpr std::array articles = {
     "Object sorting cannot resolve intersecting polygons, bucket quantization creates ties, and semitransparency makes every ordering error visible.",
     "State ordering direction, bucket count, depth key, and whether granularity is object or polygon.", Diagram::Depth,
     Example::OrderingTable, "Deliberately reversed transparent-object submission", "32-bucket far-to-near object ordering table"},
+  Article{"Visibility", "N64 surface and Z modes",
+    "RDP render modes combine Z comparison/update, coverage behavior, and blender rules for opaque, translucent, decal, and interpenetrating surfaces.",
+    "RDP blender, memory interface, and Z buffer", "The selected mode determines whether surfaces occlude, blend, sit coplanar, or preserve intersecting coverage.",
+    "Translucency remains order-dependent; decal behavior uses Z and delta-Z semantics rather than a generic modern polygon-offset slider.",
+    "Specify surface class, Z compare, Z update, primitive versus interpolated depth, and alpha/coverage behavior together.", Diagram::Depth},
   Article{"Color", "Linear light and encoded RGB",
     "Display-oriented RGB encodings are nonlinear. Lighting and most blending should operate on decoded linear-light values, followed by output encoding for display.",
     "Texture decode, shading, framebuffer format, output encoding", "Incorrect encoded-space lighting often produces unnaturally dark gradients and blends.",
@@ -253,6 +293,12 @@ constexpr std::array articles = {
     "Material texture filtering and framebuffer upscaling are different sampling operations.",
     "Specify internal resolution, presentation aspect ratio, and upscaling filter independently.", Diagram::Output,
     Example::InternalResolution, "640x480 internal rendering", "160x120 internal rendering with nearest upscaling"},
+  Article{"Output", "N64 Video Interface filtering",
+    "The Video Interface reads the completed framebuffer, uses coverage and neighboring samples to reconstruct output, optionally removes single-pixel divots, and scales the signal to video timing.",
+    "After RDP framebuffer rendering", "Reconstruction and divot filtering soften or stabilize the final signal independently of material texture filtering.",
+    "VI filtering is not bilinear texture sampling and should be evaluated after framebuffer precision, dithering, and coverage behavior.",
+    "Specify framebuffer resolution/format, RDP coverage AA, VI reconstruction, divot filtering, and final display scaling separately.", Diagram::Output,
+    Example::N64VideoInterface, "VI reconstruction and divot filters disabled", "Approximate VI reconstruction plus horizontal divot filter"},
   Article{"Engine architecture", "Asset, scene, material, and renderer responsibilities",
     "Assets define authored data. The scene defines objects, transforms, cameras, and lights. Materials define surface inputs and shading. The renderer schedules passes and configures GPU state.",
     "Whole engine", "A coherent visual style emerges from constraints across all four responsibility areas.",
@@ -324,6 +370,7 @@ constexpr std::array quickReads = {
   QuickRead{"Start here: from mesh to pixel", "A model is numbers. The GPU positions its vertices, fills the triangles between them, proposes colors for the covered spots, and keeps the results that pass the visibility rules."},
   QuickRead{"The realtime rasterization pipeline", "Pipeline means ordered handoffs: each stage does one kind of work and passes its result to the next stage."},
   QuickRead{"Shaders and fixed-function state", "Shaders are programs you write. Fixed-function state is the set of hardware rules—such as depth, blending, and culling—that runs around those programs."},
+  QuickRead{"Nintendo 64: RSP, RDP, and VI", "The RSP prepares vertices, the RDP constructs pixels, and the VI turns the completed framebuffer into the displayed signal."},
   QuickRead{"What a shader program is", "A shader is code for one GPU stage, not a name for everything that makes the rendered image look a certain way."},
   QuickRead{"Vertex shaders", "For every submitted vertex, this program answers: where should this point end up, and what data should travel onward with it?"},
   QuickRead{"Fragment shaders", "For every covered sample of a triangle, this program answers: what values should this surface propose writing here?"},
@@ -337,16 +384,21 @@ constexpr std::array quickReads = {
   QuickRead{"Triangle winding and face culling", "The order of a triangle's three projected points tells the renderer which side it is seeing; culling can skip the other side."},
   QuickRead{"Perspective-correct interpolation", "The rasterizer must account for depth while spreading UVs across a triangle, or the texture bends as perspective changes."},
   QuickRead{"Multisample anti-aliasing", "Store several coverage tests inside one pixel so triangle edges can be partially covered instead of only on or off."},
+  QuickRead{"N64 coverage antialiasing", "The RDP records how much of a pixel a polygon covers, then its blender and video output use that coverage to soften edges."},
   QuickRead{"Normals and shading interpolation", "Normals tell lighting which way a surface points; interpolating them can make a coarse mesh light as though it were smooth."},
   QuickRead{"Tangent-space normal mapping", "A normal map changes the direction used for lighting at each texel without moving the actual surface."},
   QuickRead{"Transparency and compositing", "A transparent fragment combines with color already stored behind it, so order and depth-write choices matter."},
   QuickRead{"PlayStation semitransparency equations", "Instead of arbitrary alpha, the PS1 offered four specific arithmetic choices for combining an incoming color with the color already stored."},
+  QuickRead{"N64 RDP color combiner and cycle types", "An N64 material selects named color sources and evaluates the small fixed equation (A - B) x C + D once or twice."},
   QuickRead{"Material versus shader", "The shader is reusable logic; the material is one configured surface that supplies values, textures, and render state to that logic."},
   QuickRead{"BRDFs and physically based materials", "A BRDF is the rule that decides how much incoming light leaves a surface toward the camera."},
   QuickRead{"Material inputs and texture semantics", "The engine must know what every texture channel means before it can decode and use those numbers correctly."},
   QuickRead{"Filtering and reconstruction", "When a sample lands between texels, filtering decides whether to choose one texel or combine nearby texels."},
   QuickRead{"Mipmaps, trilinear, and anisotropic filtering", "When many texels shrink into a pixel, prefiltered smaller copies help the sampler represent their average instead of flickering."},
   QuickRead{"Indexed textures and CLUT palettes", "The texture stores small palette numbers; a separate table says which actual color each number means."},
+  QuickRead{"N64 TMEM, tiles, and texture formats", "Textures can live in main memory, but the RDP can only sample the tiles currently loaded into its 4096-byte working memory."},
+  QuickRead{"N64 three-point filtering and mip modes", "The N64 normally blends three nearby texels, and can spend a second cycle blending texture levels or adding detail."},
+  QuickRead{"N64 trilinear mipmapping", "Sample two neighboring mip levels and use the fractional LOD value to blend smoothly between them."},
   QuickRead{"Gouraud, Phong shading, and reflection models", "First ask where lighting is calculated—vertices or fragments—then ask which lighting formula is used there."},
   QuickRead{"Shadow mapping", "Render depth from the light first; later, anything farther than that stored depth is hidden from the light."},
   QuickRead{"Vertex depth cueing", "Calculate how far each vertex is, then interpolate how strongly the polygon should approach a chosen far color."},
@@ -354,9 +406,11 @@ constexpr std::array quickReads = {
   QuickRead{"Stencil testing", "Stencil is a small per-pixel integer you write in one pass and use as an exact mask in another."},
   QuickRead{"Overdraw", "Overdraw counts work spent on the same pixel more than once, including work whose result is later hidden."},
   QuickRead{"Ordering tables and painter submission", "When no depth buffer chooses the nearest fragment, draw farther things first and let nearer things cover them later."},
+  QuickRead{"N64 surface and Z modes", "Opaque, translucent, decal, and intersecting surfaces need different combinations of depth, coverage, and framebuffer blending rules."},
   QuickRead{"Linear light and encoded RGB", "Image files often store brightness nonlinearly for display, but lighting math expects values proportional to actual light."},
   QuickRead{"Color quantization and dithering", "Fewer allowed colors create bands; dithering rearranges the rounding errors into a controlled spatial pattern."},
   QuickRead{"Internal resolution and upscaling", "Render the whole scene into a smaller image first, then enlarge that finished image for the window."},
+  QuickRead{"N64 Video Interface filtering", "After rendering is finished, the VI reconstructs and scales the framebuffer signal; this is separate from filtering a material texture."},
   QuickRead{"Asset, scene, material, and renderer responsibilities", "Assets provide data, the scene arranges it, materials describe surfaces, and the renderer schedules the work that produces a frame."},
   QuickRead{"Forward rendering and render passes", "A pass is one scheduled piece of rendering with declared inputs and outputs; a frame is usually made from several passes."},
   QuickRead{"Forward, deferred, and forward+ rendering", "These architectures mainly differ in when surface lighting happens and how visible surfaces find the lights that affect them."},
@@ -380,6 +434,37 @@ const char* quickReadFor(std::string_view title) {
 
 bool exampleAvailableForProfile(gfxlab::HardwareProfile profile, Example example) {
   if (profile == gfxlab::HardwareProfile::Unrestricted) return true;
+  if (profile == gfxlab::HardwareProfile::Nintendo64) {
+    switch (example) {
+      case Example::None:
+      case Example::VertexQuantization:
+      case Example::Projection:
+      case Example::AffineMapping:
+      case Example::InternalResolution:
+      case Example::VertexDepthCue:
+      case Example::N64ThreePoint:
+      case Example::N64Combiner:
+      case Example::N64TextureFormats:
+      case Example::N64Mipmap:
+      case Example::N64Coverage:
+      case Example::N64VideoInterface:
+        return true;
+      case Example::TextureMinification:
+      case Example::NormalMapping:
+      case Example::LightingInterpolation:
+      case Example::DepthPrecision:
+      case Example::Transparency:
+      case Example::Stencil:
+      case Example::LinearLight:
+      case Example::ColorQuantization:
+      case Example::ShadowMapping:
+      case Example::Overdraw:
+      case Example::ClutTextures:
+      case Example::Ps1Semitransparency:
+      case Example::OrderingTable:
+        return false;
+    }
+  }
   switch (example) {
     case Example::None:
     case Example::VertexQuantization:
@@ -401,6 +486,12 @@ bool exampleAvailableForProfile(gfxlab::HardwareProfile profile, Example example
     case Example::ColorQuantization:
     case Example::ShadowMapping:
     case Example::Overdraw:
+    case Example::N64ThreePoint:
+    case Example::N64Combiner:
+    case Example::N64TextureFormats:
+    case Example::N64Mipmap:
+    case Example::N64Coverage:
+    case Example::N64VideoInterface:
       return false;
   }
   return false;
@@ -587,12 +678,15 @@ void drawDiagram(Diagram diagram) {
 std::array<const char*, 4> branchesFor(std::string_view title) {
   if (title == "Start here: from mesh to pixel") return {"The realtime rasterization pipeline", "Vertex attributes", "Perspective and orthographic projection", "What a shader program is"};
   if (title == "The realtime rasterization pipeline") return {"What a shader program is", "Vertex attributes", "Render graphs and pass dependencies", nullptr};
+  if (title == "Nintendo 64: RSP, RDP, and VI") return {"N64 RDP color combiner and cycle types", "N64 TMEM, tiles, and texture formats", "N64 coverage antialiasing", "N64 Video Interface filtering"};
   if (title == "Shaders and fixed-function state") return {"What a shader program is", "Material versus shader", "Depth testing and depth writes", nullptr};
   if (title == "What a shader program is") return {"Vertex shaders", "Fragment shaders", "Attributes, uniforms, varyings, and resources", "Compilation, linking, and shader variants"};
   if (title == "Vertex shaders") return {"Vertex attributes", "Skeletal animation and skinning", "Vertex position quantization", nullptr};
   if (title == "Fragment shaders") return {"Material versus shader", "Gouraud, Phong shading, and reflection models", "Transparency and compositing", nullptr};
   if (title == "Transparency and compositing") return {"PlayStation semitransparency equations", "Ordering tables and painter submission", "Depth testing and depth writes", nullptr};
   if (title == "Filtering and reconstruction") return {"Indexed textures and CLUT palettes", "Mipmaps, trilinear, and anisotropic filtering", nullptr, nullptr};
+  if (title == "N64 TMEM, tiles, and texture formats") return {"N64 three-point filtering and mip modes", "N64 trilinear mipmapping", "N64 RDP color combiner and cycle types", nullptr};
+  if (title == "N64 RDP color combiner and cycle types") return {"N64 surface and Z modes", "N64 trilinear mipmapping", "N64 Video Interface filtering", nullptr};
   if (title == "Gouraud, Phong shading, and reflection models") return {"Vertex depth cueing", "BRDFs and physically based materials", nullptr, nullptr};
   if (title == "Attributes, uniforms, varyings, and resources") return {"Material inputs and texture semantics", "Perspective-correct interpolation", "Compute and optional graphics stages", nullptr};
   if (title == "Material versus shader") return {"BRDFs and physically based materials", "Material inputs and texture semantics", "Forward, deferred, and forward+ rendering", nullptr};

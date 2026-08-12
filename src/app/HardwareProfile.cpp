@@ -92,8 +92,8 @@ const ProfileCapabilities& hardwareProfileCapabilities(HardwareProfile profile) 
 }
 
 void normalizeForHardwareProfile(HardwareProfile profile, RendererState& state) {
-  state.n64.enabled = profile == HardwareProfile::Nintendo64;
   if (profile == HardwareProfile::Unrestricted) return;
+  state.n64.enabled = profile == HardwareProfile::Nintendo64;
 
   if (profile == HardwareProfile::Nintendo64) {
     if (state.n64.mipmapMode >= 2) state.n64.cycleType = 2;

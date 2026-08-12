@@ -38,6 +38,10 @@ using namespace gfxlab::ui;
 
 void glfwError(int, const char* descriptionText) { std::fprintf(stderr, "GLFW: %s\n", descriptionText); }
 
+bool isNintendo64Example(handbook::Example example) {
+  return example >= handbook::Example::N64ThreePoint && example <= handbook::Example::N64VideoInterface;
+}
+
 } // namespace
 
 namespace gfxlab {
@@ -83,7 +87,10 @@ int runApplication() {
       handbook::Example::Stencil, handbook::Example::LinearLight, handbook::Example::ColorQuantization,
       handbook::Example::InternalResolution, handbook::Example::ShadowMapping, handbook::Example::Overdraw,
       handbook::Example::ClutTextures, handbook::Example::VertexDepthCue,
-      handbook::Example::Ps1Semitransparency, handbook::Example::OrderingTable};
+      handbook::Example::Ps1Semitransparency, handbook::Example::OrderingTable,
+      handbook::Example::N64ThreePoint, handbook::Example::N64Combiner,
+      handbook::Example::N64TextureFormats, handbook::Example::N64Mipmap,
+      handbook::Example::N64Coverage, handbook::Example::N64VideoInterface};
     for (handbook::Example example : examples) {
       for (bool alternative : {false, true}) {
         applyHandbookExample(example, alternative, current, camera, scene, category);
@@ -204,6 +211,10 @@ int runApplication() {
     const char* hardwareProfileLabels[] = {"Unrestricted", "PlayStation (PS1)", "Nintendo 64"};
     if (ImGui::Combo("##hardware-profile", &hardwareProfileIndex, hardwareProfileLabels, 3)) {
       hardwareProfile = static_cast<HardwareProfile>(hardwareProfileIndex);
+      if (hardwareProfile == HardwareProfile::Unrestricted) {
+        current.n64.enabled = false;
+        reference.n64.enabled = false;
+      }
       normalizeForHardwareProfile(hardwareProfile, current);
       normalizeForHardwareProfile(hardwareProfile, reference);
       if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
@@ -322,6 +333,8 @@ int runApplication() {
     ImGui::End();
 
     const handbook::Action handbookAction = graphicsHandbook.draw(hardwareProfile);
+    if (handbookAction.type != handbook::ActionType::None && isNintendo64Example(handbookAction.example))
+      hardwareProfile = HardwareProfile::Nintendo64;
     if (handbookAction.type == handbook::ActionType::ApplyToA) {
       applyHandbookExample(handbookAction.example, false, current, camera, scene, category);
     } else if (handbookAction.type == handbook::ActionType::ApplyToB) {

@@ -414,7 +414,7 @@ void main() {
     color = pow(max(color, vec3(0.0)), vec3(1.0 / 2.2));
   }
   float levels = exp2(float(uBitsPerChannel)) - 1.0;
-  if (uN64Enabled && uN64ColorDither != 0) {
+  if (uN64Enabled && uN64ColorDither != 0 && uBitsPerChannel < 8) {
     float offset = uN64ColorDither == 1 ? magic4(ivec2(gl_FragCoord.xy))
       : uN64ColorDither == 2 ? bayer4(ivec2(gl_FragCoord.xy)) : noiseDither(ivec2(gl_FragCoord.xy));
     color += offset / levels;

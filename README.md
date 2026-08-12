@@ -44,7 +44,9 @@ src/
 
 The current renderer state is **A**. Use **Copy A to B** to preserve it, change A, then choose **B** for an instant toggle, **Split A/B** for a spatial comparison, or **Difference** for an exposure-adjustable absolute RGB difference image. Black difference pixels are identical.
 
-The **Target** selector defaults to **Unrestricted**. **PlayStation (PS1)** normalizes A and B to hardware-representable state, removes unavailable categories and controls, narrows shared controls to supported choices, and displays important forced values as profile facts. Switching back to Unrestricted unlocks the controls but does not restore values discarded during normalization. Reset buttons are also normalized by the active target.
+The **Target** selector defaults to **Unrestricted**. **PlayStation (PS1)** and **Nintendo 64** normalize A and B to target-representable state, remove unavailable categories and controls, narrow shared controls to supported choices, and display important forced values or labelled emulation substitutes as profile facts. Switching back to Unrestricted unlocks the controls but does not restore values discarded during normalization. Reset buttons are also normalized by the active target.
+
+The Nintendo 64 target exposes the standard RSP/RDP/VI model: one- or two-cycle `(A - B) x C + D` color combiners, named combiner sources, primitive/environment registers, RDP surface and alpha-compare modes, point/three-point/box texture filters, mip/trilinear/sharpen/detail modes, nine texture formats, tile addressing and calculated 4096-byte TMEM use, RSP texture generation and vertex fog, Z compare/update, coverage antialiasing, RGBA16/RGBA32 framebuffer state, color dithering, and VI reconstruction/divot filters. Coverage and VI behavior are explicitly labelled approximations; the combiner, format quantization, three-point filter, alpha comparison, and TMEM accounting are modeled directly.
 
 Use **Copy config JSON** to place a human-readable `graphics-lab.renderer-state.v1` document on the clipboard. It includes a stable hardware-target identifier, the complete normalized renderer state, selected test scene, and orbit-camera view using explicit algorithm names suitable for sharing with other tools or coding agents.
 
@@ -81,6 +83,12 @@ The camera presentation has a fixed 4:3 aspect ratio. It expands to the maximum 
 - Direct-color, 8-bit indexed, and 4-bit indexed texture storage with actual CLUT palette lookup
 - Vertex-evaluated depth cueing toward a configurable far color
 - Object-granularity ordering-table submission with configurable depth buckets
+- Nintendo 64 RDP one/two-cycle color combiner with explicit `(A - B) x C + D` operands
+- N64 point, three-point, and box texture filters; mip, trilinear, sharpen, and detail modes
+- N64 RGBA, CI/TLUT, intensity-alpha, and intensity formats with tile and TMEM accounting
+- N64 RSP texture-coordinate generation and vertex fog
+- N64 opaque, translucent, decal, and interpenetrating surface/Z modes with alpha compare
+- N64 coverage-AA approximation, framebuffer formats/dither, and VI reconstruction/divot filters
 - Polygon offset factor and units for coplanar depth conflicts
 - Depth testing, depth writes, comparison functions, 16- or 24-bit attachments, and depth visualization
 - Multisample anti-aliasing with 1, 2, 4, or 8 samples

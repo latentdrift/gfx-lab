@@ -25,7 +25,13 @@ enum class Example {
   ClutTextures,
   VertexDepthCue,
   Ps1Semitransparency,
-  OrderingTable
+  OrderingTable,
+  N64ThreePoint,
+  N64Combiner,
+  N64TextureFormats,
+  N64Mipmap,
+  N64Coverage,
+  N64VideoInterface
 };
 
 enum class ActionType { None, ApplyToA, ApplyToB, LoadComparison };

@@ -217,6 +217,61 @@ void applyHandbookExample(handbook::Example example, bool alternative, RendererS
       state.depth.orderingBuckets = 32;
       state.color.linearLight = false;
       break;
+    case handbook::Example::N64ThreePoint:
+      scene = TestScene::Torus; category = Category::Texture;
+      applyRecommendedSetup(scene, state, camera);
+      state.n64.enabled = true;
+      state.n64.textureFormat = 1;
+      state.n64.textureFilter = alternative ? 1 : 0;
+      state.color.linearLight = false;
+      break;
+    case handbook::Example::N64Combiner:
+      scene = TestScene::Torus; category = Category::Surface;
+      applyRecommendedSetup(scene, state, camera);
+      state.n64.enabled = true;
+      state.n64.cycleType = 1;
+      state.n64.cycle0 = alternative ? RendererState::CombinerCycle{1, 0, 3, 0}
+        : RendererState::CombinerCycle{1, 0, 2, 0};
+      state.lighting.model = 1;
+      state.color.linearLight = false;
+      break;
+    case handbook::Example::N64TextureFormats:
+      scene = TestScene::Torus; category = Category::Texture;
+      applyRecommendedSetup(scene, state, camera);
+      state.n64.enabled = true;
+      state.n64.textureFilter = 0;
+      state.n64.textureFormat = alternative ? 2 : 1;
+      state.color.linearLight = false;
+      break;
+    case handbook::Example::N64Mipmap:
+      scene = TestScene::TexturePlane; category = Category::Texture;
+      applyRecommendedSetup(scene, state, camera);
+      state.n64.enabled = true;
+      state.n64.textureFilter = 1;
+      state.n64.mipmapMode = alternative ? 2 : 0;
+      state.n64.cycleType = alternative ? 2 : 1;
+      state.n64.tileWidth = 32;
+      state.n64.tileHeight = 32;
+      state.color.linearLight = false;
+      break;
+    case handbook::Example::N64Coverage:
+      scene = TestScene::Torus; category = Category::Rasterization;
+      applyRecommendedSetup(scene, state, camera);
+      state.n64.enabled = true;
+      state.n64.coverageAntialiasing = alternative;
+      state.rasterization.samples = alternative ? 4 : 1;
+      state.color.linearLight = false;
+      break;
+    case handbook::Example::N64VideoInterface:
+      scene = TestScene::Torus; category = Category::Output;
+      applyRecommendedSetup(scene, state, camera);
+      state.n64.enabled = true;
+      state.n64.viReconstruction = alternative;
+      state.n64.viDivot = alternative;
+      state.output.width = 320;
+      state.output.height = 240;
+      state.color.linearLight = false;
+      break;
   }
 }
 
@@ -344,7 +399,7 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
     constexpr int bitsPerTexel[] = {16, 32, 4, 8, 4, 8, 16, 4, 8};
     const int format = std::clamp(state.n64.textureFormat, 0, 8);
     const int tmemBytes = state.n64.tileWidth * state.n64.tileHeight * bitsPerTexel[format] / 8 +
-      (format == 2 ? 32 : format == 3 ? 512 : 0);
+      (format == 2 ? 128 : format == 3 ? 2048 : 0);
     auto cycle = [&](const RendererState::CombinerCycle& value) {
       std::ostringstream result;
       result << "{\"a\": \"" << combinerSources[std::clamp(value.a, 0, 8)]
