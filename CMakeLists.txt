@@ -11,10 +11,12 @@ find_package(imgui REQUIRED)
 
 add_executable(graphics-lab
   src/main.cpp
+  src/app/Application.cpp
   src/app/State.cpp
   src/handbook/Handbook.cpp
   src/renderer/Renderer.cpp
   src/renderer/TestGeometry.cpp
+  src/ui/Inspector.cpp
 )
 target_include_directories(graphics-lab PRIVATE src)
 target_compile_features(graphics-lab PRIVATE cxx_std_20)
