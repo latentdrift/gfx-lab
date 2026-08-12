@@ -40,6 +40,8 @@ struct RendererState {
     int shiftT = 0;
     bool textureGeneration = false;
     int surfaceMode = 0;
+    bool zCompare = true;
+    bool zUpdate = true;
     int alphaCompare = 0;
     float alphaThreshold = 0.5f;
     bool coverageAntialiasing = true;

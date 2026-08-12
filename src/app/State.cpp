@@ -331,7 +331,54 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
   json << "    \"internal_resolution\": [" << state.output.width << ", " << state.output.height << "],\n";
   json << "    \"viewport_upscaling_filter\": \"" << (state.output.nearestUpscaling ? "nearest" : "bilinear") << "\",\n";
   json << "    \"presentation_aspect_ratio\": \"4:3\"\n";
-  json << "  }\n";
+  json << "  }";
+  if (state.n64.enabled) {
+    const char* combinerSources[] = {"zero", "texel0", "one", "shade", "primitive", "environment", "texel1", "combined", "lod_fraction"};
+    const char* textureFormats[] = {"rgba16", "rgba32", "ci4_rgba16_tlut", "ci8_rgba16_tlut", "ia4", "ia8", "ia16", "i4", "i8"};
+    const char* textureFilters[] = {"point", "n64_three_point", "box_average"};
+    const char* mipmapModes[] = {"disabled", "nearest_level", "trilinear", "sharpen", "detail"};
+    const char* surfaceModes[] = {"opaque", "translucent", "decal", "interpenetrating"};
+    const char* alphaModes[] = {"off", "threshold", "dither"};
+    const char* framebufferFormats[] = {"rgba5551_with_coverage", "rgba8888"};
+    const char* ditherModes[] = {"disabled", "magic_square_4x4", "bayer_4x4", "noise"};
+    constexpr int bitsPerTexel[] = {16, 32, 4, 8, 4, 8, 16, 4, 8};
+    const int format = std::clamp(state.n64.textureFormat, 0, 8);
+    const int tmemBytes = state.n64.tileWidth * state.n64.tileHeight * bitsPerTexel[format] / 8 +
+      (format == 2 ? 32 : format == 3 ? 512 : 0);
+    auto cycle = [&](const RendererState::CombinerCycle& value) {
+      std::ostringstream result;
+      result << "{\"a\": \"" << combinerSources[std::clamp(value.a, 0, 8)]
+             << "\", \"b\": \"" << combinerSources[std::clamp(value.b, 0, 8)]
+             << "\", \"c\": \"" << combinerSources[std::clamp(value.c, 0, 8)]
+             << "\", \"d\": \"" << combinerSources[std::clamp(value.d, 0, 8)] << "\"}";
+      return result.str();
+    };
+    json << ",\n  \"n64_rdp\": {\n";
+    json << "    \"cycle_type\": " << state.n64.cycleType << ",\n";
+    json << "    \"combiner_equation\": \"(a - b) * c + d\",\n";
+    json << "    \"combiner_cycle_0\": " << cycle(state.n64.cycle0) << ",\n";
+    json << "    \"combiner_cycle_1\": " << cycle(state.n64.cycle1) << ",\n";
+    json << "    \"primitive_color_rgba\": [" << state.n64.primitiveColor.r << ", " << state.n64.primitiveColor.g << ", " << state.n64.primitiveColor.b << ", " << state.n64.primitiveColor.a << "],\n";
+    json << "    \"environment_color_rgba\": [" << state.n64.environmentColor.r << ", " << state.n64.environmentColor.g << ", " << state.n64.environmentColor.b << ", " << state.n64.environmentColor.a << "],\n";
+    json << "    \"texture\": {\"format\": \"" << textureFormats[format] << "\", \"filter\": \""
+         << textureFilters[std::clamp(state.n64.textureFilter, 0, 2)] << "\", \"mipmap_mode\": \""
+         << mipmapModes[std::clamp(state.n64.mipmapMode, 0, 4)] << "\", \"tile_size\": ["
+         << state.n64.tileWidth << ", " << state.n64.tileHeight << "], \"tmem_bytes\": " << tmemBytes
+         << ", \"mirror_st\": [" << boolean(state.n64.mirrorS) << ", " << boolean(state.n64.mirrorT)
+         << "], \"shift_st\": [" << state.n64.shiftS << ", " << state.n64.shiftT << "]},\n";
+    json << "    \"surface_mode\": \"" << surfaceModes[std::clamp(state.n64.surfaceMode, 0, 3)] << "\",\n";
+    json << "    \"z_compare\": " << boolean(state.n64.zCompare) << ", \"z_update\": " << boolean(state.n64.zUpdate) << ",\n";
+    json << "    \"alpha_compare\": {\"mode\": \"" << alphaModes[std::clamp(state.n64.alphaCompare, 0, 2)]
+         << "\", \"threshold\": " << state.n64.alphaThreshold << "},\n";
+    json << "    \"texture_coordinate_generation\": " << boolean(state.n64.textureGeneration) << ",\n";
+    json << "    \"coverage_antialiasing\": " << boolean(state.n64.coverageAntialiasing) << ",\n";
+    json << "    \"framebuffer_format\": \"" << framebufferFormats[std::clamp(state.n64.framebufferFormat, 0, 1)] << "\",\n";
+    json << "    \"color_dither\": \"" << ditherModes[std::clamp(state.n64.colorDither, 0, 3)] << "\",\n";
+    json << "    \"vi_reconstruction_filter\": " << boolean(state.n64.viReconstruction)
+         << ", \"vi_divot_filter\": " << boolean(state.n64.viDivot) << "\n";
+    json << "  }";
+  }
+  json << "\n";
   json << "}\n";
   return json.str();
 }

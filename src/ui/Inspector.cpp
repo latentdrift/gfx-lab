@@ -65,6 +65,25 @@ void fixedProfileValue(const char* parameter, const char* value) {
   ImGui::Spacing();
 }
 
+void drawCombinerCycle(const char* label, RendererState::CombinerCycle& cycle) {
+  const char* sources[] = {"ZERO", "TEXEL0", "ONE", "SHADE", "PRIMITIVE", "ENVIRONMENT", "TEXEL1", "COMBINED", "LOD_FRACTION"};
+  ImGui::PushID(label);
+  ImGui::TextUnformatted(label);
+  ImGui::SetNextItemWidth(128.0f); ImGui::Combo("A", &cycle.a, sources, 9);
+  ImGui::SetNextItemWidth(128.0f); ImGui::Combo("B", &cycle.b, sources, 9);
+  ImGui::SetNextItemWidth(128.0f); ImGui::Combo("C", &cycle.c, sources, 9);
+  ImGui::SetNextItemWidth(128.0f); ImGui::Combo("D", &cycle.d, sources, 9);
+  ImGui::TextDisabled("(A - B) x C + D");
+  ImGui::PopID();
+}
+
+int n64TextureBytes(const RendererState::N64& state) {
+  constexpr int bitsPerTexel[] = {16, 32, 4, 8, 4, 8, 16, 4, 8};
+  const int textureBytes = state.tileWidth * state.tileHeight * bitsPerTexel[std::clamp(state.textureFormat, 0, 8)] / 8;
+  const int paletteBytes = state.textureFormat == 2 ? 32 : state.textureFormat == 3 ? 512 : 0;
+  return textureBytes + paletteBytes;
+}
+
 void drawInspector(Category category, RendererState& state, HardwareProfile profile) {
   const ProfileCapabilities& capabilities = hardwareProfileCapabilities(profile);
   switch (category) {
@@ -129,10 +148,37 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
         ImGui::EndDisabled();
         description("Offsets generated depth values by a slope-dependent term plus a minimum-depth-step term.");
       }
+      if (profile == HardwareProfile::Nintendo64) {
+        ImGui::Checkbox("RDP coverage antialiasing", &state.n64.coverageAntialiasing);
+        description("Approximates RDP edge coverage with four raster samples. This is not conventional N64 bit-exact coverage storage.");
+      }
       break;
     }
     case Category::Surface: {
       ImGui::TextUnformatted("SURFACE"); ImGui::Separator();
+      if (profile == HardwareProfile::Nintendo64) {
+        ImGui::TextUnformatted("RDP cycle type");
+        const char* cycleLabels[] = {"1-cycle", "2-cycle"};
+        int cycleIndex = state.n64.cycleType - 1;
+        if (ImGui::Combo("##rdp-cycle-type", &cycleIndex, cycleLabels, 2)) state.n64.cycleType = cycleIndex + 1;
+        description("Two-cycle mode evaluates a second combiner equation and halves nominal pixel throughput.");
+        drawCombinerCycle("Color combiner cycle 0", state.n64.cycle0);
+        if (state.n64.cycleType == 2) drawCombinerCycle("Color combiner cycle 1", state.n64.cycle1);
+        ImGui::ColorEdit4("Primitive color", &state.n64.primitiveColor.x);
+        ImGui::ColorEdit4("Environment color", &state.n64.environmentColor.x);
+        description("Combiner sources are clamped after each (A - B) x C + D cycle.");
+        ImGui::TextUnformatted("RDP surface / Z mode");
+        const char* surfaceModes[] = {"Opaque", "Translucent", "Decal", "Interpenetrating"};
+        if (ImGui::Combo("##n64-surface-mode", &state.n64.surfaceMode, surfaceModes, 4))
+          state.n64.zUpdate = state.n64.surfaceMode != 1;
+        description("Configures standard depth-update and blending behavior. Decal depth bias is an OpenGL approximation.");
+        ImGui::TextUnformatted("Alpha compare");
+        const char* alphaModes[] = {"Off", "Threshold", "Dither"};
+        ImGui::Combo("##n64-alpha-compare", &state.n64.alphaCompare, alphaModes, 3);
+        if (state.n64.alphaCompare == 1)
+          ImGui::SliderFloat("Alpha threshold", &state.n64.alphaThreshold, 0.0f, 1.0f, "%.2f");
+        description("Rejects fragments before framebuffer blending using a constant threshold or spatial noise.");
+      }
       if (capabilities.surfaceDiagnostics) {
         ImGui::TextUnformatted("Surface visualization");
         const char* visualizationLabels[] = {"Texture", "UV coordinates", "Normals", "Vertex colors", "Tangents", "Bitangents"};
@@ -156,13 +202,13 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
         ImGui::EndDisabled();
         description("Transforms sampled tangent-space normals into world space with the tangent-bitangent-normal basis.");
       }
-      ImGui::TextUnformatted("Transparency operation");
+      if (profile != HardwareProfile::Nintendo64) ImGui::TextUnformatted("Transparency operation");
       if (capabilities.generalBlendModes) {
         const char* transparencyLabels[] = {"Opaque", "Alpha test (discard)", "Straight alpha blend",
           "Premultiplied alpha blend", "Additive blend", "Multiply blend", "PS1 average (B/2 + F/2)",
           "PS1 additive (B + F)", "PS1 subtractive (B - F)", "PS1 quarter-add (B + F/4)"};
         ImGui::Combo("##transparency", &state.surface.transparency, transparencyLabels, 10);
-      } else {
+      } else if (profile == HardwareProfile::PlayStation) {
         const char* labels[] = {"Opaque", "Texture cutout", "Average (B/2 + F/2)", "Additive (B + F)",
           "Subtractive (B - F)", "Quarter-add (B + F/4)"};
         constexpr int values[] = {0, 1, 6, 7, 8, 9};
@@ -170,25 +216,40 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
         for (int index = 0; index < 6; ++index) if (state.surface.transparency == values[index]) selected = index;
         if (ImGui::Combo("##transparency", &selected, labels, 6)) state.surface.transparency = values[selected];
       }
-      if (state.surface.transparency == 1)
+      if (profile != HardwareProfile::Nintendo64 && state.surface.transparency == 1)
         ImGui::SliderFloat("Alpha cutoff", &state.surface.alphaCutoff, 0.0f, 1.0f, "%.2f");
-      description("Each blend mode configures explicit source and destination factors in the framebuffer blend equation.");
-      ImGui::Checkbox("Reverse object draw order", &state.surface.reverseDrawOrder);
-      description("Transparent surfaces generally require back-to-front submission because blending is order-dependent.");
+      if (profile != HardwareProfile::Nintendo64) {
+        description("Each blend mode configures explicit source and destination factors in the framebuffer blend equation.");
+        ImGui::Checkbox("Reverse object draw order", &state.surface.reverseDrawOrder);
+        description("Transparent surfaces generally require back-to-front submission because blending is order-dependent.");
+      }
       break;
     }
     case Category::Texture: {
       ImGui::TextUnformatted("TEXTURE"); ImGui::Separator();
-      if (capabilities.textureFiltering) {
+      if (profile == HardwareProfile::Nintendo64) {
+        ImGui::TextUnformatted("RDP texture filter");
+        const char* filterLabels[] = {"Point sampling", "Three-point approximate bilinear", "Four-texel box average"};
+        ImGui::Combo("##n64-filter", &state.n64.textureFilter, filterLabels, 3);
+        description("The RDP's usual filtered mode interpolates the three nearest texels and has a diagonal bias.");
+      } else if (capabilities.textureFiltering) {
         ImGui::TextUnformatted("Texture filtering");
         radioPair("Bilinear", "Nearest", state.texture.nearestFiltering);
         description("Selects how samples between adjacent texels are reconstructed.");
       } else {
         fixedProfileValue("Texture filtering", "Nearest");
       }
-      ImGui::TextUnformatted("Texture address mode");
-      radioPair("Clamp to edge", "Repeat", state.texture.repeat);
-      description("Defines how texture coordinates outside the normalized 0-1 range are sampled.");
+      if (profile == HardwareProfile::Nintendo64) {
+        ImGui::Checkbox("Mirror S", &state.n64.mirrorS); ImGui::SameLine();
+        ImGui::Checkbox("Mirror T", &state.n64.mirrorT);
+        ImGui::SliderInt("S coordinate shift", &state.n64.shiftS, -5, 5);
+        ImGui::SliderInt("T coordinate shift", &state.n64.shiftT, -5, 5);
+        description("Tile mirroring and signed power-of-two coordinate shifts are applied before texel addressing.");
+      } else {
+        ImGui::TextUnformatted("Texture address mode");
+        radioPair("Clamp to edge", "Repeat", state.texture.repeat);
+        description("Defines how texture coordinates outside the normalized 0-1 range are sampled.");
+      }
       if (capabilities.mipmapping) {
         ImGui::Checkbox("Mipmapping", &state.texture.mipmapping);
         description("Selects prefiltered, lower-resolution texture levels during minification.");
@@ -201,10 +262,35 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
         ImGui::SliderFloat("Anisotropy", &state.texture.anisotropy, 1.0f, 16.0f, "%.0f x");
         description("Uses additional samples to preserve detail when texture footprints are elongated by perspective.");
       }
-      ImGui::TextUnformatted("Texture color storage");
-      const char* colorModeLabels[] = {"Direct color", "8-bit index + 256-color CLUT", "4-bit index + 16-color CLUT"};
-      ImGui::Combo("##texture-color-storage", &state.texture.colorMode, colorModeLabels, 3);
-      description("Indexed textures store palette entries rather than RGB texels. CLUT means color lookup table.");
+      if (profile == HardwareProfile::Nintendo64) {
+        ImGui::TextUnformatted("RDP mip/detail mode");
+        const char* mipLabels[] = {"Disabled", "Nearest mip level", "Trilinear interpolation", "Sharpen", "Detail texture"};
+        ImGui::Combo("##n64-mipmap", &state.n64.mipmapMode, mipLabels, 5);
+        if (state.n64.mipmapMode >= 2 && state.n64.cycleType != 2)
+          ImGui::TextColored(ImVec4(0.92f, 0.67f, 0.35f, 1.0f), "Requires 2-cycle mode");
+        description("Trilinear, sharpen, and detail modes consume the second texture/combiner path.");
+        ImGui::TextUnformatted("Texture image format");
+        const char* formats[] = {"RGBA16 (5:5:5:1)", "RGBA32 (8:8:8:8)", "CI4 + RGBA16 TLUT", "CI8 + RGBA16 TLUT",
+          "IA4 (3:1)", "IA8 (4:4)", "IA16 (8:8)", "I4", "I8"};
+        ImGui::Combo("##n64-format", &state.n64.textureFormat, formats, 9);
+        const char* tileLabels[] = {"16", "32", "64"};
+        constexpr int tileValues[] = {16, 32, 64};
+        int widthIndex = state.n64.tileWidth == 16 ? 0 : state.n64.tileWidth == 64 ? 2 : 1;
+        int heightIndex = state.n64.tileHeight == 16 ? 0 : state.n64.tileHeight == 64 ? 2 : 1;
+        ImGui::SetNextItemWidth(90.0f);
+        if (ImGui::Combo("Tile width", &widthIndex, tileLabels, 3)) state.n64.tileWidth = tileValues[widthIndex];
+        ImGui::SetNextItemWidth(90.0f);
+        if (ImGui::Combo("Tile height", &heightIndex, tileLabels, 3)) state.n64.tileHeight = tileValues[heightIndex];
+        const int bytes = n64TextureBytes(state.n64);
+        if (bytes <= 4096) ImGui::Text("TMEM working set: %d / 4096 bytes", bytes);
+        else ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f), "TMEM working set: %d / 4096 bytes", bytes);
+        description("The calculation includes tile texels and CI palette storage. Oversized tiles would require subdivision or another format.");
+      } else {
+        ImGui::TextUnformatted("Texture color storage");
+        const char* colorModeLabels[] = {"Direct color", "8-bit index + 256-color CLUT", "4-bit index + 16-color CLUT"};
+        ImGui::Combo("##texture-color-storage", &state.texture.colorMode, colorModeLabels, 3);
+        description("Indexed textures store palette entries rather than RGB texels. CLUT means color lookup table.");
+      }
       break;
     }
     case Category::Lighting: {
@@ -240,18 +326,29 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
         ImGui::EndDisabled();
         description("Renders scene depth from the light, then compares each camera fragment against that depth map.");
       }
-      ImGui::Checkbox("Vertex depth cueing", &state.lighting.depthCue);
+      if (profile == HardwareProfile::Nintendo64) {
+        ImGui::Checkbox("RSP texture-coordinate generation", &state.n64.textureGeneration);
+        description("Generates sphere-map-like texture coordinates from transformed vertex normals for reflection approximations.");
+      }
+      ImGui::Checkbox(profile == HardwareProfile::Nintendo64 ? "RSP vertex fog" : "Vertex depth cueing", &state.lighting.depthCue);
       ImGui::BeginDisabled(!state.lighting.depthCue);
       ImGui::SliderFloat("Cue start", &state.lighting.depthCueStart, 0.0f, 15.0f, "%.2f units");
       ImGui::SliderFloat("Cue end", &state.lighting.depthCueEnd, 0.1f, 30.0f, "%.2f units");
       ImGui::ColorEdit3("Far color", &state.lighting.farColor.x, ImGuiColorEditFlags_NoInputs);
       ImGui::EndDisabled();
-      description("Computes a depth factor at vertices, interpolates it, then blends shaded color toward the far color.");
+      description(profile == HardwareProfile::Nintendo64
+        ? "Computes fog alpha at vertices and interpolates it; the lab applies the far-color blend in the RDP material path."
+        : "Computes a depth factor at vertices, interpolates it, then blends shaded color toward the far color.");
       break;
     }
     case Category::Depth: {
       ImGui::TextUnformatted("DEPTH"); ImGui::Separator();
-      if (capabilities.depthBuffer) {
+      if (profile == HardwareProfile::Nintendo64) {
+        ImGui::Checkbox("RDP Z compare", &state.n64.zCompare);
+        ImGui::Checkbox("RDP Z update", &state.n64.zUpdate);
+        fixedProfileValue("Z representation", "Compressed Z + delta-Z");
+        description("Surface mode selects ordinary, translucent, decal, or interpenetrating semantics; compare and update remain explicit flags.");
+      } else if (capabilities.depthBuffer) {
         ImGui::Checkbox("Depth testing", &state.depth.testing);
         description("Compares each fragment's depth against the stored depth value before drawing it.");
         ImGui::Checkbox("Depth writes", &state.depth.writing);
@@ -294,7 +391,16 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
       break;
     case Category::Color: {
       ImGui::TextUnformatted("COLOR"); ImGui::Separator();
-      if (capabilities.configurableColorDepth) {
+      if (profile == HardwareProfile::Nintendo64) {
+        ImGui::TextUnformatted("RDP framebuffer format");
+        const char* framebufferFormats[] = {"RGBA16 (5:5:5:1 + coverage)", "RGBA32 (8:8:8:8)"};
+        ImGui::Combo("##n64-framebuffer", &state.n64.framebufferFormat, framebufferFormats, 2);
+        ImGui::TextUnformatted("RDP color dithering");
+        const char* ditherModes[] = {"Disabled", "Magic-square 4 x 4", "Bayer 4 x 4", "Noise"};
+        ImGui::Combo("##n64-color-dither", &state.n64.colorDither, ditherModes, 4);
+        description("Dither is applied before reduced-precision framebuffer storage. Patterns are signal-level approximations.");
+        fixedProfileValue("Lighting color space", "Encoded RGB");
+      } else if (capabilities.configurableColorDepth) {
         ImGui::TextUnformatted("Output color depth");
         const char* labels[] = {"24-bit (8:8:8)", "15-bit (5:5:5)", "12-bit (4:4:4)"};
         int selected = state.color.bitsPerChannel == 8 ? 0 : state.color.bitsPerChannel == 5 ? 1 : 2;
@@ -303,13 +409,15 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
       } else {
         fixedProfileValue("Output color depth", "15-bit RGB (5:5:5)");
       }
-      ImGui::Checkbox("Ordered dithering (4 x 4 Bayer)", &state.color.dithering);
-      description("Offsets pixels with a fixed threshold matrix before color quantization.");
-      if (capabilities.linearLight) {
+      if (profile != HardwareProfile::Nintendo64) {
+        ImGui::Checkbox("Ordered dithering (4 x 4 Bayer)", &state.color.dithering);
+        description("Offsets pixels with a fixed threshold matrix before color quantization.");
+      }
+      if (profile != HardwareProfile::Nintendo64 && capabilities.linearLight) {
         ImGui::TextUnformatted("Lighting color space");
         radioPair("Encoded RGB (incorrect)", "Linear light", state.color.linearLight);
         description("Linear-light mode decodes texture values before lighting and encodes the final image for display.");
-      } else {
+      } else if (profile == HardwareProfile::PlayStation) {
         fixedProfileValue("Lighting color space", "Encoded RGB");
       }
       break;
@@ -336,21 +444,32 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
       const char* playStationLabels[] = {"320 x 240", "256 x 192", "160 x 120"};
       const int playStationWidths[] = {320, 256, 160};
       const int playStationHeights[] = {240, 192, 120};
-      const bool restricted = profile == HardwareProfile::PlayStation;
-      const char* const* labels = restricted ? playStationLabels : unrestrictedLabels;
-      const int* widths = restricted ? playStationWidths : unrestrictedWidths;
-      const int* heights = restricted ? playStationHeights : unrestrictedHeights;
-      const int count = restricted ? 3 : 5;
-      int selected = restricted ? 0 : 1;
+      const char* n64Labels[] = {"640 x 480", "320 x 240", "256 x 192", "160 x 120"};
+      const int n64Widths[] = {640, 320, 256, 160};
+      const int n64Heights[] = {480, 240, 192, 120};
+      const bool ps1 = profile == HardwareProfile::PlayStation;
+      const bool n64 = profile == HardwareProfile::Nintendo64;
+      const char* const* labels = ps1 ? playStationLabels : n64 ? n64Labels : unrestrictedLabels;
+      const int* widths = ps1 ? playStationWidths : n64 ? n64Widths : unrestrictedWidths;
+      const int* heights = ps1 ? playStationHeights : n64 ? n64Heights : unrestrictedHeights;
+      const int count = ps1 ? 3 : n64 ? 4 : 5;
+      int selected = ps1 ? 0 : n64 ? 1 : 1;
       for (int i = 0; i < count; ++i) if (state.output.width == widths[i] && state.output.height == heights[i]) selected = i;
       if (ImGui::Combo("##resolution", &selected, labels, count)) { state.output.width = widths[selected]; state.output.height = heights[selected]; }
       description("Scene and output passes render at this exact pixel resolution.");
-      if (profile == HardwareProfile::PlayStation) {
+      if (profile != HardwareProfile::Unrestricted) {
         fixedProfileValue("Viewport upscaling", "Nearest");
       } else {
         ImGui::TextUnformatted("Viewport upscaling");
         radioPair("Bilinear", "Nearest", state.output.nearestUpscaling);
         description("Filters the completed internal-resolution framebuffer when enlarging it to the viewport.");
+      }
+      if (profile == HardwareProfile::Nintendo64) {
+        ImGui::Checkbox("VI reconstruction filter", &state.n64.viReconstruction);
+        ImGui::BeginDisabled(!state.n64.viReconstruction);
+        ImGui::Checkbox("VI divot filter", &state.n64.viDivot);
+        ImGui::EndDisabled();
+        description("Approximates final Video Interface reconstruction and horizontal median divot removal on the rendered framebuffer.");
       }
       break;
     }

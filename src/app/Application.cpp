@@ -155,6 +155,11 @@ int runApplication() {
     current.n64.textureGeneration = true;
     current.n64.viDivot = true;
     renderer.render(current, camera, TestScene::Torus, false);
+    const std::string n64Config = configJson(current, camera, TestScene::Torus, HardwareProfile::Nintendo64);
+    if (n64Config.find("\"hardware_target\": \"nintendo_64\"") == std::string::npos ||
+        n64Config.find("\"n64_rdp\"") == std::string::npos ||
+        n64Config.find("\"combiner_equation\": \"(a - b) * c + d\"") == std::string::npos)
+      fail("Nintendo 64 state missing from renderer config export");
     current = RendererState{};
     reference = current;
     camera = CameraOrbit{};
@@ -196,13 +201,13 @@ int runApplication() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(150.0f);
     int hardwareProfileIndex = static_cast<int>(hardwareProfile);
-    const char* hardwareProfileLabels[] = {"Unrestricted", "PlayStation (PS1)"};
-    if (ImGui::Combo("##hardware-profile", &hardwareProfileIndex, hardwareProfileLabels, 2)) {
+    const char* hardwareProfileLabels[] = {"Unrestricted", "PlayStation (PS1)", "Nintendo 64"};
+    if (ImGui::Combo("##hardware-profile", &hardwareProfileIndex, hardwareProfileLabels, 3)) {
       hardwareProfile = static_cast<HardwareProfile>(hardwareProfileIndex);
       normalizeForHardwareProfile(hardwareProfile, current);
       normalizeForHardwareProfile(hardwareProfile, reference);
       if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
-      if (hardwareProfile == HardwareProfile::PlayStation && scene == TestScene::StencilMask) scene = TestScene::Torus;
+      if (hardwareProfile != HardwareProfile::Unrestricted && scene == TestScene::StencilMask) scene = TestScene::Torus;
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", hardwareProfileDescription(hardwareProfile));
     ImGui::SameLine();
@@ -210,7 +215,7 @@ int runApplication() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(180.0f);
     const char* sceneLabels[] = {"Torus", "Texture minification", "Depth precision", "Transparency", "Lighting comparison", "Stencil mask"};
-    const int sceneCount = hardwareProfile == HardwareProfile::PlayStation ? 5 : 6;
+    const int sceneCount = hardwareProfile == HardwareProfile::Unrestricted ? 6 : 5;
     int sceneIndex = static_cast<int>(scene);
     if (ImGui::Combo("##test-scene", &sceneIndex, sceneLabels, sceneCount)) scene = static_cast<TestScene>(sceneIndex);
     ImGui::SameLine();

@@ -2,6 +2,8 @@
 
 #include "app/State.hpp"
 
+#include <algorithm>
+
 namespace gfxlab {
 namespace {
 
@@ -94,6 +96,9 @@ void normalizeForHardwareProfile(HardwareProfile profile, RendererState& state) 
   if (profile == HardwareProfile::Unrestricted) return;
 
   if (profile == HardwareProfile::Nintendo64) {
+    if (state.n64.mipmapMode >= 2) state.n64.cycleType = 2;
+    state.n64.tileWidth = std::clamp(state.n64.tileWidth, 16, 64);
+    state.n64.tileHeight = std::clamp(state.n64.tileHeight, 16, 64);
     state.rasterization.samples = state.n64.coverageAntialiasing ? 4 : 1;
     state.rasterization.polygonOffset = state.n64.surfaceMode == 2;
     state.rasterization.polygonOffsetFactor = -1.0f;
@@ -111,8 +116,8 @@ void normalizeForHardwareProfile(HardwareProfile profile, RendererState& state) 
     if (state.lighting.model > 1) state.lighting.model = 1;
     state.lighting.shadows = false;
     state.lighting.visualizeShadowMap = false;
-    state.depth.testing = true;
-    state.depth.writing = state.n64.surfaceMode != 1;
+    state.depth.testing = state.n64.zCompare;
+    state.depth.writing = state.n64.zUpdate;
     state.depth.function = state.n64.surfaceMode == 2 ? 1 : 0;
     state.depth.visualization = 0;
     state.depth.orderingTable = false;
