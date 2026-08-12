@@ -22,8 +22,8 @@ namespace {
 struct RendererState {
   struct Geometry { float vertexQuantization = 0.0f; bool clipping = false; float clipHeight = 0.0f; bool clipAbove = false; } geometry;
   struct Camera { float fieldOfView = 45.0f; float nearPlane = 0.05f; bool orthographic = false; float orthographicSize = 4.0f; } camera;
-  struct Rasterization { bool affineMapping = false; int cullMode = 1; int samples = 1; } rasterization;
-  struct Surface { bool smoothShading = true; bool wireframe = false; int visualization = 0; int transparency = 0; float alphaCutoff = 0.5f; } surface;
+  struct Rasterization { bool affineMapping = false; int cullMode = 1; int samples = 1; bool polygonOffset = false; float polygonOffsetFactor = 1.0f; float polygonOffsetUnits = 1.0f; } rasterization;
+  struct Surface { bool smoothShading = true; bool wireframe = false; int visualization = 0; int transparency = 0; float alphaCutoff = 0.5f; bool reverseDrawOrder = false; } surface;
   struct Texture { bool nearestFiltering = false; bool repeat = true; bool mipmapping = false; bool trilinear = false; float anisotropy = 1.0f; } texture;
   struct Lighting { int model = 2; float ambient = 0.22f; float azimuth = 34.0f; float elevation = 52.0f; float shininess = 32.0f; } lighting;
   struct Depth { bool testing = true; bool writing = true; int precision = 24; int function = 0; int visualization = 0; } depth;
@@ -270,6 +270,7 @@ uniform vec3 uLightDirection;
 uniform float uShininess;
 uniform int uTransparencyMode;
 uniform float uAlphaCutoff;
+uniform bool uPremultiplyAlpha;
 uniform bool uLinearLight;
 uniform vec3 uObjectTint;
 uniform bool uFogEnabled;
@@ -323,7 +324,7 @@ void main() {
     if (uLinearLight) fogColor = pow(fogColor, vec3(2.2));
     color = mix(color, fogColor, fogAmount);
   }
-  fragColor = vec4(color, alpha);
+  fragColor = vec4(uPremultiplyAlpha ? color * alpha : color, alpha);
 }
 )GLSL";
 
@@ -541,10 +542,19 @@ public:
       glEnable(GL_CULL_FACE);
       glCullFace(state.rasterization.cullMode == 1 ? GL_BACK : GL_FRONT);
     }
-    if (state.surface.transparency == 2) {
+    if (state.rasterization.polygonOffset) {
+      glEnable(GL_POLYGON_OFFSET_FILL);
+      glPolygonOffset(state.rasterization.polygonOffsetFactor, state.rasterization.polygonOffsetUnits);
+    } else {
+      glDisable(GL_POLYGON_OFFSET_FILL);
+    }
+    if (state.surface.transparency >= 2) {
       glEnable(GL_BLEND);
       glBlendEquation(GL_FUNC_ADD);
-      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      if (state.surface.transparency == 2) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      if (state.surface.transparency == 3) glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+      if (state.surface.transparency == 4) glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+      if (state.surface.transparency == 5) glBlendFunc(GL_DST_COLOR, GL_ZERO);
     } else {
       glDisable(GL_BLEND);
     }
@@ -578,6 +588,7 @@ public:
     glUniform1i(location("uVisualization"), state.surface.visualization);
     glUniform1i(location("uTransparencyMode"), state.surface.transparency);
     glUniform1f(location("uAlphaCutoff"), state.surface.alphaCutoff);
+    glUniform1i(location("uPremultiplyAlpha"), state.surface.transparency == 3);
     glUniform1i(location("uLightingModel"), state.lighting.model);
     glUniform1f(location("uAmbient"), state.lighting.ambient);
     glUniform1f(location("uShininess"), state.lighting.shininess);
@@ -626,11 +637,18 @@ public:
         drawMesh(quad_, glm::translate(horizontal, glm::vec3(0, 0, 0.00030f)) * glm::scale(identity, glm::vec3(1.05f)), glm::vec3(0.5f, 1.0f, 0.62f));
         break;
       }
-      case TestScene::Transparency:
-        drawMesh(quad_, glm::rotate(identity, glm::radians(28.0f), glm::vec3(0, 1, 0)), glm::vec3(0.42f, 0.8f, 1.0f));
-        drawMesh(quad_, glm::rotate(identity, glm::radians(-35.0f), glm::vec3(0, 1, 0)), glm::vec3(1.0f, 0.48f, 0.35f));
-        drawMesh(quad_, glm::rotate(identity, glm::radians(90.0f), glm::vec3(1, 0, 0)), glm::vec3(0.55f, 1.0f, 0.56f));
+      case TestScene::Transparency: {
+        const std::array<glm::mat4, 3> transforms = {
+          glm::rotate(identity, glm::radians(28.0f), glm::vec3(0, 1, 0)),
+          glm::rotate(identity, glm::radians(-35.0f), glm::vec3(0, 1, 0)),
+          glm::rotate(identity, glm::radians(90.0f), glm::vec3(1, 0, 0))};
+        const std::array<glm::vec3, 3> tints = {glm::vec3(0.42f, 0.8f, 1.0f), glm::vec3(1.0f, 0.48f, 0.35f), glm::vec3(0.55f, 1.0f, 0.56f)};
+        for (int drawIndex = 0; drawIndex < 3; ++drawIndex) {
+          const int objectIndex = state.surface.reverseDrawOrder ? 2 - drawIndex : drawIndex;
+          drawMesh(quad_, transforms[objectIndex], tints[objectIndex]);
+        }
         break;
+      }
       case TestScene::Lighting:
         drawMesh(lowSphere_, glm::translate(identity, glm::vec3(-1.35f, 0, 0)), glm::vec3(0.9f, 0.55f, 0.38f));
         drawMesh(smoothSphere_, glm::translate(identity, glm::vec3(1.35f, 0, 0)), glm::vec3(0.45f, 0.68f, 1.0f));
@@ -639,6 +657,7 @@ public:
     }
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
+    glDisable(GL_POLYGON_OFFSET_FILL);
     glDisable(GL_CLIP_DISTANCE0);
 
     if (samples > 1) {
@@ -804,6 +823,12 @@ void inspector(Category category, RendererState& state) {
       int sampleIndex = state.rasterization.samples == 1 ? 0 : state.rasterization.samples == 2 ? 1 : state.rasterization.samples == 4 ? 2 : 3;
       if (ImGui::Combo("##samples", &sampleIndex, sampleLabels, 4)) state.rasterization.samples = sampleValues[sampleIndex];
       description("Stores multiple coverage and depth samples per pixel, then resolves them to one color.");
+      ImGui::Checkbox("Polygon offset fill", &state.rasterization.polygonOffset);
+      ImGui::BeginDisabled(!state.rasterization.polygonOffset);
+      ImGui::SliderFloat("Slope factor", &state.rasterization.polygonOffsetFactor, -4.0f, 4.0f, "%.2f");
+      ImGui::SliderFloat("Constant units", &state.rasterization.polygonOffsetUnits, -8.0f, 8.0f, "%.2f");
+      ImGui::EndDisabled();
+      description("Offsets generated depth values by a slope-dependent term plus a minimum-depth-step term.");
       break;
     }
     case Category::Surface: {
@@ -819,11 +844,14 @@ void inspector(Category category, RendererState& state) {
       ImGui::Checkbox("Wireframe overlay", &state.surface.wireframe);
       description("Draws triangle boundaries over the shaded surface.");
       ImGui::TextUnformatted("Transparency operation");
-      const char* transparencyLabels[] = {"Opaque", "Alpha test (discard)", "Alpha blending"};
-      ImGui::Combo("##transparency", &state.surface.transparency, transparencyLabels, 3);
+      const char* transparencyLabels[] = {"Opaque", "Alpha test (discard)", "Straight alpha blend",
+        "Premultiplied alpha blend", "Additive blend", "Multiply blend"};
+      ImGui::Combo("##transparency", &state.surface.transparency, transparencyLabels, 6);
       if (state.surface.transparency == 1)
         ImGui::SliderFloat("Alpha cutoff", &state.surface.alphaCutoff, 0.0f, 1.0f, "%.2f");
-      description("Discard makes a binary coverage decision; blending combines source and framebuffer colors.");
+      description("Each blend mode configures explicit source and destination factors in the framebuffer blend equation.");
+      ImGui::Checkbox("Reverse object draw order", &state.surface.reverseDrawOrder);
+      description("Transparent surfaces generally require back-to-front submission because blending is order-dependent.");
       break;
     }
     case Category::Texture:

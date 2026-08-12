@@ -37,6 +37,8 @@ The camera presentation has a fixed 4:3 aspect ratio. It expands to the maximum 
 - Nearest or bilinear texture filtering, mipmapping, trilinear interpolation, anisotropy, and texture addressing
 - Unlit, Gouraud, Phong-shaded Lambert, Phong reflection, and Blinn-Phong reflection models
 - Alpha discard and source-alpha blending
+- Straight alpha, premultiplied alpha, additive, and multiply blend factors with reversible object order
+- Polygon offset factor and units for coplanar depth conflicts
 - Depth testing, depth writes, comparison functions, 16- or 24-bit attachments, and depth visualization
 - Multisample anti-aliasing with 1, 2, 4, or 8 samples
 - Encoded-RGB or linear-light calculations, output color depth, and ordered Bayer dithering
