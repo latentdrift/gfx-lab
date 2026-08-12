@@ -11,6 +11,7 @@ find_package(imgui REQUIRED)
 
 add_executable(graphics-lab
   src/main.cpp
+  src/app/State.cpp
   src/handbook/Handbook.cpp
 )
 target_include_directories(graphics-lab PRIVATE src)
