@@ -25,7 +25,7 @@ struct RendererState {
   struct Rasterization { bool affineMapping = false; int cullMode = 1; int samples = 1; bool polygonOffset = false; float polygonOffsetFactor = 1.0f; float polygonOffsetUnits = 1.0f; } rasterization;
   struct Surface { bool smoothShading = true; bool wireframe = false; int visualization = 0; bool normalMapping = false; float normalStrength = 1.0f; int transparency = 0; float alphaCutoff = 0.5f; bool reverseDrawOrder = false; } surface;
   struct Texture { bool nearestFiltering = false; bool repeat = true; bool mipmapping = false; bool trilinear = false; float anisotropy = 1.0f; } texture;
-  struct Lighting { int model = 2; float ambient = 0.22f; float azimuth = 34.0f; float elevation = 52.0f; float shininess = 32.0f; } lighting;
+  struct Lighting { int model = 2; float ambient = 0.22f; float azimuth = 34.0f; float elevation = 52.0f; float shininess = 32.0f; bool shadows = false; int shadowResolution = 1024; float shadowBias = 0.002f; bool shadowPcf = true; bool visualizeShadowMap = false; } lighting;
   struct Depth { bool testing = true; bool writing = true; int precision = 24; int function = 0; int visualization = 0; } depth;
   struct Stencil { bool enabled = false; bool invert = false; int reference = 1; } stencil;
   struct Color { int bitsPerChannel = 8; bool dithering = false; bool linearLight = true; } color;
@@ -225,6 +225,7 @@ layout(location=5) in vec4 aTangent;
 uniform mat4 uModel;
 uniform mat4 uView;
 uniform mat4 uProjection;
+uniform mat4 uLightSpace;
 uniform float uQuantization;
 uniform bool uClipEnabled;
 uniform vec4 uClipPlane;
@@ -239,6 +240,7 @@ out vec3 vBarycentric;
 out vec3 vColor;
 out float vVertexLighting;
 out vec4 vTangent;
+out vec4 vLightPosition;
 
 void main() {
   vec3 position = aPosition;
@@ -252,6 +254,7 @@ void main() {
   vBarycentric = aBarycentric;
   vColor = aColor;
   vTangent = vec4(normalize(mat3(uModel) * aTangent.xyz), aTangent.w);
+  vLightPosition = uLightSpace * world;
   float vertexDiffuse = max(dot(vNormal, normalize(uLightDirection)), 0.0);
   vVertexLighting = uAmbient + (1.0 - uAmbient) * vertexDiffuse;
   gl_ClipDistance[0] = uClipEnabled ? dot(world, uClipPlane) : 1.0;
@@ -269,9 +272,11 @@ in vec3 vBarycentric;
 in vec3 vColor;
 in float vVertexLighting;
 in vec4 vTangent;
+in vec4 vLightPosition;
 
 uniform sampler2D uTexture;
 uniform sampler2D uNormalMap;
+uniform sampler2D uShadowMap;
 uniform bool uAffineMapping;
 uniform bool uSmoothShading;
 uniform bool uWireframe;
@@ -287,11 +292,28 @@ uniform bool uNormalMapping;
 uniform float uNormalStrength;
 uniform bool uLinearLight;
 uniform vec3 uObjectTint;
+uniform bool uShadowsEnabled;
+uniform float uShadowBias;
+uniform bool uShadowPcf;
 uniform bool uFogEnabled;
 uniform float uFogStart;
 uniform float uFogEnd;
 uniform vec3 uCameraPosition;
 out vec4 fragColor;
+
+float shadowAmount() {
+  vec3 projected = vLightPosition.xyz / vLightPosition.w * 0.5 + 0.5;
+  if (projected.z <= 0.0 || projected.z >= 1.0 || any(lessThan(projected.xy, vec2(0.0))) || any(greaterThan(projected.xy, vec2(1.0))))
+    return 0.0;
+  if (!uShadowPcf)
+    return projected.z - uShadowBias > texture(uShadowMap, projected.xy).r ? 1.0 : 0.0;
+  vec2 texel = 1.0 / vec2(textureSize(uShadowMap, 0));
+  float shadow = 0.0;
+  for (int y = -1; y <= 1; ++y)
+    for (int x = -1; x <= 1; ++x)
+      shadow += projected.z - uShadowBias > texture(uShadowMap, projected.xy + vec2(x, y) * texel).r ? 1.0 : 0.0;
+  return shadow / 9.0;
+}
 
 void main() {
   vec2 uv = uAffineMapping ? vUvAffine : vUvPerspective;
@@ -334,6 +356,8 @@ void main() {
       specular = pow(max(dot(normal, normalize(lightDirection + viewDirection)), 0.0), uShininess);
     color += vec3(0.35) * specular;
   }
+  if (uShadowsEnabled && uLightingModel != 0)
+    color *= 1.0 - shadowAmount() * (1.0 - uAmbient);
 
   if (uWireframe) {
     vec3 width = fwidth(vBarycentric);
@@ -375,6 +399,8 @@ uniform int uDepthVisualization;
 uniform float uNearPlane;
 uniform float uFarPlane;
 uniform bool uOrthographic;
+uniform sampler2D uShadowMap;
+uniform bool uVisualizeShadowMap;
 out vec4 fragColor;
 
 float bayer4(ivec2 p) {
@@ -389,7 +415,9 @@ float bayer4(ivec2 p) {
 
 void main() {
   vec3 color = texture(uScene, vUv).rgb;
-  if (uDepthVisualization != 0) {
+  if (uVisualizeShadowMap) {
+    color = vec3(texture(uShadowMap, vUv).r);
+  } else if (uDepthVisualization != 0) {
     float rawDepth = texture(uDepth, vUv).r;
     if (uDepthVisualization == 1) {
       color = vec3(rawDepth);
@@ -412,6 +440,24 @@ void main() {
   color = round(clamp(color, 0.0, 1.0) * levels) / levels;
   fragColor = vec4(color, 1.0);
 }
+)GLSL";
+
+const char* shadowVertexShader = R"GLSL(
+#version 410 core
+layout(location=0) in vec3 aPosition;
+uniform mat4 uModel;
+uniform mat4 uLightSpace;
+uniform float uQuantization;
+void main() {
+  vec3 position = aPosition;
+  if (uQuantization > 0.0) position = round(position / uQuantization) * uQuantization;
+  gl_Position = uLightSpace * uModel * vec4(position, 1.0);
+}
+)GLSL";
+
+const char* shadowFragmentShader = R"GLSL(
+#version 410 core
+void main() {}
 )GLSL";
 
 struct RenderTarget {
@@ -509,6 +555,7 @@ public:
   Renderer() {
     sceneProgram_ = makeProgram(sceneVertexShader, sceneFragmentShader);
     outputProgram_ = makeProgram(outputVertexShader, outputFragmentShader);
+    shadowProgram_ = makeProgram(shadowVertexShader, shadowFragmentShader);
     std::vector<Vertex> vertices;
     auto appendMesh = [&vertices](const std::vector<Vertex>& mesh) {
       const MeshRange range{static_cast<GLint>(vertices.size()), static_cast<GLsizei>(mesh.size())};
@@ -544,6 +591,8 @@ public:
       glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAnisotropy_);
     makeCheckerTexture();
     makeNormalTexture();
+    glGenFramebuffers(1, &shadowFbo_);
+    glGenTextures(1, &shadowTexture_);
   }
 
   ~Renderer() {
@@ -551,15 +600,55 @@ public:
     targetB_.destroy();
     glDeleteTextures(1, &checkerTexture_);
     glDeleteTextures(1, &normalTexture_);
+    glDeleteFramebuffers(1, &shadowFbo_);
+    glDeleteTextures(1, &shadowTexture_);
     glDeleteBuffers(1, &vbo_);
     glDeleteVertexArrays(1, &vao_);
     glDeleteVertexArrays(1, &fullscreenVao_);
     glDeleteProgram(sceneProgram_);
     glDeleteProgram(outputProgram_);
+    glDeleteProgram(shadowProgram_);
   }
 
   GLuint render(const RendererState& state, const CameraOrbit& camera, TestScene scene, bool referenceTarget) {
     RenderTarget& target = referenceTarget ? targetB_ : targetA_;
+    const float azimuth = glm::radians(state.lighting.azimuth);
+    const float elevation = glm::radians(state.lighting.elevation);
+    const glm::vec3 lightDirection(std::cos(elevation) * std::cos(azimuth), std::sin(elevation),
+      std::cos(elevation) * std::sin(azimuth));
+    const glm::vec3 lightUp = std::abs(lightDirection.y) > 0.98f ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
+    const glm::mat4 lightView = glm::lookAt(lightDirection * 9.0f, glm::vec3(0), lightUp);
+    const glm::mat4 lightProjection = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 0.1f, 20.0f);
+    const glm::mat4 lightSpace = lightProjection * lightView;
+    const bool shadowsEnabled = state.lighting.shadows && scene == TestScene::Lighting;
+
+    if (shadowsEnabled) {
+      resizeShadowMap(state.lighting.shadowResolution);
+      glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo_);
+      glViewport(0, 0, shadowResolution_, shadowResolution_);
+      glEnable(GL_DEPTH_TEST);
+      glDepthMask(GL_TRUE);
+      glDepthFunc(GL_LESS);
+      glDisable(GL_BLEND);
+      glEnable(GL_CULL_FACE);
+      glCullFace(GL_FRONT);
+      glClearDepth(1.0);
+      glClear(GL_DEPTH_BUFFER_BIT);
+      glUseProgram(shadowProgram_);
+      glUniformMatrix4fv(glGetUniformLocation(shadowProgram_, "uLightSpace"), 1, GL_FALSE, glm::value_ptr(lightSpace));
+      glUniform1f(glGetUniformLocation(shadowProgram_, "uQuantization"), state.geometry.vertexQuantization);
+      glBindVertexArray(vao_);
+      auto drawShadow = [this](const MeshRange& mesh, const glm::mat4& modelMatrix) {
+        glUniformMatrix4fv(glGetUniformLocation(shadowProgram_, "uModel"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+        glDrawArrays(GL_TRIANGLES, mesh.first, mesh.count);
+      };
+      const glm::mat4 identity(1.0f);
+      drawShadow(lowSphere_, glm::translate(identity, glm::vec3(-1.35f, 0, 0)));
+      drawShadow(smoothSphere_, glm::translate(identity, glm::vec3(1.35f, 0, 0)));
+      drawShadow(torus_, glm::translate(glm::scale(identity, glm::vec3(0.62f)), glm::vec3(0, 1.9f, 0)));
+      drawShadow(plane_, glm::translate(glm::scale(identity, glm::vec3(0.75f)), glm::vec3(0, -1.55f, -0.1f)));
+    }
+
     const int samples = state.rasterization.samples == 1 ? 1 : std::min(state.rasterization.samples, maxSamples_);
     const bool needsStencil = scene == TestScene::StencilMask && state.stencil.enabled;
     target.resize(state.output.width, state.output.height, state.depth.precision, samples, needsStencil);
@@ -614,6 +703,7 @@ public:
     matrix("uModel", model);
     matrix("uView", view);
     matrix("uProjection", projection);
+    matrix("uLightSpace", lightSpace);
     glUniform1f(location("uQuantization"), state.geometry.vertexQuantization);
     glUniform1i(location("uClipEnabled"), state.geometry.clipping);
     const glm::vec4 clipPlane(0.0f, state.geometry.clipAbove ? -1.0f : 1.0f, 0.0f,
@@ -632,11 +722,10 @@ public:
     glUniform1f(location("uAmbient"), state.lighting.ambient);
     glUniform1f(location("uShininess"), state.lighting.shininess);
     glUniform1i(location("uLinearLight"), state.color.linearLight);
-    const float azimuth = glm::radians(state.lighting.azimuth);
-    const float elevation = glm::radians(state.lighting.elevation);
-    const glm::vec3 lightDirection(std::cos(elevation) * std::cos(azimuth), std::sin(elevation),
-      std::cos(elevation) * std::sin(azimuth));
     glUniform3fv(location("uLightDirection"), 1, glm::value_ptr(lightDirection));
+    glUniform1i(location("uShadowsEnabled"), shadowsEnabled);
+    glUniform1f(location("uShadowBias"), state.lighting.shadowBias);
+    glUniform1i(location("uShadowPcf"), state.lighting.shadowPcf);
     glUniform1i(location("uFogEnabled"), state.post.fog);
     glUniform1f(location("uFogStart"), state.post.fogStart);
     glUniform1f(location("uFogEnd"), state.post.fogEnd);
@@ -659,6 +748,9 @@ public:
     glBindTexture(GL_TEXTURE_2D, normalTexture_);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, state.texture.mipmapping ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
     glUniform1i(location("uNormalMap"), 1);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, shadowTexture_);
+    glUniform1i(location("uShadowMap"), 2);
     glBindVertexArray(vao_);
     auto drawMesh = [this](const MeshRange& mesh, const glm::mat4& modelMatrix, const glm::vec3& tint) {
       matrix("uModel", modelMatrix);
@@ -693,6 +785,7 @@ public:
         break;
       }
       case TestScene::Lighting:
+        drawMesh(plane_, glm::translate(glm::scale(identity, glm::vec3(0.75f)), glm::vec3(0, -1.55f, -0.1f)), glm::vec3(0.45f));
         drawMesh(lowSphere_, glm::translate(identity, glm::vec3(-1.35f, 0, 0)), glm::vec3(0.9f, 0.55f, 0.38f));
         drawMesh(smoothSphere_, glm::translate(identity, glm::vec3(1.35f, 0, 0)), glm::vec3(0.45f, 0.68f, 1.0f));
         drawMesh(torus_, glm::translate(glm::scale(identity, glm::vec3(0.62f)), glm::vec3(0, 1.9f, 0)), glm::vec3(0.7f, 1.0f, 0.6f));
@@ -750,6 +843,11 @@ public:
     glUniform1f(glGetUniformLocation(outputProgram_, "uNearPlane"), state.camera.nearPlane);
     glUniform1f(glGetUniformLocation(outputProgram_, "uFarPlane"), 100.0f);
     glUniform1i(glGetUniformLocation(outputProgram_, "uOrthographic"), state.camera.orthographic);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, shadowTexture_);
+    glUniform1i(glGetUniformLocation(outputProgram_, "uShadowMap"), 2);
+    glUniform1i(glGetUniformLocation(outputProgram_, "uVisualizeShadowMap"),
+      shadowsEnabled && state.lighting.visualizeShadowMap);
     glBindVertexArray(fullscreenVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindTexture(GL_TEXTURE_2D, target.outputTexture);
@@ -761,12 +859,14 @@ public:
   }
 
 private:
-  GLuint sceneProgram_ = 0, outputProgram_ = 0;
+  GLuint sceneProgram_ = 0, outputProgram_ = 0, shadowProgram_ = 0;
   GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, normalTexture_ = 0;
   GLsizei vertexCount_ = 0;
   GLint maxSamples_ = 1;
   GLfloat maxAnisotropy_ = 1.0f;
   MeshRange torus_, plane_, quad_, lowSphere_, smoothSphere_;
+  GLuint shadowFbo_ = 0, shadowTexture_ = 0;
+  int shadowResolution_ = 0;
   RenderTarget targetA_, targetB_;
 
   GLint location(const char* name) const { return glGetUniformLocation(sceneProgram_, name); }
@@ -813,6 +913,28 @@ private:
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glGenerateMipmap(GL_TEXTURE_2D);
+  }
+
+  void resizeShadowMap(int resolution) {
+    resolution = std::clamp(resolution, 128, 4096);
+    if (shadowResolution_ == resolution) return;
+    shadowResolution_ = resolution;
+    glBindTexture(GL_TEXTURE_2D, shadowTexture_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, resolution, resolution, 0,
+      GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    const float border[] = {1, 1, 1, 1};
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
+    glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowTexture_, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+      fail("could not create shadow-map framebuffer");
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 };
 
@@ -977,6 +1099,19 @@ void inspector(Category category, RendererState& state) {
       ImGui::SliderFloat("Light azimuth", &state.lighting.azimuth, -180.0f, 180.0f, "%.0f deg");
       ImGui::SliderFloat("Light elevation", &state.lighting.elevation, -90.0f, 90.0f, "%.0f deg");
       description("Azimuth rotates around the vertical axis; elevation moves above or below the horizon.");
+      ImGui::Checkbox("Directional shadow map", &state.lighting.shadows);
+      ImGui::BeginDisabled(!state.lighting.shadows);
+      const char* shadowResolutionLabels[] = {"256 x 256", "512 x 512", "1024 x 1024", "2048 x 2048"};
+      const int shadowResolutions[] = {256, 512, 1024, 2048};
+      int shadowResolutionIndex = state.lighting.shadowResolution == 256 ? 0 : state.lighting.shadowResolution == 512 ? 1 :
+        state.lighting.shadowResolution == 2048 ? 3 : 2;
+      if (ImGui::Combo("Shadow-map resolution", &shadowResolutionIndex, shadowResolutionLabels, 4))
+        state.lighting.shadowResolution = shadowResolutions[shadowResolutionIndex];
+      ImGui::SliderFloat("Depth comparison bias", &state.lighting.shadowBias, 0.0f, 0.02f, "%.5f", ImGuiSliderFlags_Logarithmic);
+      ImGui::Checkbox("3 x 3 percentage-closer filtering", &state.lighting.shadowPcf);
+      ImGui::Checkbox("Visualize light-space depth", &state.lighting.visualizeShadowMap);
+      ImGui::EndDisabled();
+      description("Renders scene depth from the light, then compares each camera fragment against that depth map.");
       break;
     }
     case Category::Depth: {
