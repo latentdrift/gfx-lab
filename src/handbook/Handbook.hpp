@@ -37,6 +37,7 @@ public:
 
 private:
   bool open_ = false;
+  bool focusRequested_ = false;
   int chapter_ = 0;
   int article_ = 0;
   std::array<char, 96> search_{};

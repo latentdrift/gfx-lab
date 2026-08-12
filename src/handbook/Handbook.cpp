@@ -540,7 +540,10 @@ std::array<const char*, 4> branchesFor(std::string_view title) {
 
 } // namespace
 
-void Handbook::open() { open_ = true; }
+void Handbook::open() {
+  open_ = true;
+  focusRequested_ = true;
+}
 bool Handbook::isOpen() const { return open_; }
 
 Action Handbook::draw() {
@@ -551,6 +554,10 @@ Action Handbook::draw() {
   ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.05f, io.DisplaySize.y * 0.05f), ImGuiCond_Appearing);
   ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.90f, io.DisplaySize.y * 0.90f), ImGuiCond_Appearing);
   ImGui::SetNextWindowSizeConstraints(ImVec2(900, 600), io.DisplaySize);
+  if (focusRequested_) {
+    ImGui::SetNextWindowFocus();
+    focusRequested_ = false;
+  }
   if (!ImGui::Begin("Graphics Handbook", &open_, ImGuiWindowFlags_NoCollapse)) {
     ImGui::End();
     return action;
@@ -659,7 +666,10 @@ Action Handbook::draw() {
       ImGui::SameLine();
       if (ImGui::Button("Apply comparison to B")) action = {ActionType::ApplyToB, article.example};
       ImGui::SameLine();
-      if (ImGui::Button("Load split A/B")) action = {ActionType::LoadComparison, article.example};
+      if (ImGui::Button("Load split A/B")) {
+        action = {ActionType::LoadComparison, article.example};
+        open_ = false;
+      }
       ImGui::TextDisabled("Applying is explicit. Opening or reading an article never changes the renderer.");
     }
   }
