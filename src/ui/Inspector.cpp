@@ -130,8 +130,9 @@ void drawInspector(Category category, RendererState& state) {
       description("Transforms sampled tangent-space normals into world space with the tangent-bitangent-normal basis.");
       ImGui::TextUnformatted("Transparency operation");
       const char* transparencyLabels[] = {"Opaque", "Alpha test (discard)", "Straight alpha blend",
-        "Premultiplied alpha blend", "Additive blend", "Multiply blend"};
-      ImGui::Combo("##transparency", &state.surface.transparency, transparencyLabels, 6);
+        "Premultiplied alpha blend", "Additive blend", "Multiply blend", "PS1 average (B/2 + F/2)",
+        "PS1 additive (B + F)", "PS1 subtractive (B - F)", "PS1 quarter-add (B + F/4)"};
+      ImGui::Combo("##transparency", &state.surface.transparency, transparencyLabels, 10);
       if (state.surface.transparency == 1)
         ImGui::SliderFloat("Alpha cutoff", &state.surface.alphaCutoff, 0.0f, 1.0f, "%.2f");
       description("Each blend mode configures explicit source and destination factors in the framebuffer blend equation.");
@@ -139,7 +140,7 @@ void drawInspector(Category category, RendererState& state) {
       description("Transparent surfaces generally require back-to-front submission because blending is order-dependent.");
       break;
     }
-    case Category::Texture:
+    case Category::Texture: {
       ImGui::TextUnformatted("TEXTURE"); ImGui::Separator();
       ImGui::TextUnformatted("Texture filtering");
       radioPair("Bilinear", "Nearest", state.texture.nearestFiltering);
@@ -155,7 +156,12 @@ void drawInspector(Category category, RendererState& state) {
       description("Interpolates between the two nearest mip levels as well as between texels.");
       ImGui::SliderFloat("Anisotropy", &state.texture.anisotropy, 1.0f, 16.0f, "%.0f x");
       description("Uses additional samples to preserve detail when texture footprints are elongated by perspective.");
+      ImGui::TextUnformatted("Texture color storage");
+      const char* colorModeLabels[] = {"Direct color", "8-bit index + 256-color CLUT", "4-bit index + 16-color CLUT"};
+      ImGui::Combo("##texture-color-storage", &state.texture.colorMode, colorModeLabels, 3);
+      description("Indexed textures store palette entries rather than RGB texels. CLUT means color lookup table.");
       break;
+    }
     case Category::Lighting: {
       ImGui::TextUnformatted("LIGHTING"); ImGui::Separator();
       ImGui::TextUnformatted("Lighting model");
@@ -182,6 +188,13 @@ void drawInspector(Category category, RendererState& state) {
       ImGui::Checkbox("Visualize light-space depth", &state.lighting.visualizeShadowMap);
       ImGui::EndDisabled();
       description("Renders scene depth from the light, then compares each camera fragment against that depth map.");
+      ImGui::Checkbox("Vertex depth cueing", &state.lighting.depthCue);
+      ImGui::BeginDisabled(!state.lighting.depthCue);
+      ImGui::SliderFloat("Cue start", &state.lighting.depthCueStart, 0.0f, 15.0f, "%.2f units");
+      ImGui::SliderFloat("Cue end", &state.lighting.depthCueEnd, 0.1f, 30.0f, "%.2f units");
+      ImGui::ColorEdit3("Far color", &state.lighting.farColor.x, ImGuiColorEditFlags_NoInputs);
+      ImGui::EndDisabled();
+      description("Computes a depth factor at vertices, interpolates it, then blends shaded color toward the far color.");
       break;
     }
     case Category::Depth: {
@@ -203,6 +216,11 @@ void drawInspector(Category category, RendererState& state) {
       const char* viewLabels[] = {"Off", "Raw window-space depth", "Linear camera depth (0-10 units)"};
       ImGui::Combo("##depth-view", &state.depth.visualization, viewLabels, 3);
       description("Raw perspective depth is nonlinear; linearization reconstructs camera-space distance.");
+      ImGui::Checkbox("Object ordering table", &state.depth.orderingTable);
+      ImGui::BeginDisabled(!state.depth.orderingTable);
+      ImGui::SliderInt("Depth buckets", &state.depth.orderingBuckets, 4, 256);
+      ImGui::EndDisabled();
+      description("Bins transparent objects by camera depth and submits far buckets first with depth testing disabled. Granularity: object, not polygon.");
       break;
     }
     case Category::Stencil:

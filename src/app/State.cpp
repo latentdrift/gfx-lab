@@ -191,7 +191,10 @@ void applyHandbookExample(handbook::Example example, bool alternative, RendererS
 std::string configJson(const RendererState& state, const CameraOrbit& camera, TestScene scene) {
   const char* cullModes[] = {"none", "back", "front"};
   const char* visualizations[] = {"texture", "uv_coordinates", "normals", "vertex_colors", "tangents", "bitangents"};
-  const char* transparencyModes[] = {"opaque", "alpha_test", "straight_alpha", "premultiplied_alpha", "additive", "multiply"};
+  const char* transparencyModes[] = {"opaque", "alpha_test", "straight_alpha", "premultiplied_alpha", "additive", "multiply",
+    "ps1_average_background_half_plus_foreground_half", "ps1_additive_background_plus_foreground",
+    "ps1_subtractive_background_minus_foreground", "ps1_quarter_add_background_plus_foreground_quarter"};
+  const char* textureColorModes[] = {"direct_color", "indexed_8bit_clut_256", "indexed_4bit_clut_16"};
   const char* lightingModels[] = {"unlit", "gouraud_lambert", "phong_shaded_lambert", "phong_reflection", "blinn_phong_reflection"};
   const char* depthFunctions[] = {"less", "less_or_equal", "greater", "always"};
   const char* depthViews[] = {"off", "raw_window_space", "linear_camera_space_0_to_10_units"};
@@ -237,7 +240,7 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
   json << "    \"wireframe_overlay\": " << boolean(state.surface.wireframe) << ",\n";
   json << "    \"normal_mapping\": {\"enabled\": " << boolean(state.surface.normalMapping)
        << ", \"space\": \"tangent\", \"strength\": " << state.surface.normalStrength << "},\n";
-  json << "    \"transparency\": {\"operation\": \"" << transparencyModes[std::clamp(state.surface.transparency, 0, 5)]
+  json << "    \"transparency\": {\"operation\": \"" << transparencyModes[std::clamp(state.surface.transparency, 0, 9)]
        << "\", \"alpha_cutoff\": " << state.surface.alphaCutoff
        << ", \"reverse_object_draw_order\": " << boolean(state.surface.reverseDrawOrder) << "}\n";
   json << "  },\n";
@@ -247,7 +250,8 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
   json << "    \"address_mode\": \"" << (state.texture.repeat ? "repeat" : "clamp_to_edge") << "\",\n";
   json << "    \"mipmapping\": " << boolean(state.texture.mipmapping) << ",\n";
   json << "    \"mip_level_interpolation\": \"" << (state.texture.trilinear ? "linear" : "nearest") << "\",\n";
-  json << "    \"anisotropy\": " << state.texture.anisotropy << "\n";
+  json << "    \"anisotropy\": " << state.texture.anisotropy << ",\n";
+  json << "    \"color_storage\": \"" << textureColorModes[std::clamp(state.texture.colorMode, 0, 2)] << "\"\n";
   json << "  },\n";
   json << "  \"lighting\": {\n";
   json << "    \"model\": \"" << lightingModels[std::clamp(state.lighting.model, 0, 4)] << "\",\n";
@@ -257,14 +261,19 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
   json << "    \"shadow_map\": {\"enabled\": " << boolean(state.lighting.shadows)
        << ", \"resolution\": " << state.lighting.shadowResolution << ", \"depth_bias\": " << state.lighting.shadowBias
        << ", \"filter\": \"" << (state.lighting.shadowPcf ? "pcf_3x3" : "nearest")
-       << "\", \"visualize_light_depth\": " << boolean(state.lighting.visualizeShadowMap) << "}\n";
+       << "\", \"visualize_light_depth\": " << boolean(state.lighting.visualizeShadowMap) << "},\n";
+  json << "    \"vertex_depth_cue\": {\"enabled\": " << boolean(state.lighting.depthCue)
+       << ", \"start_units\": " << state.lighting.depthCueStart << ", \"end_units\": " << state.lighting.depthCueEnd
+       << ", \"far_color_rgb\": [" << state.lighting.farColor.r << ", " << state.lighting.farColor.g << ", " << state.lighting.farColor.b << "]}\n";
   json << "  },\n";
   json << "  \"depth\": {\n";
   json << "    \"test_enabled\": " << boolean(state.depth.testing) << ",\n";
   json << "    \"write_enabled\": " << boolean(state.depth.writing) << ",\n";
   json << "    \"comparison\": \"" << depthFunctions[std::clamp(state.depth.function, 0, 3)] << "\",\n";
   json << "    \"buffer_precision_bits\": " << state.depth.precision << ",\n";
-  json << "    \"visualization\": \"" << depthViews[std::clamp(state.depth.visualization, 0, 2)] << "\"\n";
+  json << "    \"visualization\": \"" << depthViews[std::clamp(state.depth.visualization, 0, 2)] << "\",\n";
+  json << "    \"visibility_submission\": {\"method\": \"" << (state.depth.orderingTable ? "ordering_table" : "depth_buffer")
+       << "\", \"granularity\": \"object\", \"depth_buckets\": " << state.depth.orderingBuckets << "}\n";
   json << "  },\n";
   json << "  \"stencil\": {\n";
   json << "    \"two_pass_mask_enabled\": " << boolean(state.stencil.enabled) << ",\n";

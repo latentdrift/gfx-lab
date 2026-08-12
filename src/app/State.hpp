@@ -13,9 +13,9 @@ struct RendererState {
   struct Camera { float fieldOfView = 45.0f; float nearPlane = 0.05f; bool orthographic = false; float orthographicSize = 4.0f; } camera;
   struct Rasterization { bool affineMapping = false; int cullMode = 1; int samples = 1; bool polygonOffset = false; float polygonOffsetFactor = 1.0f; float polygonOffsetUnits = 1.0f; } rasterization;
   struct Surface { bool smoothShading = true; bool wireframe = false; int visualization = 0; bool normalMapping = false; float normalStrength = 1.0f; int transparency = 0; float alphaCutoff = 0.5f; bool reverseDrawOrder = false; } surface;
-  struct Texture { bool nearestFiltering = false; bool repeat = true; bool mipmapping = false; bool trilinear = false; float anisotropy = 1.0f; } texture;
-  struct Lighting { int model = 2; float ambient = 0.22f; float azimuth = 34.0f; float elevation = 52.0f; float shininess = 32.0f; bool shadows = false; int shadowResolution = 1024; float shadowBias = 0.002f; bool shadowPcf = true; bool visualizeShadowMap = false; } lighting;
-  struct Depth { bool testing = true; bool writing = true; int precision = 24; int function = 0; int visualization = 0; } depth;
+  struct Texture { bool nearestFiltering = false; bool repeat = true; bool mipmapping = false; bool trilinear = false; float anisotropy = 1.0f; int colorMode = 0; } texture;
+  struct Lighting { int model = 2; float ambient = 0.22f; float azimuth = 34.0f; float elevation = 52.0f; float shininess = 32.0f; bool shadows = false; int shadowResolution = 1024; float shadowBias = 0.002f; bool shadowPcf = true; bool visualizeShadowMap = false; bool depthCue = false; float depthCueStart = 3.0f; float depthCueEnd = 7.0f; glm::vec3 farColor{0.12f, 0.16f, 0.22f}; } lighting;
+  struct Depth { bool testing = true; bool writing = true; int precision = 24; int function = 0; int visualization = 0; bool orderingTable = false; int orderingBuckets = 32; } depth;
   struct Stencil { bool enabled = false; bool invert = false; int reference = 1; } stencil;
   struct Color { int bitsPerChannel = 8; bool dithering = false; bool linearLight = true; } color;
   struct Post { bool fog = false; float fogStart = 3.0f; float fogEnd = 7.0f; bool overdraw = false; float overdrawRange = 8.0f; } post;
