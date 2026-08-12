@@ -1,0 +1,100 @@
+#include "app/HardwareProfile.hpp"
+
+#include "app/State.hpp"
+
+namespace gfxlab {
+namespace {
+
+constexpr ProfileCapabilities unrestrictedCapabilities{};
+
+constexpr ProfileCapabilities playStationCapabilities{
+  .projectionModes = false,
+  .multisampling = false,
+  .polygonOffset = false,
+  .surfaceDiagnostics = false,
+  .smoothAndFlatNormals = false,
+  .wireframeOverlay = false,
+  .normalMapping = false,
+  .generalBlendModes = false,
+  .textureFiltering = false,
+  .mipmapping = false,
+  .anisotropy = false,
+  .perFragmentLighting = false,
+  .shadowMapping = false,
+  .depthBuffer = false,
+  .stencilBuffer = false,
+  .configurableColorDepth = false,
+  .linearLight = false,
+  .fragmentFog = false,
+  .overdrawAnalysis = false,
+};
+
+} // namespace
+
+const char* hardwareProfileName(HardwareProfile profile) {
+  switch (profile) {
+    case HardwareProfile::Unrestricted: return "Unrestricted";
+    case HardwareProfile::PlayStation: return "PlayStation (PS1)";
+  }
+  return "Unknown";
+}
+
+const char* hardwareProfileDescription(HardwareProfile profile) {
+  switch (profile) {
+    case HardwareProfile::Unrestricted:
+      return "All implemented renderer operations are independently available.";
+    case HardwareProfile::PlayStation:
+      return "Restricts the lab to PS1-representable operations and normalizes unavailable state.";
+  }
+  return "";
+}
+
+const ProfileCapabilities& hardwareProfileCapabilities(HardwareProfile profile) {
+  return profile == HardwareProfile::PlayStation ? playStationCapabilities : unrestrictedCapabilities;
+}
+
+void normalizeForHardwareProfile(HardwareProfile profile, RendererState& state) {
+  if (profile == HardwareProfile::Unrestricted) return;
+
+  state.camera.orthographic = false;
+  state.rasterization.affineMapping = true;
+  state.rasterization.samples = 1;
+  state.rasterization.polygonOffset = false;
+
+  state.surface.visualization = 0;
+  state.surface.smoothShading = true;
+  state.surface.wireframe = false;
+  state.surface.normalMapping = false;
+  state.surface.normalStrength = 1.0f;
+  if (state.surface.transparency >= 2 && state.surface.transparency <= 5) {
+    constexpr int ps1Equivalents[] = {6, 6, 7, 8};
+    state.surface.transparency = ps1Equivalents[state.surface.transparency - 2];
+  }
+
+  state.texture.nearestFiltering = true;
+  state.texture.mipmapping = false;
+  state.texture.trilinear = false;
+  state.texture.anisotropy = 1.0f;
+
+  if (state.lighting.model > 1) state.lighting.model = 1;
+  state.lighting.shadows = false;
+  state.lighting.visualizeShadowMap = false;
+
+  state.depth.testing = false;
+  state.depth.writing = false;
+  state.depth.function = 0;
+  state.depth.visualization = 0;
+  state.depth.orderingTable = true;
+
+  state.stencil.enabled = false;
+  state.color.bitsPerChannel = 5;
+  state.color.linearLight = false;
+  state.post.fog = false;
+  state.post.overdraw = false;
+
+  state.output.width = 320;
+  state.output.height = 240;
+  state.output.nearestUpscaling = true;
+}
+
+} // namespace gfxlab
