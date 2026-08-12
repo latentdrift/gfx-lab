@@ -724,6 +724,11 @@ struct RenderTarget {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindFramebuffer(GL_FRAMEBUFFER, sceneFbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTexture, 0);
+    // GL_DEPTH_STENCIL_ATTACHMENT aliases both attachment points. Detach each
+    // point explicitly before switching between depth-only and packed formats;
+    // otherwise the previous stencil half survives and makes the FBO incomplete.
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
     glFramebufferTexture2D(GL_FRAMEBUFFER, packedStencil ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT,
       GL_TEXTURE_2D, depthTexture, 0);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
@@ -736,6 +741,8 @@ struct RenderTarget {
       glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, depthFormat, width, height);
       glBindFramebuffer(GL_FRAMEBUFFER, multisampleFbo);
       glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, multisampleColor);
+      glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
+      glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0);
       glFramebufferRenderbuffer(GL_FRAMEBUFFER, packedStencil ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT,
         GL_RENDERBUFFER, multisampleDepth);
       if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
@@ -817,6 +824,17 @@ public:
     glGetIntegerv(GL_MAX_SAMPLES, &maxSamples_);
     if (GLEW_EXT_texture_filter_anisotropic)
       glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAnisotropy_);
+    if (std::getenv("GRAPHICS_LAB_VALIDATE_FRAMEBUFFERS")) {
+      RenderTarget validationTarget;
+      validationTarget.resize(64, 64, 16, 1, false);
+      validationTarget.resize(64, 64, 24, 1, true);
+      validationTarget.resize(64, 64, 24, 1, false);
+      if (maxSamples_ >= 2) {
+        validationTarget.resize(64, 64, 24, 2, true);
+        validationTarget.resize(64, 64, 16, 2, false);
+      }
+      validationTarget.destroy();
+    }
     makeCheckerTexture();
     makeNormalTexture();
     glGenFramebuffers(1, &shadowFbo_);
