@@ -1,6 +1,7 @@
 #pragma once
 
 #include "handbook/Handbook.hpp"
+#include "app/HardwareProfile.hpp"
 
 #include <glm/glm.hpp>
 
@@ -40,6 +41,7 @@ const char* testSceneName(TestScene scene);
 void applyRecommendedSetup(TestScene scene, RendererState& state, CameraOrbit& camera);
 void applyHandbookExample(handbook::Example example, bool alternative, RendererState& state,
   CameraOrbit& camera, TestScene& scene, Category& category);
-std::string configJson(const RendererState& state, const CameraOrbit& camera, TestScene scene);
+std::string configJson(const RendererState& state, const CameraOrbit& camera, TestScene scene,
+  HardwareProfile profile);
 
 } // namespace gfxlab

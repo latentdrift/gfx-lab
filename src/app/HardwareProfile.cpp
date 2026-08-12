@@ -39,6 +39,14 @@ const char* hardwareProfileName(HardwareProfile profile) {
   return "Unknown";
 }
 
+const char* hardwareProfileId(HardwareProfile profile) {
+  switch (profile) {
+    case HardwareProfile::Unrestricted: return "unrestricted";
+    case HardwareProfile::PlayStation: return "sony_playstation_ps1";
+  }
+  return "unknown";
+}
+
 const char* hardwareProfileDescription(HardwareProfile profile) {
   switch (profile) {
     case HardwareProfile::Unrestricted:
@@ -92,9 +100,16 @@ void normalizeForHardwareProfile(HardwareProfile profile, RendererState& state) 
   state.post.fog = false;
   state.post.overdraw = false;
 
-  state.output.width = 320;
-  state.output.height = 240;
+  if (state.output.width > 320 || state.output.height > 240) {
+    state.output.width = 320;
+    state.output.height = 240;
+  }
   state.output.nearestUpscaling = true;
+}
+
+bool categoryAvailableForHardwareProfile(HardwareProfile profile, Category category) {
+  if (profile == HardwareProfile::Unrestricted) return true;
+  return category != Category::Stencil && category != Category::Post;
 }
 
 } // namespace gfxlab

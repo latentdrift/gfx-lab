@@ -3,6 +3,7 @@
 namespace gfxlab {
 
 struct RendererState;
+enum class Category;
 
 enum class HardwareProfile { Unrestricted, PlayStation };
 
@@ -29,8 +30,10 @@ struct ProfileCapabilities {
 };
 
 const char* hardwareProfileName(HardwareProfile profile);
+const char* hardwareProfileId(HardwareProfile profile);
 const char* hardwareProfileDescription(HardwareProfile profile);
 const ProfileCapabilities& hardwareProfileCapabilities(HardwareProfile profile);
 void normalizeForHardwareProfile(HardwareProfile profile, RendererState& state);
+bool categoryAvailableForHardwareProfile(HardwareProfile profile, Category category);
 
 } // namespace gfxlab

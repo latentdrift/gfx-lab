@@ -12,6 +12,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "app/State.hpp"
+#include "app/HardwareProfile.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
 #include "ui/Inspector.hpp"
@@ -69,6 +70,7 @@ int runApplication() {
   Category category = Category::Geometry;
   TestScene scene = TestScene::Torus;
   CompareMode compare = CompareMode::A;
+  HardwareProfile hardwareProfile = HardwareProfile::Unrestricted;
   float differenceExposure = 4.0f;
   bool viewportHovered = false;
   double configCopiedAt = -10.0;
@@ -106,6 +108,32 @@ int runApplication() {
       renderer.render(current, camera, scene, false);
     }
     current = RendererState{};
+    current.camera.orthographic = true;
+    current.rasterization.samples = 8;
+    current.surface.normalMapping = true;
+    current.texture.mipmapping = true;
+    current.lighting.model = 4;
+    current.lighting.shadows = true;
+    current.depth.testing = true;
+    current.stencil.enabled = true;
+    current.color.bitsPerChannel = 8;
+    current.color.linearLight = true;
+    current.post.fog = true;
+    current.output.width = 1280;
+    current.output.height = 960;
+    normalizeForHardwareProfile(HardwareProfile::PlayStation, current);
+    if (current.camera.orthographic || !current.rasterization.affineMapping || current.rasterization.samples != 1 ||
+        current.surface.normalMapping || !current.texture.nearestFiltering || current.texture.mipmapping ||
+        current.lighting.model > 1 || current.lighting.shadows || current.depth.testing || !current.depth.orderingTable ||
+        current.stencil.enabled || current.color.bitsPerChannel != 5 || current.color.linearLight || current.post.fog ||
+        current.output.width > 320 || current.output.height > 240 || !current.output.nearestUpscaling)
+      fail("PlayStation hardware profile did not normalize renderer state");
+    for (int sceneIndex = 0; sceneIndex < 5; ++sceneIndex)
+      renderer.render(current, camera, static_cast<TestScene>(sceneIndex), false);
+    if (configJson(current, camera, TestScene::Torus, HardwareProfile::PlayStation).find(
+          "\"hardware_target\": \"sony_playstation_ps1\"") == std::string::npos)
+      fail("hardware target missing from renderer config export");
+    current = RendererState{};
     reference = current;
     camera = CameraOrbit{};
     scene = TestScene::Torus;
@@ -142,10 +170,27 @@ int runApplication() {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("GRAPHICS LAB");
     ImGui::SameLine(150);
+    ImGui::TextDisabled("Target");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(150.0f);
+    int hardwareProfileIndex = static_cast<int>(hardwareProfile);
+    const char* hardwareProfileLabels[] = {"Unrestricted", "PlayStation (PS1)"};
+    if (ImGui::Combo("##hardware-profile", &hardwareProfileIndex, hardwareProfileLabels, 2)) {
+      hardwareProfile = static_cast<HardwareProfile>(hardwareProfileIndex);
+      normalizeForHardwareProfile(hardwareProfile, current);
+      normalizeForHardwareProfile(hardwareProfile, reference);
+      if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
+      if (hardwareProfile == HardwareProfile::PlayStation && scene == TestScene::StencilMask) scene = TestScene::Torus;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", hardwareProfileDescription(hardwareProfile));
+    ImGui::SameLine();
+    ImGui::TextDisabled("Scene");
+    ImGui::SameLine();
     ImGui::SetNextItemWidth(180.0f);
     const char* sceneLabels[] = {"Torus", "Texture minification", "Depth precision", "Transparency", "Lighting comparison", "Stencil mask"};
+    const int sceneCount = hardwareProfile == HardwareProfile::PlayStation ? 5 : 6;
     int sceneIndex = static_cast<int>(scene);
-    if (ImGui::Combo("##test-scene", &sceneIndex, sceneLabels, 6)) scene = static_cast<TestScene>(sceneIndex);
+    if (ImGui::Combo("##test-scene", &sceneIndex, sceneLabels, sceneCount)) scene = static_cast<TestScene>(sceneIndex);
     ImGui::SameLine();
     if (ImGui::Button("Reset neutral")) current = RendererState{};
     ImGui::SameLine();
@@ -156,7 +201,7 @@ int runApplication() {
     if (ImGui::Button("Copy A to B")) reference = current;
     ImGui::SameLine();
     if (ImGui::Button("Copy config JSON")) {
-      const std::string exportedConfig = configJson(current, camera, scene);
+      const std::string exportedConfig = configJson(current, camera, scene, hardwareProfile);
       ImGui::SetClipboardText(exportedConfig.c_str());
       configCopiedAt = glfwGetTime();
     }
@@ -166,7 +211,6 @@ int runApplication() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Handbook")) graphicsHandbook.open();
-    ImGui::SameLine();
     ImGui::TextDisabled("Compare:");
     ImGui::SameLine();
     if (ImGui::RadioButton("A", compare == CompareMode::A)) compare = CompareMode::A;
@@ -195,6 +239,7 @@ int runApplication() {
       Category::Surface, Category::Texture, Category::Lighting, Category::Depth, Category::Stencil, Category::Color,
       Category::Post, Category::Output};
     for (Category candidate : categories) {
+      if (!categoryAvailableForHardwareProfile(hardwareProfile, candidate)) continue;
       if (ImGui::Selectable(categoryName(candidate), category == candidate, 0, ImVec2(0, 28))) category = candidate;
     }
     ImGui::EndChild();
@@ -213,6 +258,8 @@ int runApplication() {
       paneOrigin.x + std::floor((available.x - presentationSize.x) * 0.5f),
       paneOrigin.y + std::floor((available.y - presentationSize.y) * 0.5f));
     const ImVec2 end(origin.x + presentationSize.x, origin.y + presentationSize.y);
+    normalizeForHardwareProfile(hardwareProfile, current);
+    normalizeForHardwareProfile(hardwareProfile, reference);
     const GLuint textureA = renderer.render(current, camera, scene, false);
     const GLuint textureB = (compare == CompareMode::A) ? 0 : renderer.render(reference, camera, scene, true);
     ImDrawList* draw = ImGui::GetWindowDrawList();
@@ -243,7 +290,7 @@ int runApplication() {
     ImGui::SameLine(0, 5);
 
     ImGui::BeginChild("Inspector", ImVec2(inspectorWidth, contentHeight), true);
-      drawInspector(category, current);
+      drawInspector(category, current, hardwareProfile);
     ImGui::EndChild();
     ImGui::End();
 
@@ -267,6 +314,8 @@ int runApplication() {
       category = comparisonCategory;
       compare = CompareMode::Split;
     }
+    normalizeForHardwareProfile(hardwareProfile, current);
+    normalizeForHardwareProfile(hardwareProfile, reference);
 
     ImGui::Render();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

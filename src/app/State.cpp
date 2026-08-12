@@ -220,7 +220,8 @@ void applyHandbookExample(handbook::Example example, bool alternative, RendererS
   }
 }
 
-std::string configJson(const RendererState& state, const CameraOrbit& camera, TestScene scene) {
+std::string configJson(const RendererState& state, const CameraOrbit& camera, TestScene scene,
+    HardwareProfile profile) {
   const char* cullModes[] = {"none", "back", "front"};
   const char* visualizations[] = {"texture", "uv_coordinates", "normals", "vertex_colors", "tangents", "bitangents"};
   const char* transparencyModes[] = {"opaque", "alpha_test", "straight_alpha", "premultiplied_alpha", "additive", "multiply",
@@ -239,6 +240,7 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
   json << std::boolalpha << std::fixed << std::setprecision(5);
   json << "{\n";
   json << "  \"schema\": \"graphics-lab.renderer-state.v1\",\n";
+  json << "  \"hardware_target\": \"" << hardwareProfileId(profile) << "\",\n";
   json << "  \"test_scene\": \"" << testSceneName(scene) << "\",\n";
   json << "  \"view\": {\n";
   json << "    \"orbit_yaw_radians\": " << camera.yaw << ",\n";
