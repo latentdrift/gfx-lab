@@ -34,6 +34,7 @@ struct RendererState {
 
 enum class Category { Geometry, Camera, Rasterization, Surface, Texture, Lighting, Depth, Color, Post, Output };
 enum class CompareMode { A, B, Split };
+enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting };
 
 struct CameraOrbit {
   float yaw = 0.72f;
@@ -56,6 +57,76 @@ struct Vertex {
   glm::vec3 barycentric;
   glm::vec3 color;
 };
+
+struct MeshRange {
+  GLint first = 0;
+  GLsizei count = 0;
+};
+
+void appendTriangle(std::vector<Vertex>& vertices, Vertex a, Vertex b, Vertex c) {
+  a.barycentric = {1, 0, 0};
+  b.barycentric = {0, 1, 0};
+  c.barycentric = {0, 0, 1};
+  vertices.push_back(a);
+  vertices.push_back(b);
+  vertices.push_back(c);
+}
+
+std::vector<Vertex> makePlane(float width, float depth, int xSegments, int zSegments) {
+  std::vector<Vertex> vertices;
+  for (int z = 0; z < zSegments; ++z) {
+    for (int x = 0; x < xSegments; ++x) {
+      const float x0 = (static_cast<float>(x) / xSegments - 0.5f) * width;
+      const float x1 = (static_cast<float>(x + 1) / xSegments - 0.5f) * width;
+      const float z0 = (static_cast<float>(z) / zSegments - 0.5f) * depth;
+      const float z1 = (static_cast<float>(z + 1) / zSegments - 0.5f) * depth;
+      const float u0 = static_cast<float>(x) / xSegments * 8.0f;
+      const float u1 = static_cast<float>(x + 1) / xSegments * 8.0f;
+      const float v0 = static_cast<float>(z) / zSegments * 16.0f;
+      const float v1 = static_cast<float>(z + 1) / zSegments * 16.0f;
+      const glm::vec3 n(0, 1, 0), color(0.65f, 0.72f, 0.78f);
+      Vertex a{{x0, 0, z0}, n, {u0, v0}, {}, color};
+      Vertex b{{x0, 0, z1}, n, {u0, v1}, {}, color};
+      Vertex c{{x1, 0, z1}, n, {u1, v1}, {}, color};
+      Vertex d{{x1, 0, z0}, n, {u1, v0}, {}, color};
+      appendTriangle(vertices, a, b, c);
+      appendTriangle(vertices, a, c, d);
+    }
+  }
+  return vertices;
+}
+
+std::vector<Vertex> makeQuad() {
+  std::vector<Vertex> vertices;
+  const glm::vec3 n(0, 0, 1), color(0.5f, 0.8f, 0.7f);
+  Vertex a{{-1, -1, 0}, n, {0, 0}, {}, color};
+  Vertex b{{ 1, -1, 0}, n, {4, 0}, {}, color};
+  Vertex c{{ 1,  1, 0}, n, {4, 4}, {}, color};
+  Vertex d{{-1,  1, 0}, n, {0, 4}, {}, color};
+  appendTriangle(vertices, a, b, c);
+  appendTriangle(vertices, a, c, d);
+  return vertices;
+}
+
+std::vector<Vertex> makeSphere(int longitudeSegments, int latitudeSegments) {
+  std::vector<Vertex> vertices;
+  auto point = [=](int longitude, int latitude) {
+    const float u = static_cast<float>(longitude) / longitudeSegments;
+    const float v = static_cast<float>(latitude) / latitudeSegments;
+    const float a = u * glm::two_pi<float>();
+    const float b = (v - 0.5f) * glm::pi<float>();
+    const glm::vec3 n(std::cos(b) * std::sin(a), std::sin(b), std::cos(b) * std::cos(a));
+    return Vertex{n, n, {u * 4.0f, v * 2.0f}, {}, n * 0.5f + 0.5f};
+  };
+  for (int y = 0; y < latitudeSegments; ++y) {
+    for (int x = 0; x < longitudeSegments; ++x) {
+      Vertex a = point(x, y), b = point(x + 1, y), c = point(x + 1, y + 1), d = point(x, y + 1);
+      appendTriangle(vertices, a, b, c);
+      appendTriangle(vertices, a, c, d);
+    }
+  }
+  return vertices;
+}
 
 [[noreturn]] void fail(const std::string& message) {
   std::fprintf(stderr, "graphics-lab: %s\n", message.c_str());
@@ -200,6 +271,7 @@ uniform float uShininess;
 uniform int uTransparencyMode;
 uniform float uAlphaCutoff;
 uniform bool uLinearLight;
+uniform vec3 uObjectTint;
 uniform bool uFogEnabled;
 uniform float uFogStart;
 uniform float uFogEnd;
@@ -217,6 +289,7 @@ void main() {
   if (uTransparencyMode == 1 && alpha < uAlphaCutoff) discard;
   if (uTransparencyMode == 0) alpha = 1.0;
   vec3 albedo = uLinearLight ? pow(texel.rgb, vec3(2.2)) : texel.rgb;
+  albedo *= uObjectTint;
   if (uVisualization == 1) albedo = vec3(fract(uv), 0.0);
   if (uVisualization == 2) albedo = normal * 0.5 + 0.5;
   if (uVisualization == 3) albedo = vColor;
@@ -406,7 +479,17 @@ public:
   Renderer() {
     sceneProgram_ = makeProgram(sceneVertexShader, sceneFragmentShader);
     outputProgram_ = makeProgram(outputVertexShader, outputFragmentShader);
-    const std::vector<Vertex> vertices = makeTorus();
+    std::vector<Vertex> vertices;
+    auto appendMesh = [&vertices](const std::vector<Vertex>& mesh) {
+      const MeshRange range{static_cast<GLint>(vertices.size()), static_cast<GLsizei>(mesh.size())};
+      vertices.insert(vertices.end(), mesh.begin(), mesh.end());
+      return range;
+    };
+    torus_ = appendMesh(makeTorus());
+    plane_ = appendMesh(makePlane(7.0f, 16.0f, 8, 24));
+    quad_ = appendMesh(makeQuad());
+    lowSphere_ = appendMesh(makeSphere(12, 6));
+    smoothSphere_ = appendMesh(makeSphere(32, 16));
     vertexCount_ = static_cast<GLsizei>(vertices.size());
     glGenVertexArrays(1, &vao_);
     glGenBuffers(1, &vbo_);
@@ -441,7 +524,7 @@ public:
     glDeleteProgram(outputProgram_);
   }
 
-  GLuint render(const RendererState& state, const CameraOrbit& camera, bool referenceTarget) {
+  GLuint render(const RendererState& state, const CameraOrbit& camera, TestScene scene, bool referenceTarget) {
     RenderTarget& target = referenceTarget ? targetB_ : targetA_;
     const int samples = state.rasterization.samples == 1 ? 1 : std::min(state.rasterization.samples, maxSamples_);
     target.resize(state.output.width, state.output.height, state.depth.precision, samples);
@@ -523,7 +606,37 @@ public:
       glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, std::clamp(state.texture.anisotropy, 1.0f, maxAnisotropy_));
     glUniform1i(location("uTexture"), 0);
     glBindVertexArray(vao_);
-    glDrawArrays(GL_TRIANGLES, 0, vertexCount_);
+    auto drawMesh = [this](const MeshRange& mesh, const glm::mat4& modelMatrix, const glm::vec3& tint) {
+      matrix("uModel", modelMatrix);
+      glUniform3fv(location("uObjectTint"), 1, glm::value_ptr(tint));
+      glDrawArrays(GL_TRIANGLES, mesh.first, mesh.count);
+    };
+    const glm::mat4 identity(1.0f);
+    switch (scene) {
+      case TestScene::Torus:
+        drawMesh(torus_, glm::rotate(identity, glm::radians(-14.0f), glm::vec3(1, 0, 0)), glm::vec3(1.0f));
+        break;
+      case TestScene::TexturePlane:
+        drawMesh(plane_, glm::translate(identity, glm::vec3(0, -1.25f, -3.5f)), glm::vec3(1.0f));
+        break;
+      case TestScene::DepthPrecision: {
+        const glm::mat4 horizontal = glm::rotate(identity, glm::radians(-90.0f), glm::vec3(1, 0, 0));
+        drawMesh(quad_, glm::scale(horizontal, glm::vec3(2.2f)), glm::vec3(0.65f, 0.85f, 1.0f));
+        drawMesh(quad_, glm::translate(horizontal, glm::vec3(0, 0, 0.00015f)) * glm::scale(identity, glm::vec3(1.65f)), glm::vec3(1.0f, 0.55f, 0.42f));
+        drawMesh(quad_, glm::translate(horizontal, glm::vec3(0, 0, 0.00030f)) * glm::scale(identity, glm::vec3(1.05f)), glm::vec3(0.5f, 1.0f, 0.62f));
+        break;
+      }
+      case TestScene::Transparency:
+        drawMesh(quad_, glm::rotate(identity, glm::radians(28.0f), glm::vec3(0, 1, 0)), glm::vec3(0.42f, 0.8f, 1.0f));
+        drawMesh(quad_, glm::rotate(identity, glm::radians(-35.0f), glm::vec3(0, 1, 0)), glm::vec3(1.0f, 0.48f, 0.35f));
+        drawMesh(quad_, glm::rotate(identity, glm::radians(90.0f), glm::vec3(1, 0, 0)), glm::vec3(0.55f, 1.0f, 0.56f));
+        break;
+      case TestScene::Lighting:
+        drawMesh(lowSphere_, glm::translate(identity, glm::vec3(-1.35f, 0, 0)), glm::vec3(0.9f, 0.55f, 0.38f));
+        drawMesh(smoothSphere_, glm::translate(identity, glm::vec3(1.35f, 0, 0)), glm::vec3(0.45f, 0.68f, 1.0f));
+        drawMesh(torus_, glm::translate(glm::scale(identity, glm::vec3(0.62f)), glm::vec3(0, 1.9f, 0)), glm::vec3(0.7f, 1.0f, 0.6f));
+        break;
+    }
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
     glDisable(GL_CLIP_DISTANCE0);
@@ -569,6 +682,7 @@ private:
   GLsizei vertexCount_ = 0;
   GLint maxSamples_ = 1;
   GLfloat maxAnisotropy_ = 1.0f;
+  MeshRange torus_, plane_, quad_, lowSphere_, smoothSphere_;
   RenderTarget targetA_, targetB_;
 
   GLint location(const char* name) const { return glGetUniformLocation(sceneProgram_, name); }
@@ -851,6 +965,7 @@ int main() {
   RendererState reference = current;
   CameraOrbit camera;
   Category category = Category::Geometry;
+  TestScene scene = TestScene::Torus;
   CompareMode compare = CompareMode::A;
   bool viewportHovered = false;
 
@@ -884,6 +999,11 @@ int main() {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("GRAPHICS LAB");
     ImGui::SameLine(150);
+    ImGui::SetNextItemWidth(180.0f);
+    const char* sceneLabels[] = {"Torus", "Texture minification", "Depth precision", "Transparency", "Lighting comparison"};
+    int sceneIndex = static_cast<int>(scene);
+    if (ImGui::Combo("##test-scene", &sceneIndex, sceneLabels, 5)) scene = static_cast<TestScene>(sceneIndex);
+    ImGui::SameLine();
     if (ImGui::Button("Reset neutral")) current = RendererState{};
     ImGui::SameLine();
     if (ImGui::Button("Copy A to B")) reference = current;
@@ -925,8 +1045,8 @@ int main() {
       paneOrigin.x + std::floor((available.x - presentationSize.x) * 0.5f),
       paneOrigin.y + std::floor((available.y - presentationSize.y) * 0.5f));
     const ImVec2 end(origin.x + presentationSize.x, origin.y + presentationSize.y);
-    const GLuint textureA = renderer.render(current, camera, false);
-    const GLuint textureB = (compare == CompareMode::A) ? 0 : renderer.render(reference, camera, true);
+    const GLuint textureA = renderer.render(current, camera, scene, false);
+    const GLuint textureB = (compare == CompareMode::A) ? 0 : renderer.render(reference, camera, scene, true);
     ImDrawList* draw = ImGui::GetWindowDrawList();
     draw->AddRectFilled(origin, end, IM_COL32(27, 29, 31, 255));
     if (compare == CompareMode::Split) {
