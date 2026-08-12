@@ -36,6 +36,7 @@ The camera presentation has a fixed 4:3 aspect ratio. It expands to the maximum 
 - Flat or smooth normal interpolation and wireframe overlay
 - Nearest or bilinear texture filtering, mipmapping, trilinear interpolation, anisotropy, and texture addressing
 - Unlit, Gouraud, Phong-shaded Lambert, Phong reflection, and Blinn-Phong reflection models
+- Tangent-space normal mapping with normal, tangent, and bitangent visualization
 - Alpha discard and source-alpha blending
 - Straight alpha, premultiplied alpha, additive, and multiply blend factors with reversible object order
 - Polygon offset factor and units for coplanar depth conflicts

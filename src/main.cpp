@@ -23,7 +23,7 @@ struct RendererState {
   struct Geometry { float vertexQuantization = 0.0f; bool clipping = false; float clipHeight = 0.0f; bool clipAbove = false; } geometry;
   struct Camera { float fieldOfView = 45.0f; float nearPlane = 0.05f; bool orthographic = false; float orthographicSize = 4.0f; } camera;
   struct Rasterization { bool affineMapping = false; int cullMode = 1; int samples = 1; bool polygonOffset = false; float polygonOffsetFactor = 1.0f; float polygonOffsetUnits = 1.0f; } rasterization;
-  struct Surface { bool smoothShading = true; bool wireframe = false; int visualization = 0; int transparency = 0; float alphaCutoff = 0.5f; bool reverseDrawOrder = false; } surface;
+  struct Surface { bool smoothShading = true; bool wireframe = false; int visualization = 0; bool normalMapping = false; float normalStrength = 1.0f; int transparency = 0; float alphaCutoff = 0.5f; bool reverseDrawOrder = false; } surface;
   struct Texture { bool nearestFiltering = false; bool repeat = true; bool mipmapping = false; bool trilinear = false; float anisotropy = 1.0f; } texture;
   struct Lighting { int model = 2; float ambient = 0.22f; float azimuth = 34.0f; float elevation = 52.0f; float shininess = 32.0f; } lighting;
   struct Depth { bool testing = true; bool writing = true; int precision = 24; int function = 0; int visualization = 0; } depth;
@@ -56,6 +56,7 @@ struct Vertex {
   glm::vec2 uv;
   glm::vec3 barycentric;
   glm::vec3 color;
+  glm::vec4 tangent;
 };
 
 struct MeshRange {
@@ -85,10 +86,11 @@ std::vector<Vertex> makePlane(float width, float depth, int xSegments, int zSegm
       const float v0 = static_cast<float>(z) / zSegments * 16.0f;
       const float v1 = static_cast<float>(z + 1) / zSegments * 16.0f;
       const glm::vec3 n(0, 1, 0), color(0.65f, 0.72f, 0.78f);
-      Vertex a{{x0, 0, z0}, n, {u0, v0}, {}, color};
-      Vertex b{{x0, 0, z1}, n, {u0, v1}, {}, color};
-      Vertex c{{x1, 0, z1}, n, {u1, v1}, {}, color};
-      Vertex d{{x1, 0, z0}, n, {u1, v0}, {}, color};
+      const glm::vec4 tangent(1, 0, 0, -1);
+      Vertex a{{x0, 0, z0}, n, {u0, v0}, {}, color, tangent};
+      Vertex b{{x0, 0, z1}, n, {u0, v1}, {}, color, tangent};
+      Vertex c{{x1, 0, z1}, n, {u1, v1}, {}, color, tangent};
+      Vertex d{{x1, 0, z0}, n, {u1, v0}, {}, color, tangent};
       appendTriangle(vertices, a, b, c);
       appendTriangle(vertices, a, c, d);
     }
@@ -99,10 +101,11 @@ std::vector<Vertex> makePlane(float width, float depth, int xSegments, int zSegm
 std::vector<Vertex> makeQuad() {
   std::vector<Vertex> vertices;
   const glm::vec3 n(0, 0, 1), color(0.5f, 0.8f, 0.7f);
-  Vertex a{{-1, -1, 0}, n, {0, 0}, {}, color};
-  Vertex b{{ 1, -1, 0}, n, {4, 0}, {}, color};
-  Vertex c{{ 1,  1, 0}, n, {4, 4}, {}, color};
-  Vertex d{{-1,  1, 0}, n, {0, 4}, {}, color};
+  const glm::vec4 tangent(1, 0, 0, 1);
+  Vertex a{{-1, -1, 0}, n, {0, 0}, {}, color, tangent};
+  Vertex b{{ 1, -1, 0}, n, {4, 0}, {}, color, tangent};
+  Vertex c{{ 1,  1, 0}, n, {4, 4}, {}, color, tangent};
+  Vertex d{{-1,  1, 0}, n, {0, 4}, {}, color, tangent};
   appendTriangle(vertices, a, b, c);
   appendTriangle(vertices, a, c, d);
   return vertices;
@@ -116,7 +119,8 @@ std::vector<Vertex> makeSphere(int longitudeSegments, int latitudeSegments) {
     const float a = u * glm::two_pi<float>();
     const float b = (v - 0.5f) * glm::pi<float>();
     const glm::vec3 n(std::cos(b) * std::sin(a), std::sin(b), std::cos(b) * std::cos(a));
-    return Vertex{n, n, {u * 4.0f, v * 2.0f}, {}, n * 0.5f + 0.5f};
+    const glm::vec3 tangent = glm::normalize(glm::vec3(std::cos(a), 0.0f, -std::sin(a)));
+    return Vertex{n, n, {u * 4.0f, v * 2.0f}, {}, n * 0.5f + 0.5f, glm::vec4(tangent, 1.0f)};
   };
   for (int y = 0; y < latitudeSegments; ++y) {
     for (int x = 0; x < longitudeSegments; ++x) {
@@ -186,7 +190,9 @@ std::vector<Vertex> makeTorus() {
     const glm::vec3 normal(std::cos(a) * std::cos(b), std::sin(b), std::sin(a) * std::cos(b));
     const glm::vec3 center(majorRadius * std::cos(a), 0.0f, majorRadius * std::sin(a));
     const glm::vec3 color = 0.5f + 0.5f * glm::vec3(std::cos(a), std::sin(b), std::sin(a));
-    return Vertex{center + minorRadius * normal, normal, glm::vec2(u * 4.0f, v * 2.0f), {0, 0, 0}, color};
+    const glm::vec3 tangent(-std::sin(a), 0.0f, std::cos(a));
+    return Vertex{center + minorRadius * normal, normal, glm::vec2(u * 4.0f, v * 2.0f), {0, 0, 0}, color,
+      glm::vec4(tangent, -1.0f)};
   };
 
   for (int i = 0; i < majorSegments; ++i) {
@@ -213,6 +219,7 @@ layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUv;
 layout(location=3) in vec3 aBarycentric;
 layout(location=4) in vec3 aColor;
+layout(location=5) in vec4 aTangent;
 
 uniform mat4 uModel;
 uniform mat4 uView;
@@ -230,6 +237,7 @@ noperspective out vec2 vUvAffine;
 out vec3 vBarycentric;
 out vec3 vColor;
 out float vVertexLighting;
+out vec4 vTangent;
 
 void main() {
   vec3 position = aPosition;
@@ -242,6 +250,7 @@ void main() {
   vUvAffine = aUv;
   vBarycentric = aBarycentric;
   vColor = aColor;
+  vTangent = vec4(normalize(mat3(uModel) * aTangent.xyz), aTangent.w);
   float vertexDiffuse = max(dot(vNormal, normalize(uLightDirection)), 0.0);
   vVertexLighting = uAmbient + (1.0 - uAmbient) * vertexDiffuse;
   gl_ClipDistance[0] = uClipEnabled ? dot(world, uClipPlane) : 1.0;
@@ -258,8 +267,10 @@ noperspective in vec2 vUvAffine;
 in vec3 vBarycentric;
 in vec3 vColor;
 in float vVertexLighting;
+in vec4 vTangent;
 
 uniform sampler2D uTexture;
+uniform sampler2D uNormalMap;
 uniform bool uAffineMapping;
 uniform bool uSmoothShading;
 uniform bool uWireframe;
@@ -271,6 +282,8 @@ uniform float uShininess;
 uniform int uTransparencyMode;
 uniform float uAlphaCutoff;
 uniform bool uPremultiplyAlpha;
+uniform bool uNormalMapping;
+uniform float uNormalStrength;
 uniform bool uLinearLight;
 uniform vec3 uObjectTint;
 uniform bool uFogEnabled;
@@ -285,6 +298,14 @@ void main() {
     ? normalize(vNormal)
     : normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
   if (!gl_FrontFacing) normal = -normal;
+  vec3 tangent = normalize(vTangent.xyz - normal * dot(normal, vTangent.xyz));
+  vec3 bitangent = normalize(cross(normal, tangent)) * vTangent.w;
+  if (uNormalMapping) {
+    vec3 tangentNormal = texture(uNormalMap, uv).xyz * 2.0 - 1.0;
+    tangentNormal.xy *= uNormalStrength;
+    tangentNormal = normalize(tangentNormal);
+    normal = normalize(mat3(tangent, bitangent, normal) * tangentNormal);
+  }
   vec4 texel = texture(uTexture, uv);
   float alpha = uVisualization == 0 ? texel.a : 1.0;
   if (uTransparencyMode == 1 && alpha < uAlphaCutoff) discard;
@@ -294,6 +315,8 @@ void main() {
   if (uVisualization == 1) albedo = vec3(fract(uv), 0.0);
   if (uVisualization == 2) albedo = normal * 0.5 + 0.5;
   if (uVisualization == 3) albedo = vColor;
+  if (uVisualization == 4) albedo = tangent * 0.5 + 0.5;
+  if (uVisualization == 5) albedo = bitangent * 0.5 + 0.5;
 
   vec3 lightDirection = normalize(uLightDirection);
   float diffuse = max(dot(normal, lightDirection), 0.0);
@@ -507,17 +530,21 @@ public:
     glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, barycentric)));
     glEnableVertexAttribArray(4);
     glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, color)));
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, tangent)));
     glGenVertexArrays(1, &fullscreenVao_);
     glGetIntegerv(GL_MAX_SAMPLES, &maxSamples_);
     if (GLEW_EXT_texture_filter_anisotropic)
       glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAnisotropy_);
     makeCheckerTexture();
+    makeNormalTexture();
   }
 
   ~Renderer() {
     targetA_.destroy();
     targetB_.destroy();
     glDeleteTextures(1, &checkerTexture_);
+    glDeleteTextures(1, &normalTexture_);
     glDeleteBuffers(1, &vbo_);
     glDeleteVertexArrays(1, &vao_);
     glDeleteVertexArrays(1, &fullscreenVao_);
@@ -589,6 +616,8 @@ public:
     glUniform1i(location("uTransparencyMode"), state.surface.transparency);
     glUniform1f(location("uAlphaCutoff"), state.surface.alphaCutoff);
     glUniform1i(location("uPremultiplyAlpha"), state.surface.transparency == 3);
+    glUniform1i(location("uNormalMapping"), state.surface.normalMapping);
+    glUniform1f(location("uNormalStrength"), state.surface.normalStrength);
     glUniform1i(location("uLightingModel"), state.lighting.model);
     glUniform1f(location("uAmbient"), state.lighting.ambient);
     glUniform1f(location("uShininess"), state.lighting.shininess);
@@ -616,6 +645,10 @@ public:
     if (GLEW_EXT_texture_filter_anisotropic)
       glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, std::clamp(state.texture.anisotropy, 1.0f, maxAnisotropy_));
     glUniform1i(location("uTexture"), 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, normalTexture_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, state.texture.mipmapping ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+    glUniform1i(location("uNormalMap"), 1);
     glBindVertexArray(vao_);
     auto drawMesh = [this](const MeshRange& mesh, const glm::mat4& modelMatrix, const glm::vec3& tint) {
       matrix("uModel", modelMatrix);
@@ -697,7 +730,7 @@ public:
 
 private:
   GLuint sceneProgram_ = 0, outputProgram_ = 0;
-  GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0;
+  GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, normalTexture_ = 0;
   GLsizei vertexCount_ = 0;
   GLint maxSamples_ = 1;
   GLfloat maxAnisotropy_ = 1.0f;
@@ -722,6 +755,29 @@ private:
     glGenTextures(1, &checkerTexture_);
     glBindTexture(GL_TEXTURE_2D, checkerTexture_);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, size, size, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glGenerateMipmap(GL_TEXTURE_2D);
+  }
+
+  void makeNormalTexture() {
+    constexpr int size = 64;
+    std::array<unsigned char, size * size * 3> pixels{};
+    for (int y = 0; y < size; ++y) {
+      for (int x = 0; x < size; ++x) {
+        const float u = static_cast<float>(x) / size * glm::two_pi<float>() * 4.0f;
+        const float v = static_cast<float>(y) / size * glm::two_pi<float>() * 4.0f;
+        glm::vec3 normal(0.42f * std::sin(u), 0.42f * std::cos(v), 1.0f);
+        normal = glm::normalize(normal) * 0.5f + 0.5f;
+        const int offset = (y * size + x) * 3;
+        pixels[offset] = static_cast<unsigned char>(normal.x * 255.0f);
+        pixels[offset + 1] = static_cast<unsigned char>(normal.y * 255.0f);
+        pixels[offset + 2] = static_cast<unsigned char>(normal.z * 255.0f);
+      }
+    }
+    glGenTextures(1, &normalTexture_);
+    glBindTexture(GL_TEXTURE_2D, normalTexture_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, size, size, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glGenerateMipmap(GL_TEXTURE_2D);
@@ -834,8 +890,8 @@ void inspector(Category category, RendererState& state) {
     case Category::Surface: {
       ImGui::TextUnformatted("SURFACE"); ImGui::Separator();
       ImGui::TextUnformatted("Surface visualization");
-      const char* visualizationLabels[] = {"Texture", "UV coordinates", "Normals", "Vertex colors"};
-      ImGui::Combo("##visualization", &state.surface.visualization, visualizationLabels, 4);
+      const char* visualizationLabels[] = {"Texture", "UV coordinates", "Normals", "Vertex colors", "Tangents", "Bitangents"};
+      ImGui::Combo("##visualization", &state.surface.visualization, visualizationLabels, 6);
       description("Selects the mesh attribute used as the surface's base color.");
       ImGui::TextUnformatted("Shading interpolation");
       bool flat = !state.surface.smoothShading;
@@ -843,6 +899,11 @@ void inspector(Category category, RendererState& state) {
       description("Smooth shading interpolates vertex normals; flat shading uses one face normal per triangle.");
       ImGui::Checkbox("Wireframe overlay", &state.surface.wireframe);
       description("Draws triangle boundaries over the shaded surface.");
+      ImGui::Checkbox("Tangent-space normal mapping", &state.surface.normalMapping);
+      ImGui::BeginDisabled(!state.surface.normalMapping);
+      ImGui::SliderFloat("Normal-map strength", &state.surface.normalStrength, 0.0f, 2.0f, "%.2f");
+      ImGui::EndDisabled();
+      description("Transforms sampled tangent-space normals into world space with the tangent-bitangent-normal basis.");
       ImGui::TextUnformatted("Transparency operation");
       const char* transparencyLabels[] = {"Opaque", "Alpha test (discard)", "Straight alpha blend",
         "Premultiplied alpha blend", "Additive blend", "Multiply blend"};
