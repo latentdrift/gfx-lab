@@ -23,6 +23,7 @@ uniform float uAmbient;
 uniform bool uDepthCueEnabled;
 uniform float uDepthCueStart;
 uniform float uDepthCueEnd;
+uniform bool uN64TextureGeneration;
 
 out vec3 vWorldPosition;
 out vec3 vNormal;
@@ -42,8 +43,10 @@ void main() {
   vec4 world = uModel * vec4(position, 1.0);
   vWorldPosition = world.xyz;
   vNormal = normalize(mat3(transpose(inverse(uModel))) * aNormal);
-  vUvPerspective = aUv;
-  vUvAffine = aUv;
+  vec3 viewNormal = normalize(mat3(uView) * vNormal);
+  vec2 textureCoordinates = uN64TextureGeneration ? viewNormal.xy * 0.5 + 0.5 : aUv;
+  vUvPerspective = textureCoordinates;
+  vUvAffine = textureCoordinates;
   vBarycentric = aBarycentric;
   vColor = aColor;
   vTangent = vec4(normalize(mat3(uModel) * aTangent.xyz), aTangent.w);
@@ -101,6 +104,21 @@ uniform float uFogStart;
 uniform float uFogEnd;
 uniform vec3 uCameraPosition;
 uniform vec3 uFarColor;
+uniform bool uN64Enabled;
+uniform int uN64CycleType;
+uniform ivec4 uN64Cycle0;
+uniform ivec4 uN64Cycle1;
+uniform vec4 uN64PrimitiveColor;
+uniform vec4 uN64EnvironmentColor;
+uniform int uN64TextureFormat;
+uniform int uN64TextureFilter;
+uniform int uN64MipmapMode;
+uniform ivec2 uN64TileSize;
+uniform bvec2 uN64Mirror;
+uniform ivec2 uN64Shift;
+uniform int uN64AlphaCompare;
+uniform float uN64AlphaThreshold;
+uniform sampler2D uN64DetailTexture;
 out vec4 fragColor;
 
 vec4 sampleSurfaceTexture(vec2 uv) {
@@ -108,6 +126,102 @@ vec4 sampleSurfaceTexture(vec2 uv) {
   int index = int(round(texture(uIndexedTexture, uv).r * 255.0));
   if (uTextureColorMode == 2) index &= 15;
   return texelFetch(uClut, ivec2(index, 0), 0);
+}
+
+vec2 n64Address(vec2 uv) {
+  uv *= exp2(vec2(uN64Shift));
+  vec2 cell = floor(uv);
+  vec2 local = fract(uv);
+  if (uN64Mirror.x && (int(cell.x) & 1) != 0) local.x = 1.0 - local.x;
+  if (uN64Mirror.y && (int(cell.y) & 1) != 0) local.y = 1.0 - local.y;
+  return local;
+}
+
+vec4 n64FormatTexel(ivec2 coordinate, int level) {
+  ivec2 levelSize = max(uN64TileSize >> level, ivec2(1));
+  ivec2 wrapped = ivec2((coordinate.x % levelSize.x + levelSize.x) % levelSize.x,
+    (coordinate.y % levelSize.y + levelSize.y) % levelSize.y);
+  ivec2 directSize = textureSize(uTexture, level);
+  ivec2 directCoordinate = min(wrapped * directSize / levelSize, directSize - 1);
+  vec4 direct = texelFetch(uTexture, directCoordinate, level);
+  ivec2 indexSize = textureSize(uIndexedTexture, 0);
+  ivec2 indexCoordinate = min(wrapped * indexSize / levelSize, indexSize - 1);
+  int paletteIndex = int(round(texelFetch(uIndexedTexture, indexCoordinate, 0).r * 255.0));
+  if (uN64TextureFormat == 2) paletteIndex &= 15;
+  if (uN64TextureFormat == 2 || uN64TextureFormat == 3)
+    return texelFetch(uClut, ivec2(paletteIndex, 0), 0);
+  if (uN64TextureFormat == 0)
+    return vec4(round(direct.rgb * 31.0) / 31.0, direct.a >= 0.5 ? 1.0 : 0.0);
+  if (uN64TextureFormat == 1) return direct;
+  float intensity = dot(direct.rgb, vec3(0.299, 0.587, 0.114));
+  if (uN64TextureFormat == 4) return vec4(vec3(round(intensity * 7.0) / 7.0), direct.a >= 0.5 ? 1.0 : 0.0);
+  if (uN64TextureFormat == 5) return vec4(vec3(round(intensity * 15.0) / 15.0), round(direct.a * 15.0) / 15.0);
+  if (uN64TextureFormat == 6) return vec4(vec3(round(intensity * 255.0) / 255.0), round(direct.a * 255.0) / 255.0);
+  if (uN64TextureFormat == 7) return vec4(vec3(round(intensity * 15.0) / 15.0), 1.0);
+  return vec4(vec3(round(intensity * 255.0) / 255.0), 1.0);
+}
+
+vec4 n64FilterLevel(vec2 uv, int level) {
+  ivec2 size = max(uN64TileSize >> level, ivec2(1));
+  vec2 texelPosition = n64Address(uv) * vec2(size) - 0.5;
+  ivec2 base = ivec2(floor(texelPosition));
+  vec2 fraction = fract(texelPosition);
+  if (uN64TextureFilter == 0)
+    return n64FormatTexel(ivec2(floor(texelPosition + 0.5)), level);
+  vec4 p00 = n64FormatTexel(base, level);
+  vec4 p10 = n64FormatTexel(base + ivec2(1, 0), level);
+  vec4 p01 = n64FormatTexel(base + ivec2(0, 1), level);
+  vec4 p11 = n64FormatTexel(base + ivec2(1, 1), level);
+  if (uN64TextureFilter == 2) return (p00 + p10 + p01 + p11) * 0.25;
+  if (fraction.x + fraction.y <= 1.0)
+    return p00 + fraction.x * (p10 - p00) + fraction.y * (p01 - p00);
+  vec2 inverseFraction = 1.0 - fraction;
+  return p11 + inverseFraction.x * (p01 - p11) + inverseFraction.y * (p10 - p11);
+}
+
+vec4 sampleN64Texture(vec2 uv, out float lodFraction) {
+  vec2 footprintX = dFdx(uv * vec2(uN64TileSize));
+  vec2 footprintY = dFdy(uv * vec2(uN64TileSize));
+  float lod = max(0.0, log2(max(length(footprintX), length(footprintY))));
+  int maximumLevel = int(floor(log2(float(max(1, min(uN64TileSize.x, uN64TileSize.y))))));
+  lod = clamp(lod, 0.0, float(maximumLevel));
+  lodFraction = fract(lod);
+  if (uN64MipmapMode == 0) return n64FilterLevel(uv, 0);
+  int lower = int(floor(lod));
+  int upper = min(lower + 1, maximumLevel);
+  vec4 a = n64FilterLevel(uv, uN64MipmapMode == 1 ? int(round(lod)) : lower);
+  if (uN64MipmapMode == 1) return a;
+  vec4 b = n64FilterLevel(uv, upper);
+  if (uN64MipmapMode == 3) return clamp(a + (a - b) * lodFraction, 0.0, 1.0);
+  if (uN64MipmapMode == 4) {
+    vec4 detail = texture(uN64DetailTexture, uv * 4.0);
+    return mix(a * detail * 2.0, a, clamp(lod, 0.0, 1.0));
+  }
+  return mix(a, b, lodFraction);
+}
+
+vec4 n64CombinerSource(int source, vec4 texel0, vec4 texel1, vec4 shade, vec4 combined, float lodFraction) {
+  if (source == 1) return texel0;
+  if (source == 2) return vec4(1.0);
+  if (source == 3) return shade;
+  if (source == 4) return uN64PrimitiveColor;
+  if (source == 5) return uN64EnvironmentColor;
+  if (source == 6) return texel1;
+  if (source == 7) return combined;
+  if (source == 8) return vec4(lodFraction);
+  return vec4(0.0);
+}
+
+vec4 n64CombinerCycle(ivec4 operands, vec4 texel0, vec4 texel1, vec4 shade, vec4 combined, float lodFraction) {
+  vec4 a = n64CombinerSource(operands.x, texel0, texel1, shade, combined, lodFraction);
+  vec4 b = n64CombinerSource(operands.y, texel0, texel1, shade, combined, lodFraction);
+  vec4 c = n64CombinerSource(operands.z, texel0, texel1, shade, combined, lodFraction);
+  vec4 d = n64CombinerSource(operands.w, texel0, texel1, shade, combined, lodFraction);
+  return clamp((a - b) * c + d, 0.0, 1.0);
+}
+
+float n64AlphaNoise(ivec2 pixel) {
+  return fract(sin(dot(vec2(pixel), vec2(12.9898, 78.233))) * 43758.5453);
 }
 
 float shadowAmount() {
@@ -138,7 +252,8 @@ void main() {
     tangentNormal = normalize(tangentNormal);
     normal = normalize(mat3(tangent, bitangent, normal) * tangentNormal);
   }
-  vec4 texel = sampleSurfaceTexture(uv);
+  float n64LodFraction = 0.0;
+  vec4 texel = uN64Enabled ? sampleN64Texture(uv, n64LodFraction) : sampleSurfaceTexture(uv);
   float alpha = uVisualization == 0 ? texel.a : 1.0;
   if (uTransparencyMode == 1 && alpha < uAlphaCutoff) discard;
   if (uTransparencyMode == 0) alpha = 1.0;
@@ -167,6 +282,18 @@ void main() {
   }
   if (uShadowsEnabled && uLightingModel != 0)
     color *= 1.0 - shadowAmount() * (1.0 - uAmbient);
+
+  if (uN64Enabled) {
+    vec4 shade = vec4(vColor * (uLightingModel == 0 ? 1.0 : vVertexLighting), 1.0);
+    vec4 texel1 = texture(uN64DetailTexture, uv * 4.0);
+    vec4 combined = n64CombinerCycle(uN64Cycle0, texel, texel1, shade, vec4(0.0), n64LodFraction);
+    if (uN64CycleType == 2)
+      combined = n64CombinerCycle(uN64Cycle1, texel, texel1, shade, combined, n64LodFraction);
+    color = combined.rgb;
+    alpha = combined.a;
+    if (uN64AlphaCompare == 1 && alpha < uN64AlphaThreshold) discard;
+    if (uN64AlphaCompare == 2 && alpha < n64AlphaNoise(ivec2(gl_FragCoord.xy))) discard;
+  }
 
   if (uWireframe) {
     vec3 width = fwidth(vBarycentric);
@@ -214,6 +341,10 @@ uniform bool uVisualizeShadowMap;
 uniform sampler2D uOverdraw;
 uniform bool uVisualizeOverdraw;
 uniform float uOverdrawRange;
+uniform bool uN64Enabled;
+uniform int uN64ColorDither;
+uniform bool uN64ViReconstruction;
+uniform bool uN64ViDivot;
 out vec4 fragColor;
 
 float bayer4(ivec2 p) {
@@ -226,8 +357,37 @@ float bayer4(ivec2 p) {
   return (m[(p.y & 3) * 4 + (p.x & 3)] + 0.5) / 16.0 - 0.5;
 }
 
+float magic4(ivec2 p) {
+  const float m[16] = float[16](
+     0,  6,  1,  7,
+     4,  2,  5,  3,
+     1,  7,  0,  6,
+     5,  3,  4,  2
+  );
+  return (m[(p.y & 3) * 4 + (p.x & 3)] + 0.5) / 8.0 - 0.5;
+}
+
+float noiseDither(ivec2 p) {
+  return fract(sin(dot(vec2(p), vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+}
+
+vec3 median3(vec3 a, vec3 b, vec3 c) {
+  return max(min(a, b), min(max(a, b), c));
+}
+
 void main() {
   vec3 color = texture(uScene, vUv).rgb;
+  if (uN64Enabled && uN64ViReconstruction) {
+    vec2 texel = 1.0 / vec2(textureSize(uScene, 0));
+    vec3 horizontal = texture(uScene, vUv - vec2(texel.x, 0.0)).rgb + texture(uScene, vUv + vec2(texel.x, 0.0)).rgb;
+    vec3 vertical = texture(uScene, vUv - vec2(0.0, texel.y)).rgb + texture(uScene, vUv + vec2(0.0, texel.y)).rgb;
+    color = color * 0.5 + (horizontal + vertical) * 0.125;
+    if (uN64ViDivot) {
+      vec3 left = texture(uScene, vUv - vec2(texel.x, 0.0)).rgb;
+      vec3 right = texture(uScene, vUv + vec2(texel.x, 0.0)).rgb;
+      color = median3(left, color, right);
+    }
+  }
   if (uVisualizeOverdraw) {
     float count = texture(uOverdraw, vUv).r;
     float t = clamp(count / max(uOverdrawRange, 1.0), 0.0, 1.0);
@@ -254,7 +414,13 @@ void main() {
     color = pow(max(color, vec3(0.0)), vec3(1.0 / 2.2));
   }
   float levels = exp2(float(uBitsPerChannel)) - 1.0;
-  if (uDithering) color += bayer4(ivec2(gl_FragCoord.xy)) / levels;
+  if (uN64Enabled && uN64ColorDither != 0) {
+    float offset = uN64ColorDither == 1 ? magic4(ivec2(gl_FragCoord.xy))
+      : uN64ColorDither == 2 ? bayer4(ivec2(gl_FragCoord.xy)) : noiseDither(ivec2(gl_FragCoord.xy));
+    color += offset / levels;
+  } else if (uDithering) {
+    color += bayer4(ivec2(gl_FragCoord.xy)) / levels;
+  }
   color = round(clamp(color, 0.0, 1.0) * levels) / levels;
   fragColor = vec4(color, 1.0);
 }

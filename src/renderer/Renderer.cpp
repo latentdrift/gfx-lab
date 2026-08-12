@@ -246,6 +246,7 @@ public:
     }
     makeCheckerTexture();
     makeNormalTexture();
+    makeDetailTexture();
     glGenFramebuffers(1, &shadowFbo_);
     glGenTextures(1, &shadowTexture_);
   }
@@ -257,6 +258,7 @@ public:
     glDeleteTextures(1, &indexedTexture_);
     glDeleteTextures(1, &clutTexture_);
     glDeleteTextures(1, &normalTexture_);
+    glDeleteTextures(1, &detailTexture_);
     glDeleteFramebuffers(1, &shadowFbo_);
     glDeleteTextures(1, &shadowTexture_);
     glDeleteBuffers(1, &vbo_);
@@ -399,6 +401,7 @@ public:
     glUniform1f(location("uDepthCueStart"), state.lighting.depthCueStart);
     glUniform1f(location("uDepthCueEnd"), state.lighting.depthCueEnd);
     glUniform3fv(location("uFarColor"), 1, glm::value_ptr(state.lighting.farColor));
+    glUniform1i(location("uN64TextureGeneration"), state.n64.enabled && state.n64.textureGeneration);
     glUniform1f(location("uShininess"), state.lighting.shininess);
     glUniform1i(location("uLinearLight"), state.color.linearLight);
     glUniform3fv(location("uLightDirection"), 1, glm::value_ptr(lightDirection));
@@ -408,6 +411,20 @@ public:
     glUniform1i(location("uFogEnabled"), state.post.fog);
     glUniform1f(location("uFogStart"), state.post.fogStart);
     glUniform1f(location("uFogEnd"), state.post.fogEnd);
+    glUniform1i(location("uN64Enabled"), state.n64.enabled);
+    glUniform1i(location("uN64CycleType"), state.n64.cycleType);
+    glUniform4i(location("uN64Cycle0"), state.n64.cycle0.a, state.n64.cycle0.b, state.n64.cycle0.c, state.n64.cycle0.d);
+    glUniform4i(location("uN64Cycle1"), state.n64.cycle1.a, state.n64.cycle1.b, state.n64.cycle1.c, state.n64.cycle1.d);
+    glUniform4fv(location("uN64PrimitiveColor"), 1, glm::value_ptr(state.n64.primitiveColor));
+    glUniform4fv(location("uN64EnvironmentColor"), 1, glm::value_ptr(state.n64.environmentColor));
+    glUniform1i(location("uN64TextureFormat"), state.n64.textureFormat);
+    glUniform1i(location("uN64TextureFilter"), state.n64.textureFilter);
+    glUniform1i(location("uN64MipmapMode"), state.n64.mipmapMode);
+    glUniform2i(location("uN64TileSize"), state.n64.tileWidth, state.n64.tileHeight);
+    glUniform2i(location("uN64Mirror"), state.n64.mirrorS, state.n64.mirrorT);
+    glUniform2i(location("uN64Shift"), state.n64.shiftS, state.n64.shiftT);
+    glUniform1i(location("uN64AlphaCompare"), state.n64.alphaCompare);
+    glUniform1f(location("uN64AlphaThreshold"), state.n64.alphaThreshold);
     glUniform3fv(location("uCameraPosition"), 1, glm::value_ptr(camera.eye()));
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, checkerTexture_);
@@ -432,6 +449,9 @@ public:
     glBindTexture(GL_TEXTURE_2D, clutTexture_);
     glUniform1i(location("uClut"), 5);
     glUniform1i(location("uTextureColorMode"), state.texture.colorMode);
+    glActiveTexture(GL_TEXTURE6);
+    glBindTexture(GL_TEXTURE_2D, detailTexture_);
+    glUniform1i(location("uN64DetailTexture"), 6);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, normalTexture_);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, state.texture.mipmapping ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
@@ -609,6 +629,10 @@ public:
     glUniform1i(glGetUniformLocation(outputProgram_, "uOverdraw"), 3);
     glUniform1i(glGetUniformLocation(outputProgram_, "uVisualizeOverdraw"), state.post.overdraw);
     glUniform1f(glGetUniformLocation(outputProgram_, "uOverdrawRange"), state.post.overdrawRange);
+    glUniform1i(glGetUniformLocation(outputProgram_, "uN64Enabled"), state.n64.enabled);
+    glUniform1i(glGetUniformLocation(outputProgram_, "uN64ColorDither"), state.n64.colorDither);
+    glUniform1i(glGetUniformLocation(outputProgram_, "uN64ViReconstruction"), state.n64.viReconstruction);
+    glUniform1i(glGetUniformLocation(outputProgram_, "uN64ViDivot"), state.n64.viDivot);
     glBindVertexArray(fullscreenVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindTexture(GL_TEXTURE_2D, target.outputTexture);
@@ -642,7 +666,7 @@ public:
 private:
   GLuint sceneProgram_ = 0, outputProgram_ = 0, differenceProgram_ = 0, shadowProgram_ = 0, overdrawProgram_ = 0;
   GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, indexedTexture_ = 0,
-    clutTexture_ = 0, normalTexture_ = 0;
+    clutTexture_ = 0, normalTexture_ = 0, detailTexture_ = 0;
   GLsizei vertexCount_ = 0;
   GLint maxSamples_ = 1;
   GLfloat maxAnisotropy_ = 1.0f;
@@ -731,6 +755,30 @@ private:
     glGenTextures(1, &normalTexture_);
     glBindTexture(GL_TEXTURE_2D, normalTexture_);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, size, size, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glGenerateMipmap(GL_TEXTURE_2D);
+  }
+
+  void makeDetailTexture() {
+    constexpr int size = 64;
+    std::array<unsigned char, size * size * 4> pixels{};
+    for (int y = 0; y < size; ++y) {
+      for (int x = 0; x < size; ++x) {
+        const int checker = ((x / 2) + (y / 2)) & 1;
+        const unsigned char intensity = static_cast<unsigned char>(checker ? 176 : 80);
+        const int offset = (y * size + x) * 4;
+        pixels[offset] = intensity;
+        pixels[offset + 1] = intensity;
+        pixels[offset + 2] = intensity;
+        pixels[offset + 3] = 255;
+      }
+    }
+    glGenTextures(1, &detailTexture_);
+    glBindTexture(GL_TEXTURE_2D, detailTexture_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, size, size, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glGenerateMipmap(GL_TEXTURE_2D);

@@ -134,6 +134,28 @@ int runApplication() {
           "\"hardware_target\": \"sony_playstation_ps1\"") == std::string::npos)
       fail("hardware target missing from renderer config export");
     current = RendererState{};
+    normalizeForHardwareProfile(HardwareProfile::Nintendo64, current);
+    if (!current.n64.enabled || current.lighting.model > 1 || current.surface.normalMapping ||
+        !current.depth.testing || current.stencil.enabled || current.color.linearLight ||
+        current.rasterization.samples != 4)
+      fail("Nintendo 64 hardware profile did not normalize renderer state");
+    for (int textureFormat = 0; textureFormat <= 8; ++textureFormat) {
+      current.n64.textureFormat = textureFormat;
+      for (int textureFilter = 0; textureFilter <= 2; ++textureFilter) {
+        current.n64.textureFilter = textureFilter;
+        renderer.render(current, camera, TestScene::Torus, false);
+      }
+    }
+    for (int mipmapMode = 0; mipmapMode <= 4; ++mipmapMode) {
+      current.n64.mipmapMode = mipmapMode;
+      current.n64.cycleType = mipmapMode >= 2 ? 2 : 1;
+      renderer.render(current, camera, TestScene::TexturePlane, false);
+    }
+    current.n64.alphaCompare = 2;
+    current.n64.textureGeneration = true;
+    current.n64.viDivot = true;
+    renderer.render(current, camera, TestScene::Torus, false);
+    current = RendererState{};
     reference = current;
     camera = CameraOrbit{};
     scene = TestScene::Torus;
