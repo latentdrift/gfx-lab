@@ -8,9 +8,12 @@ find_package(GLEW REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(glm REQUIRED)
 find_package(imgui REQUIRED)
+find_package(assimp REQUIRED)
+find_package(nfd REQUIRED)
 
 add_executable(graphics-lab
   src/main.cpp
+  src/assets/ModelAsset.cpp
   src/app/Animation.cpp
   src/app/Application.cpp
   src/app/EditorHistory.cpp
@@ -32,6 +35,8 @@ target_link_libraries(graphics-lab PRIVATE
   glfw
   glm::glm
   imgui::imgui
+  assimp::assimp
+  nfd::nfd
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

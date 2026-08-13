@@ -31,6 +31,8 @@
               glfw
               glm
               imgui
+              assimp
+              nativefiledialog-extended
               libGL
               libice
               libsm
@@ -57,6 +59,8 @@
               glfw
               glm
               imgui
+              assimp
+              nativefiledialog-extended
               libGL
             ];
           };

@@ -15,6 +15,7 @@
 #include "app/EditorHistory.hpp"
 #include "app/HardwareProfile.hpp"
 #include "app/RenderStack.hpp"
+#include "assets/ModelAsset.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
 #include "ui/AnimationEditor.hpp"
@@ -88,6 +89,14 @@ int runApplication() {
   handbook::Handbook graphicsHandbook;
 
   if (std::getenv("GRAPHICS_LAB_VALIDATE_HANDBOOK")) {
+    const ModelImportResult importedFixture = importModelAsset("tests/fixtures/import_triangle.obj");
+    if (!importedFixture || importedFixture.asset->triangleCount != 1 ||
+        importedFixture.asset->vertices.size() != 3 || !importedFixture.asset->hasTextureCoordinates ||
+        std::abs((importedFixture.asset->sourceBoundsMaximum.x - importedFixture.asset->sourceBoundsMinimum.x) *
+          importedFixture.asset->normalizationScale - 3.0f) > 0.0001f)
+      fail("OBJ model import or normalization failed validation");
+    if (importModelAsset("tests/fixtures/not_a_model.txt"))
+      fail("model importer accepted an unsupported file type");
     RenderStack validationStack;
     if (validationStack.passes().size() != 2 || !validationStack.duplicateSelected() ||
         validationStack.passes().size() != 3 || !validationStack.moveSelected(-1) ||
