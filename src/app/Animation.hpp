@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 
 #include <cstddef>
+#include <string_view>
 #include <vector>
 
 namespace gfxlab {
@@ -12,46 +13,57 @@ class RenderStack;
 
 enum class KeyframeInterpolation { Step, Linear, SmoothStep };
 
-struct PassAnimationValues {
-  glm::vec3 modelTranslation{0.0f};
-  float modelScale = 1.0f;
-  float normalInflation = 0.0f;
-  glm::vec2 uvOffset{0.0f};
-  glm::vec2 uvScale{1.0f};
-  float cameraYaw = 0.0f;
-  float cameraPitch = 0.0f;
-  float cameraDistance = 0.0f;
-  float fieldOfViewOffset = 0.0f;
-
-  float compositeGain = 1.0f;
-  float compositeBias = 0.0f;
-  float compositeOpacity = 1.0f;
-
-  float vertexQuantization = 0.0f;
-  float normalStrength = 1.0f;
-  float ambient = 0.22f;
-  float lightAzimuth = 34.0f;
-  float lightElevation = 52.0f;
-  float shininess = 32.0f;
-  float depthCueStart = 3.0f;
-  float depthCueEnd = 7.0f;
-  glm::vec3 farColor{0.12f, 0.16f, 0.22f};
-  float fogStart = 3.0f;
-  float fogEnd = 7.0f;
-  glm::vec4 primitiveColor{1.0f};
-  glm::vec4 environmentColor{0.18f, 0.24f, 0.30f, 1.0f};
-  float alphaThreshold = 0.5f;
+enum class AnimationProperty {
+  ModelTranslation,
+  ModelScale,
+  NormalInflation,
+  UvOffset,
+  UvScale,
+  CameraYaw,
+  CameraPitch,
+  CameraDistance,
+  FieldOfViewOffset,
+  CompositeGain,
+  CompositeBias,
+  CompositeOpacity,
+  VertexQuantization,
+  NormalStrength,
+  Ambient,
+  LightAzimuth,
+  LightElevation,
+  Shininess,
+  DepthCueStart,
+  DepthCueEnd,
+  FarColor,
+  FogStart,
+  FogEnd,
+  PrimitiveColor,
+  EnvironmentColor,
+  AlphaThreshold,
+  Count,
 };
 
-struct PassKeyframe {
+struct AnimationPropertyInfo {
+  std::string_view id;
+  std::string_view label;
+  std::string_view group;
+  int components = 1;
+};
+
+struct PropertyKeyframe {
   float timeSeconds = 0.0f;
-  PassAnimationValues values;
+  glm::vec4 value{0.0f};
 };
 
-struct PassAnimationTrack {
-  bool enabled = true;
+struct PropertyAnimationTrack {
+  AnimationProperty property = AnimationProperty::ModelTranslation;
   KeyframeInterpolation interpolation = KeyframeInterpolation::Linear;
-  std::vector<PassKeyframe> keyframes;
+  std::vector<PropertyKeyframe> keyframes;
+};
+
+struct PassAnimation {
+  bool enabled = true;
+  std::vector<PropertyAnimationTrack> tracks;
 };
 
 struct AnimationTimeline {
@@ -60,16 +72,27 @@ struct AnimationTimeline {
   float playbackRate = 1.0f;
   bool playing = false;
   bool loop = true;
+  bool autoKey = false;
+  bool showAllPasses = false;
 
   void advance(float deltaSeconds);
 };
 
-[[nodiscard]] PassAnimationValues captureAnimationValues(const RenderPass& pass);
-void applyAnimationValues(RenderPass& pass, const PassAnimationValues& values);
-void setPassKeyframe(RenderPass& pass, float timeSeconds);
-[[nodiscard]] bool removePassKeyframe(RenderPass& pass, float timeSeconds, float toleranceSeconds = 1.0f / 120.0f);
-[[nodiscard]] std::size_t keyframeIndexNear(const RenderPass& pass, float timeSeconds,
+[[nodiscard]] const AnimationPropertyInfo& animationPropertyInfo(AnimationProperty property);
+[[nodiscard]] glm::vec4 animationPropertyValue(const RenderPass& pass, AnimationProperty property);
+void setAnimationPropertyValue(RenderPass& pass, AnimationProperty property, const glm::vec4& value);
+[[nodiscard]] PropertyAnimationTrack* findPropertyTrack(RenderPass& pass, AnimationProperty property);
+[[nodiscard]] const PropertyAnimationTrack* findPropertyTrack(const RenderPass& pass, AnimationProperty property);
+[[nodiscard]] glm::vec4 samplePropertyTrack(const PropertyAnimationTrack& track, float timeSeconds);
+void setPropertyKeyframe(RenderPass& pass, AnimationProperty property, float timeSeconds,
+  const glm::vec4* explicitValue = nullptr);
+[[nodiscard]] bool removePropertyKeyframe(RenderPass& pass, AnimationProperty property, float timeSeconds,
   float toleranceSeconds = 1.0f / 120.0f);
+[[nodiscard]] std::size_t propertyKeyframeIndexNear(const RenderPass& pass, AnimationProperty property,
+  float timeSeconds, float toleranceSeconds = 1.0f / 120.0f);
+[[nodiscard]] bool propertyHasKeyAt(const RenderPass& pass, AnimationProperty property, float timeSeconds,
+  float toleranceSeconds = 1.0f / 120.0f);
+[[nodiscard]] RenderPass evaluateRenderPass(const RenderPass& source, float timeSeconds);
 [[nodiscard]] RenderStack evaluateRenderStack(const RenderStack& source, float timeSeconds);
 
 } // namespace gfxlab

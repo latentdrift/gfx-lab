@@ -48,7 +48,7 @@ struct RenderPass {
   PassPerturbation perturbation;
   PassOutput output = PassOutput::Color;
   CompositeStep composite;
-  PassAnimationTrack animation;
+  PassAnimation animation;
 };
 
 class RenderStack {

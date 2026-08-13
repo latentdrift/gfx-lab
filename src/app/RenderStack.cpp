@@ -144,7 +144,8 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   if (timeline != nullptr) {
     json << "  \"animation_timeline\": {\"duration_seconds\": " << timeline->durationSeconds
          << ", \"playback_rate\": " << timeline->playbackRate << ", \"loop\": " << timeline->loop
-         << ", \"current_time_seconds\": " << timeline->timeSeconds << "},\n";
+         << ", \"auto_key\": " << timeline->autoKey << ", \"show_all_passes\": "
+         << timeline->showAllPasses << ", \"current_time_seconds\": " << timeline->timeSeconds << "},\n";
   }
   json << "  \"passes\": [\n";
   for (std::size_t index = 0; index < stack.passes().size(); ++index) {
@@ -172,40 +173,27 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
          << "\", \"range_behavior\": \"" << rangeIds[static_cast<int>(c.range)]
          << "\", \"mask\": \"" << maskIds[static_cast<int>(c.mask)]
          << "\", \"invert_mask\": " << c.invertMask << "},\n";
-    json << "      \"animation\": {\"enabled\": " << pass.animation.enabled
-         << ", \"interpolation\": \"" << interpolationIds[static_cast<int>(pass.animation.interpolation)]
-         << "\", \"keyframes\": [";
-    for (std::size_t keyIndex = 0; keyIndex < pass.animation.keyframes.size(); ++keyIndex) {
-      const PassKeyframe& keyframe = pass.animation.keyframes[keyIndex];
-      const PassAnimationValues& v = keyframe.values;
-      if (keyIndex != 0) json << ",";
-      json << "\n        {\"time_seconds\": " << keyframe.timeSeconds << ", \"values\": {";
-      json << "\"model_translation_units\": [" << v.modelTranslation.x << ", " << v.modelTranslation.y
-           << ", " << v.modelTranslation.z << "], \"model_scale\": " << v.modelScale
-           << ", \"normal_inflation_units\": " << v.normalInflation;
-      json << ", \"uv_offset\": [" << v.uvOffset.x << ", " << v.uvOffset.y << "], \"uv_scale\": ["
-           << v.uvScale.x << ", " << v.uvScale.y << "]";
-      json << ", \"camera_offsets\": {\"yaw_radians\": " << v.cameraYaw << ", \"pitch_radians\": "
-           << v.cameraPitch << ", \"distance_units\": " << v.cameraDistance << ", \"fov_degrees\": "
-           << v.fieldOfViewOffset << "}";
-      json << ", \"composite\": {\"gain\": " << v.compositeGain << ", \"bias\": " << v.compositeBias
-           << ", \"opacity\": " << v.compositeOpacity << "}";
-      json << ", \"vertex_quantization_step_units\": " << v.vertexQuantization
-           << ", \"normal_map_strength\": " << v.normalStrength;
-      json << ", \"lighting\": {\"ambient\": " << v.ambient << ", \"azimuth_degrees\": "
-           << v.lightAzimuth << ", \"elevation_degrees\": " << v.lightElevation
-           << ", \"specular_exponent\": " << v.shininess << "}";
-      json << ", \"depth_cue\": {\"start_units\": " << v.depthCueStart << ", \"end_units\": "
-           << v.depthCueEnd << ", \"far_color_rgb\": [" << v.farColor.r << ", " << v.farColor.g << ", "
-           << v.farColor.b << "]}";
-      json << ", \"fog\": {\"start_units\": " << v.fogStart << ", \"end_units\": " << v.fogEnd << "}";
-      json << ", \"n64_primitive_color_rgba\": [" << v.primitiveColor.r << ", " << v.primitiveColor.g
-           << ", " << v.primitiveColor.b << ", " << v.primitiveColor.a << "]";
-      json << ", \"n64_environment_color_rgba\": [" << v.environmentColor.r << ", " << v.environmentColor.g
-           << ", " << v.environmentColor.b << ", " << v.environmentColor.a << "]";
-      json << ", \"alpha_threshold\": " << v.alphaThreshold << "}}";
+    json << "      \"animation\": {\"enabled\": " << pass.animation.enabled << ", \"property_tracks\": [";
+    for (std::size_t trackIndex = 0; trackIndex < pass.animation.tracks.size(); ++trackIndex) {
+      const PropertyAnimationTrack& track = pass.animation.tracks[trackIndex];
+      const AnimationPropertyInfo& info = animationPropertyInfo(track.property);
+      if (trackIndex != 0) json << ",";
+      json << "\n        {\"property\": \"" << info.id << "\", \"components\": " << info.components
+           << ", \"interpolation\": \"" << interpolationIds[static_cast<int>(track.interpolation)]
+           << "\", \"keys\": [";
+      for (std::size_t keyIndex = 0; keyIndex < track.keyframes.size(); ++keyIndex) {
+        const PropertyKeyframe& key = track.keyframes[keyIndex];
+        if (keyIndex != 0) json << ", ";
+        json << "{\"time_seconds\": " << key.timeSeconds << ", \"value\": [";
+        for (int component = 0; component < info.components; ++component) {
+          if (component != 0) json << ", ";
+          json << key.value[component];
+        }
+        json << "]}";
+      }
+      json << "]}";
     }
-    if (!pass.animation.keyframes.empty()) json << "\n      ";
+    if (!pass.animation.tracks.empty()) json << "\n      ";
     json << "]},\n";
     json << "      \"renderer\": " << nested(configJson(pass.renderer, camera, scene, profile), 6) << "\n";
     json << "    }" << (index + 1 < stack.passes().size() ? "," : "") << "\n";

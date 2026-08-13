@@ -114,14 +114,17 @@ int runApplication() {
     animationValidation.select(1);
     animationValidation.selected().perturbation.modelTranslation.x = 0.0f;
     animationValidation.selected().composite.gain = 1.0f;
-    setPassKeyframe(animationValidation.selected(), 0.0f);
+    setPropertyKeyframe(animationValidation.selected(), AnimationProperty::ModelTranslation, 0.0f);
+    setPropertyKeyframe(animationValidation.selected(), AnimationProperty::CompositeGain, 0.0f);
     animationValidation.selected().perturbation.modelTranslation.x = 2.0f;
     animationValidation.selected().composite.gain = 5.0f;
-    setPassKeyframe(animationValidation.selected(), 2.0f);
+    setPropertyKeyframe(animationValidation.selected(), AnimationProperty::ModelTranslation, 2.0f);
+    setPropertyKeyframe(animationValidation.selected(), AnimationProperty::CompositeGain, 2.0f);
     const RenderStack evaluatedAnimation = evaluateRenderStack(animationValidation, 1.0f);
     if (std::abs(evaluatedAnimation.selected().perturbation.modelTranslation.x - 1.0f) > 0.0001f ||
         std::abs(evaluatedAnimation.selected().composite.gain - 3.0f) > 0.0001f ||
-        !removePassKeyframe(animationValidation.selected(), 2.0f))
+        !removePropertyKeyframe(animationValidation.selected(), AnimationProperty::ModelTranslation, 2.0f) ||
+        findPropertyTrack(animationValidation.selected(), AnimationProperty::CompositeGain) == nullptr)
       fail("render-pass keyframe interpolation failed validation");
     AnimationTimeline timelineValidation;
     timelineValidation.durationSeconds = 2.0f;
@@ -142,7 +145,7 @@ int runApplication() {
     historyStack.duplicateSelected();
     historyStack.selected().renderer.lighting.ambient = 0.4f;
     historyStack.selected().perturbation.uvOffset = {0.25f, -0.125f};
-    setPassKeyframe(historyStack.selected(), 1.0f);
+    setPropertyKeyframe(historyStack.selected(), AnimationProperty::UvOffset, 1.0f);
     historyCamera.yaw = 1.25f;
     historyScene = TestScene::Lighting;
     historyProfile = HardwareProfile::Nintendo64;
@@ -170,7 +173,7 @@ int runApplication() {
         std::abs(historyRestored.renderStack.selected().renderer.lighting.ambient - 0.7f) > 0.0001f ||
         std::abs(historyRestored.renderStack.selected().perturbation.cameraYaw - 0.2f) > 0.0001f ||
         historyRestored.renderStack.passes().size() != 3 ||
-        historyRestored.renderStack.selected().animation.keyframes.size() != 1 ||
+        historyRestored.renderStack.selected().animation.tracks.size() != 1 ||
         historyRestored.scene != TestScene::Lighting ||
         historyRestored.hardwareProfile != HardwareProfile::Nintendo64 ||
         historyRestored.importedModel == nullptr ||
