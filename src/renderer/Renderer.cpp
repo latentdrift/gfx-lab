@@ -830,8 +830,30 @@ public:
       glEnable(GL_CULL_FACE);
       glCullFace(GL_BACK);
       glDisable(GL_BLEND);
-      glClearColor(0.018f, 0.021f, 0.027f, 1.0f);
-      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      // A single glClear(GL_COLOR_BUFFER_BIT) would copy the presentation
+      // background's RGBA tuple into every MRT attachment. In the spectral
+      // attachments that tuple would become four invented wavelength samples
+      // (including an intensity of 1.0 from alpha), so observers would see
+      // color in empty space. Presentation and radiance have different units
+      // and must be cleared independently.
+      constexpr std::array<float, 4> presentationBackground = {0.018f, 0.021f, 0.027f, 1.0f};
+      constexpr std::array<float, 4> zeroRadiance = {0.0f, 0.0f, 0.0f, 0.0f};
+      glClearBufferfv(GL_COLOR, 0, presentationBackground.data());
+      for (int spectralAttachment = 1; spectralAttachment <= 4; ++spectralAttachment)
+        glClearBufferfv(GL_COLOR, spectralAttachment, zeroRadiance.data());
+      const float clearDepth = state.depth.function == 2 ? 0.0f : 1.0f;
+      glClearBufferfv(GL_DEPTH, 0, &clearDepth);
+      if (std::getenv("GRAPHICS_LAB_VALIDATE_HANDBOOK")) {
+        for (int spectralAttachment = 1; spectralAttachment <= 4; ++spectralAttachment) {
+          std::array<float, 4> clearSample{};
+          glReadBuffer(GL_COLOR_ATTACHMENT0 + spectralAttachment);
+          glReadPixels(0, 0, 1, 1, GL_RGBA, GL_FLOAT, clearSample.data());
+          if (std::any_of(clearSample.begin(), clearSample.end(),
+              [](const float value) { return value != 0.0f; }))
+            failRenderer("spectral background clear produced nonzero radiance");
+        }
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+      }
       glUseProgram(spectralProgram_);
       glUniformMatrix4fv(glGetUniformLocation(spectralProgram_, "uView"), 1, GL_FALSE, glm::value_ptr(view));
       glUniformMatrix4fv(glGetUniformLocation(spectralProgram_, "uProjection"), 1, GL_FALSE,
