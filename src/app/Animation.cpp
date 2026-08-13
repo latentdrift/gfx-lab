@@ -8,6 +8,16 @@
 #include <limits>
 
 namespace gfxlab {
+
+void recordPropertyAnimationEdit(RenderPass& pass, const AnimationProperty property,
+    AnimationTimeline& timeline, const bool valueChanged) {
+  PropertyAnimationTrack* track = findPropertyTrack(pass, property);
+  if (!valueChanged || (track == nullptr && !timeline.autoKey)) return;
+  timeline.playing = false;
+  const glm::vec4 value = animationPropertyValue(pass, property);
+  setPropertyKeyframe(pass, property, timeline.timeSeconds, &value);
+}
+
 namespace {
 
 using K = AnimationValueKind;

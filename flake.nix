@@ -2,8 +2,12 @@
   description = "Graphics Lab - a small native realtime rendering instrument";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.imguizmo = {
+    url = "github:CedricGuillemet/ImGuizmo";
+    flake = false;
+  };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, imguizmo }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
@@ -54,7 +58,10 @@
               libxext
             ];
 
-            cmakeFlags = [ "-DGRAPHICS_LAB_WARNINGS_AS_ERRORS=OFF" ];
+            cmakeFlags = [
+              "-DGRAPHICS_LAB_WARNINGS_AS_ERRORS=OFF"
+              "-DGRAPHICS_LAB_IMGUIZMO_SOURCE=${imguizmo}"
+            ];
           };
         });
 
@@ -64,6 +71,7 @@
           imguiDocking = imguiDockingFor pkgs;
         in {
           default = pkgs.mkShell {
+            GRAPHICS_LAB_IMGUIZMO_SOURCE = "${imguizmo}";
             packages = with pkgs; [
               cmake
               ninja

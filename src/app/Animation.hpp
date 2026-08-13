@@ -171,6 +171,9 @@ struct AnimationTimeline {
   void advance(float deltaSeconds);
 };
 
+void recordPropertyAnimationEdit(RenderPass& pass, AnimationProperty property,
+  AnimationTimeline& timeline, bool valueChanged);
+
 [[nodiscard]] const AnimationPropertyInfo& animationPropertyInfo(AnimationProperty property);
 [[nodiscard]] bool animationPropertyIsAnimatable(AnimationProperty property);
 [[nodiscard]] bool animationPropertyValuesEqual(AnimationProperty property, const glm::vec4& a,

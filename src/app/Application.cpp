@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include <ImGuizmo.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -100,6 +101,8 @@ int runApplication() {
   CompareMode compare = CompareMode::A;
   HardwareProfile hardwareProfile = HardwareProfile::Unrestricted;
   bool viewportHovered = false;
+  bool viewportAcceptsCameraInput = false;
+  bool viewportGizmoUsing = false;
   bool previewAnimation = true;
   bool inspectorGlobalScope = true;
   WorkspaceWindows workspaceWindows;
@@ -149,6 +152,7 @@ int runApplication() {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+    ImGuizmo::BeginFrame();
 
     ImGuiIO& io = ImGui::GetIO();
     const bool commandModifier = io.KeyCtrl || io.KeySuper;
@@ -157,7 +161,7 @@ int runApplication() {
     else if (!io.WantTextInput && commandModifier && ImGui::IsKeyPressed(ImGuiKey_Y, false))
       restoreHistory(true);
     if (viewportHovered) {
-      if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+      if (viewportAcceptsCameraInput && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
         camera.yaw -= io.MouseDelta.x * 0.008f;
         camera.pitch = std::clamp(camera.pitch + io.MouseDelta.y * 0.008f, -1.45f, 1.45f);
       }
@@ -250,8 +254,21 @@ int runApplication() {
     const GLuint baseTexture = passTextures.front();
     const GLuint renderedComposite = renderer.composite(evaluatedStack);
     const GLuint compositeTexture = renderedComposite != 0 ? renderedComposite : selectedTexture;
-    viewportHovered = drawViewportWindow(workspaceWindows.viewport,
-      {selectedTexture, baseTexture, compositeTexture}, compare, renderStack);
+    const float viewportTime = evaluateAnimation ? animationTimeline.timeSeconds : 0.0f;
+    const RenderPass viewportBefore = inspectorGlobalScope
+      ? evaluateRenderPass(renderStack.global(), viewportTime)
+      : materializeRenderPass(renderStack, renderStack.selectedIndex(), viewportTime);
+    RenderPass viewportPass = viewportBefore;
+    const ViewportWindowResult viewportResult = drawViewportWindow(workspaceWindows.viewport,
+      {selectedTexture, baseTexture, compositeTexture}, compare, renderStack, viewportPass, camera,
+      animationTimeline, inspectorGlobalScope);
+    viewportHovered = viewportResult.hovered;
+    viewportAcceptsCameraInput = viewportResult.acceptsCameraInput;
+    viewportGizmoUsing = viewportResult.gizmoUsing;
+    if (inspectorGlobalScope)
+      applyEditedPass(renderStack.global(), viewportBefore, viewportPass);
+    else
+      applyEditedLocalPass(renderStack, viewportBefore, viewportPass, viewportTime);
 
     if (workspaceWindows.inspector) {
       if (ImGui::Begin("Pipeline Inspector", &workspaceWindows.inspector)) {
@@ -341,7 +358,7 @@ int runApplication() {
       ImGui::IsMouseDown(ImGuiMouseButton_Middle) || ImGui::IsMouseDown(ImGuiMouseButton_Right));
     editorHistory.observe(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile, animationTimeline,
       importedModel),
-      ImGui::IsAnyItemActive() || viewportInteraction);
+      ImGui::IsAnyItemActive() || viewportInteraction || viewportGizmoUsing);
 
     ImGui::Render();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

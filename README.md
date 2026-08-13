@@ -13,6 +13,11 @@ cmake --build build
 
 Or build the package directly with `nix build` and run `./result/bin/graphics-lab`.
 
+In the viewport, choose **Translate** or **Scale** to manipulate the current global-base or selected-pass
+model transform directly. The gizmo writes the same parameters shown in the pass inspector, follows Auto Key,
+and participates in undo/redo. Middle/right drag and the mouse wheel continue to pan and zoom while a transform
+tool is active.
+
 ## Source architecture
 
 The executable is divided by rendering responsibility:

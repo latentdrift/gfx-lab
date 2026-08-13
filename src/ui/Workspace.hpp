@@ -3,6 +3,7 @@
 #include "app/Animation.hpp"
 #include "app/HardwareProfile.hpp"
 #include "app/RenderStack.hpp"
+#include "app/State.hpp"
 
 #include <array>
 
@@ -44,13 +45,20 @@ struct ViewportImages {
   unsigned int composite = 0;
 };
 
+struct ViewportWindowResult {
+  bool hovered = false;
+  bool acceptsCameraInput = false;
+  bool gizmoUsing = false;
+};
+
 WorkspaceActions beginWorkspace(WorkspaceWindows& windows, bool canUndo, bool canRedo);
 SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile& profile,
   const ModelAsset* importedModel);
 void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& timeline,
   bool& globalScope);
 void drawPipelineWindow(bool& open, Category& category, HardwareProfile profile);
-bool drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& compare,
-  const RenderStack& stack);
+ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& compare,
+  const RenderStack& stack, RenderPass& displayedPass, const CameraOrbit& camera,
+  AnimationTimeline& timeline, bool globalScope);
 
 } // namespace gfxlab::ui

@@ -133,6 +133,14 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     if (std::abs(evaluateRenderStack(animationValidation, 1.0f).selected().composite.gain - 1.0f) > 0.0001f ||
         !propertyHasKeyAt(animationValidation.selected(), AnimationProperty::CompositeGain, 2.0f))
       fail("independent property tracks or step interpolation failed validation");
+    AnimationTimeline autoKeyValidation;
+    autoKeyValidation.autoKey = true;
+    autoKeyValidation.timeSeconds = 1.25f;
+    animationValidation.selected().perturbation.modelScale = 1.2f;
+    recordPropertyAnimationEdit(animationValidation.selected(), AnimationProperty::ModelScale,
+      autoKeyValidation, true);
+    if (!propertyHasKeyAt(animationValidation.selected(), AnimationProperty::ModelScale, 1.25f))
+      fail("viewport-style Auto Key edit failed validation");
     animationValidation.selected().renderer.surface.wireframe = false;
     setPropertyKeyframe(animationValidation.selected(), AnimationProperty::WireframeOverlay, 0.0f);
     animationValidation.selected().renderer.surface.wireframe = true;

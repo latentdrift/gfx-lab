@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "imguizmo": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1786186682,
+        "narHash": "sha256-r287Yw0vsNiavq0T5g1WBA2Df7i3pg52h75iizzmUWs=",
+        "owner": "CedricGuillemet",
+        "repo": "ImGuizmo",
+        "rev": "18cef5e031d8c6973d80284c67f60549fafd78c1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "CedricGuillemet",
+        "repo": "ImGuizmo",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1786384358,
@@ -18,6 +34,7 @@
     },
     "root": {
       "inputs": {
+        "imguizmo": "imguizmo",
         "nixpkgs": "nixpkgs"
       }
     }

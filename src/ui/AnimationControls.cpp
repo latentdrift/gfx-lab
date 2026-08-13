@@ -8,13 +8,8 @@ namespace gfxlab::ui {
 
 void animationKeyControl(RenderPass& pass, const AnimationProperty property, AnimationTimeline& timeline,
     const bool valueChanged) {
+  recordPropertyAnimationEdit(pass, property, timeline, valueChanged);
   PropertyAnimationTrack* track = findPropertyTrack(pass, property);
-  if (valueChanged && (track != nullptr || timeline.autoKey)) {
-    timeline.playing = false;
-    const glm::vec4 value = animationPropertyValue(pass, property);
-    setPropertyKeyframe(pass, property, timeline.timeSeconds, &value);
-    track = findPropertyTrack(pass, property);
-  }
   const bool keyed = propertyHasKeyAt(pass, property, timeline.timeSeconds);
   const bool animated = track != nullptr;
   const ImVec2 nextCursor = ImGui::GetCursorScreenPos();

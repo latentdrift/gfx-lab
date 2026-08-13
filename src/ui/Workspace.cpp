@@ -6,6 +6,10 @@
 
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <ImGuizmo.h>
+
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <algorithm>
 #include <array>
@@ -211,13 +215,18 @@ void drawPipelineWindow(bool& open, Category& category, const HardwareProfile pr
   ImGui::End();
 }
 
-bool drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& compare,
-    const RenderStack& stack) {
-  if (!open) return false;
+ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& compare,
+    const RenderStack& stack, RenderPass& displayedPass, const CameraOrbit& camera,
+    AnimationTimeline& timeline, const bool globalScope) {
+  ViewportWindowResult result;
+  if (!open) return result;
   if (!ImGui::Begin("Viewport", &open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
     ImGui::End();
-    return false;
+    return result;
   }
+
+  enum class Tool { Orbit, Translate, Scale };
+  static Tool tool = Tool::Orbit;
 
   if (ImGui::RadioButton("Selected", compare == CompareMode::A)) compare = CompareMode::A;
   ImGui::SameLine();
@@ -227,7 +236,17 @@ bool drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& c
   ImGui::SameLine();
   if (ImGui::RadioButton("Composite", compare == CompareMode::Relation)) compare = CompareMode::Relation;
   ImGui::SameLine();
-  ImGui::TextDisabled("LMB orbit   MMB/RMB pan   Wheel zoom");
+  ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+  ImGui::SameLine();
+  if (ImGui::RadioButton("Orbit", tool == Tool::Orbit)) tool = Tool::Orbit;
+  ImGui::SameLine();
+  ImGui::BeginDisabled(compare != CompareMode::A);
+  if (ImGui::RadioButton("Translate", tool == Tool::Translate)) tool = Tool::Translate;
+  ImGui::SameLine();
+  if (ImGui::RadioButton("Scale", tool == Tool::Scale)) tool = Tool::Scale;
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  ImGui::TextDisabled("%s transform", globalScope ? "Global base" : "Selected pass");
   ImGui::Separator();
 
   const ImVec2 available = ImGui::GetContentRegionAvail();
@@ -263,9 +282,52 @@ bool drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& c
   }
   ImGui::SetCursorScreenPos(origin);
   ImGui::InvisibleButton("viewport-input", size);
-  const bool hovered = ImGui::IsItemHovered();
+  result.hovered = ImGui::IsItemHovered();
+
+  const bool gizmoVisible = compare == CompareMode::A && tool != Tool::Orbit;
+  result.acceptsCameraInput = result.hovered && !gizmoVisible;
+  if (gizmoVisible) {
+    CameraOrbit passCamera = camera;
+    passCamera.yaw += displayedPass.perturbation.cameraYaw;
+    passCamera.pitch = std::clamp(passCamera.pitch + displayedPass.perturbation.cameraPitch, -1.45f, 1.45f);
+    passCamera.distance = std::clamp(passCamera.distance + displayedPass.perturbation.cameraDistance, 1.4f, 14.0f);
+    const glm::mat4 view = passCamera.view();
+    const RendererState& state = displayedPass.renderer;
+    constexpr float aspect = cameraWidth / cameraHeight;
+    const float halfHeight = state.camera.orthographicSize * 0.5f;
+    const glm::mat4 projection = state.camera.orthographic
+      ? glm::ortho(-halfHeight * aspect, halfHeight * aspect, -halfHeight, halfHeight,
+          state.camera.nearPlane, 100.0f)
+      : glm::perspective(glm::radians(std::clamp(state.camera.fieldOfView +
+          displayedPass.perturbation.fieldOfView, 5.0f, 150.0f)), aspect,
+          state.camera.nearPlane, 100.0f);
+    glm::mat4 transform = glm::translate(glm::mat4(1.0f), displayedPass.perturbation.modelTranslation) *
+      glm::scale(glm::mat4(1.0f), glm::vec3(std::max(0.01f, displayedPass.perturbation.modelScale)));
+    const glm::vec3 previousTranslation = displayedPass.perturbation.modelTranslation;
+    const float previousScale = displayedPass.perturbation.modelScale;
+
+    ImGuizmo::SetOrthographic(state.camera.orthographic);
+    ImGuizmo::SetDrawlist(draw);
+    ImGuizmo::SetRect(origin.x, origin.y, size.x, size.y);
+    const ImGuizmo::OPERATION operation = tool == Tool::Translate ? ImGuizmo::TRANSLATE : ImGuizmo::SCALEU;
+    ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), operation, ImGuizmo::WORLD,
+      glm::value_ptr(transform));
+    result.gizmoUsing = ImGuizmo::IsUsing();
+    if (result.gizmoUsing) {
+      displayedPass.perturbation.modelTranslation = glm::vec3(transform[3]);
+      const glm::vec3 scale(glm::length(glm::vec3(transform[0])), glm::length(glm::vec3(transform[1])),
+        glm::length(glm::vec3(transform[2])));
+      displayedPass.perturbation.modelScale = std::clamp((scale.x + scale.y + scale.z) / 3.0f, 0.01f, 8.0f);
+      const bool translationChanged = glm::length(displayedPass.perturbation.modelTranslation -
+        previousTranslation) > 0.000001f;
+      const bool scaleChanged = std::abs(displayedPass.perturbation.modelScale - previousScale) > 0.000001f;
+      recordPropertyAnimationEdit(displayedPass, AnimationProperty::ModelTranslation, timeline,
+        translationChanged);
+      recordPropertyAnimationEdit(displayedPass, AnimationProperty::ModelScale, timeline, scaleChanged);
+    }
+  }
   ImGui::End();
-  return hovered;
+  return result;
 }
 
 } // namespace gfxlab::ui

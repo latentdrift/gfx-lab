@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 project(graphics_lab VERSION 0.1.0 LANGUAGES CXX)
 
 option(GRAPHICS_LAB_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+set(GRAPHICS_LAB_IMGUIZMO_SOURCE "$ENV{GRAPHICS_LAB_IMGUIZMO_SOURCE}" CACHE PATH
+  "Path to the pinned ImGuizmo source tree")
 
 find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
@@ -34,7 +36,12 @@ add_executable(graphics-lab
   src/ui/PassDifferenceAudit.cpp
   src/ui/Workspace.cpp
 )
+if(NOT EXISTS "${GRAPHICS_LAB_IMGUIZMO_SOURCE}/src/ImGuizmo.cpp")
+  message(FATAL_ERROR "GRAPHICS_LAB_IMGUIZMO_SOURCE must point to an ImGuizmo checkout")
+endif()
+target_sources(graphics-lab PRIVATE "${GRAPHICS_LAB_IMGUIZMO_SOURCE}/src/ImGuizmo.cpp")
 target_include_directories(graphics-lab PRIVATE src)
+target_include_directories(graphics-lab SYSTEM PRIVATE "${GRAPHICS_LAB_IMGUIZMO_SOURCE}/src")
 target_compile_features(graphics-lab PRIVATE cxx_std_20)
 target_link_libraries(graphics-lab PRIVATE
   OpenGL::GL
