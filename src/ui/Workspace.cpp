@@ -175,15 +175,20 @@ void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& t
   for (std::size_t index = 0; index < stack.passes().size(); ++index) {
     RenderPass& pass = stack.passes()[index];
     ImGui::PushID(static_cast<int>(index));
-    const bool changed = ImGui::Checkbox("##enabled", &pass.enabled);
-    animationKeyControl(pass, AnimationProperty::PassEnabled, timeline, changed);
-    ImGui::SameLine();
-    const std::string label = pass.name + "  [" + std::to_string(pass.overrides.size()) + " local, " +
-      std::to_string(pass.animation.tracks.size()) + " tracks]";
-    if (ImGui::Selectable(label.c_str(), stack.selectedIndex() == index, 0, ImVec2(0, 24))) {
+    if (ImGui::Selectable(pass.name.c_str(), stack.selectedIndex() == index, 0, ImVec2(-1.0f, 22.0f))) {
       stack.select(index);
       globalScope = false;
     }
+    ImGui::TextDisabled("%zu local override%s   %zu track%s", pass.overrides.size(),
+      pass.overrides.size() == 1 ? "" : "s", pass.animation.tracks.size(),
+      pass.animation.tracks.size() == 1 ? "" : "s");
+    const float right = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+    ImGui::SameLine();
+    ImGui::SetCursorScreenPos(ImVec2(right - 48.0f, ImGui::GetItemRectMin().y - 2.0f));
+    const bool changed = ImGui::Checkbox("##enabled", &pass.enabled);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pass enabled");
+    animationKeyControl(pass, AnimationProperty::PassEnabled, timeline, changed);
+    if (index + 1 < stack.passes().size()) ImGui::Separator();
     ImGui::PopID();
   }
   if (ImGui::Button("Duplicate", ImVec2(-1, 0))) {
@@ -281,9 +286,10 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
       : compare == CompareMode::B ? "BASE PASS" : "COMPOSITE STACK";
     draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240, 240, 240, 220), label);
   }
-  ImGui::SetCursorScreenPos(origin);
-  ImGui::InvisibleButton("viewport-input", size);
-  result.hovered = ImGui::IsItemHovered();
+  // ImGuizmo deliberately refuses activation while a normal ImGui item is hovered. Keep the viewport
+  // interaction surface item-free and perform its hit test directly, otherwise a full-size InvisibleButton
+  // makes a visible gizmo impossible to grab.
+  result.hovered = ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(origin, end);
 
   const bool gizmoVisible = compare == CompareMode::A && tool != Tool::Orbit;
   result.acceptsCameraInput = result.hovered && !gizmoVisible;
