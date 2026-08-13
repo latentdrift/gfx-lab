@@ -87,6 +87,26 @@ int runApplication() {
         validationStack.passes().size() != 3 || !validationStack.moveSelected(-1) ||
         !validationStack.removeSelected() || validationStack.passes().size() != 2)
       fail("render-pass stack operations failed validation");
+    RenderStack animationValidation;
+    animationValidation.select(1);
+    animationValidation.selected().perturbation.modelTranslation.x = 0.0f;
+    animationValidation.selected().composite.gain = 1.0f;
+    setPassKeyframe(animationValidation.selected(), 0.0f);
+    animationValidation.selected().perturbation.modelTranslation.x = 2.0f;
+    animationValidation.selected().composite.gain = 5.0f;
+    setPassKeyframe(animationValidation.selected(), 2.0f);
+    const RenderStack evaluatedAnimation = evaluateRenderStack(animationValidation, 1.0f);
+    if (std::abs(evaluatedAnimation.selected().perturbation.modelTranslation.x - 1.0f) > 0.0001f ||
+        std::abs(evaluatedAnimation.selected().composite.gain - 3.0f) > 0.0001f ||
+        !removePassKeyframe(animationValidation.selected(), 2.0f))
+      fail("render-pass keyframe interpolation failed validation");
+    AnimationTimeline timelineValidation;
+    timelineValidation.durationSeconds = 2.0f;
+    timelineValidation.timeSeconds = 1.5f;
+    timelineValidation.playing = true;
+    timelineValidation.advance(1.0f);
+    if (std::abs(timelineValidation.timeSeconds - 0.5f) > 0.0001f)
+      fail("animation timeline looping failed validation");
     RenderStack compositeValidation;
     compositeValidation.select(1);
     compositeValidation.duplicateSelected();

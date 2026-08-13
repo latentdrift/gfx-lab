@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/Animation.hpp"
 #include "app/State.hpp"
 
 #include <glm/glm.hpp>
@@ -45,6 +46,7 @@ struct RenderPass {
   PassPerturbation perturbation;
   PassOutput output = PassOutput::Color;
   CompositeStep composite;
+  PassAnimationTrack animation;
 };
 
 class RenderStack {

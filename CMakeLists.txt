@@ -11,6 +11,7 @@ find_package(imgui REQUIRED)
 
 add_executable(graphics-lab
   src/main.cpp
+  src/app/Animation.cpp
   src/app/Application.cpp
   src/app/HardwareProfile.cpp
   src/app/RenderStack.cpp
