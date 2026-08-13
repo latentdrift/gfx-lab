@@ -1,8 +1,6 @@
 #include "ui/DisplayInspector.hpp"
 
 #include "app/RenderStack.hpp"
-#include "ui/Windowing.hpp"
-
 #include <imgui.h>
 
 namespace gfxlab::ui {
@@ -16,10 +14,7 @@ void description(const char* text) {
 
 } // namespace
 
-void drawDisplayInspector(bool& open, RenderStack& stack) {
-  if (!open) return;
-  if (ImGui::Begin("Display Reconstruction", &open)) {
-    keepCurrentWindowVisible();
+void drawDisplayInspectorContents(RenderStack& stack) {
     DisplayReconstructionState& state = stack.display();
     ImGui::Checkbox("Enable display reconstruction", &state.enabled);
     description("Runs after the complete render-pass stack. It never changes pass textures or composite operands.");
@@ -51,7 +46,7 @@ void drawDisplayInspector(bool& open, RenderStack& stack) {
         ImGui::SliderFloat("Opponent gain", &state.opponentGain, 0.25f, 16.0f, "%.2fx",
           ImGuiSliderFlags_Logarithmic);
         ImGui::SliderInt("Receptor XOR bit depth", &state.receptorXorBits, 1, 8, "%d bits");
-        description("Converts linear sRGB into approximate L, M, S cone and rod responses. This is a perceptual RGB experiment, not spectral rendering: metameric spectra remain indistinguishable.");
+        description("Converts linear sRGB into approximate L, M, S cone and rod responses. This is perceptual RGB processing, not spectral rendering: metameric spectra remain indistinguishable.");
         if (state.signal == DisplaySignal::LmsReceptorTriplet)
           description("False color: red stores L response, green stores M response, and blue stores S response.");
         else if (state.signal == DisplaySignal::RedGreenOpponent)
@@ -71,8 +66,6 @@ void drawDisplayInspector(bool& open, RenderStack& stack) {
         ImGui::SliderFloat("Bloom radius", &state.bloomRadiusPixels, 0.5f, 8.0f, "%.1f px");
       description("These controls model display response after signal decoding; they are not scene lighting or fog.");
     }
-  }
-  ImGui::End();
 }
 
 } // namespace gfxlab::ui

@@ -2,12 +2,10 @@
 
 #include "app/Animation.hpp"
 #include "app/FileDialog.hpp"
-#include "app/PassEditing.hpp"
 #include "app/RenderStack.hpp"
 #include "assets/ModelAsset.hpp"
 #include "ui/AnimationControls.hpp"
 #include "ui/InstrumentWidgets.hpp"
-#include "ui/Windowing.hpp"
 
 #include <imgui.h>
 
@@ -26,22 +24,8 @@ void description(const char* text) {
 
 } // namespace
 
-void drawTextureMappingEditor(bool& open, RenderStack& stack, AnimationTimeline& timeline,
-    const ModelAsset* importedModel, const TestScene scene, const bool globalScope,
-    const float timeSeconds, const unsigned int texturePreview) {
-  if (!open) return;
-  if (!ImGui::Begin("Texture Mapping", &open)) {
-    ImGui::End();
-    return;
-  }
-  keepCurrentWindowVisible();
-
-  const RenderPass displayedBefore = globalScope
-    ? evaluateRenderPass(stack.global(), timeSeconds)
-    : materializeRenderPass(stack, stack.selectedIndex(), timeSeconds);
-  RenderPass edited = displayedBefore;
-  ImGui::TextDisabled("%s", globalScope ? "GLOBAL BASE" : stack.selected().name.c_str());
-
+void drawTextureMappingEditorContents(RenderPass& edited, AnimationTimeline& timeline,
+    const ModelAsset* importedModel, const TestScene scene, const unsigned int texturePreview) {
   ImGui::TextDisabled("IMAGE SOURCE");
   constexpr const char* sourceLabels[] = {"Scene material", "Built-in checker", "Imported override", "White texel"};
   int textureSource = static_cast<int>(edited.textureSource);
@@ -175,11 +159,6 @@ void drawTextureMappingEditor(bool& open, RenderStack& stack, AnimationTimeline&
     animationKeyControl(edited, AnimationProperty::TrilinearFiltering, timeline,
       ImGui::Checkbox("Trilinear mip interpolation", &edited.renderer.texture.trilinear));
 
-  if (globalScope)
-    applyEditedPass(stack.global(), displayedBefore, edited);
-  else
-    applyEditedLocalPass(stack, displayedBefore, edited, timeSeconds);
-  ImGui::End();
 }
 
 } // namespace gfxlab::ui

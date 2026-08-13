@@ -4,31 +4,30 @@
 #include "app/HardwareProfile.hpp"
 #include "app/RenderStack.hpp"
 #include "app/State.hpp"
-#include "ui/PipelineTools.hpp"
-
-#include <array>
-
 namespace gfxlab {
 struct ModelAsset;
 }
 
 namespace gfxlab::ui {
 
-enum class WorkspaceLayout { Compose, Render, Animate, Inspect };
+enum class WorkspaceLayout { Edit, Animate, Analyze };
+
+enum class EditorSelectionKind { SceneDefaults, Operation, FinalOutput };
+
+struct EditorSelection {
+  EditorSelectionKind kind = EditorSelectionKind::SceneDefaults;
+  int operationId = 0;
+};
 
 struct WorkspaceWindows {
-  bool scene = true;
-  bool renderPasses = true;
+  bool document = true;
   bool viewport = true;
-  PipelineToolWindows pipelineTools;
-  bool passProperties = true;
+  bool inspector = true;
   bool animation = false;
   bool passDifferences = false;
   bool textureInspector = false;
-  bool textureMapping = true;
-  bool displayReconstruction = true;
   bool resetLayout = false;
-  WorkspaceLayout requestedLayout = WorkspaceLayout::Compose;
+  WorkspaceLayout requestedLayout = WorkspaceLayout::Edit;
 };
 
 struct WorkspaceActions {
@@ -41,11 +40,11 @@ struct WorkspaceActions {
   bool toggleViewportRecording = false;
   bool handbook = false;
   bool resetFrameHistory = false;
+  bool hardwareProfileChanged = false;
   bool quit = false;
 };
 
 struct SceneWindowResult {
-  bool hardwareProfileChanged = false;
   bool importModel = false;
   bool unloadModel = false;
 };
@@ -65,13 +64,12 @@ struct ViewportWindowResult {
 };
 
 WorkspaceActions beginWorkspace(WorkspaceWindows& windows, bool canUndo, bool canRedo, float& uiScale,
-  bool viewportRecording, double recordingDurationSeconds);
-SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile& profile,
+  bool viewportRecording, double recordingDurationSeconds, HardwareProfile& profile);
+SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStack& stack,
+  AnimationTimeline& timeline, EditorSelection& selection, HardwareProfile profile,
   const ModelAsset* importedModel);
-void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& timeline,
-  bool& globalScope);
 ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& compare,
   const RenderStack& stack, RenderPass& displayedPass, const CameraOrbit& camera,
-  AnimationTimeline& timeline, bool globalScope);
+  AnimationTimeline& timeline, bool globalScope, bool canEditTransform = true);
 
 } // namespace gfxlab::ui

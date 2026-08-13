@@ -18,7 +18,7 @@ void drawTextureInspector(bool& open, const ViewportImages& images, const std::s
   ImGui::SetNextWindowSize(ImVec2(720.0f, 520.0f), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowSizeConstraints(ImVec2(320.0f * uiScale, 240.0f * uiScale),
     ImVec2(FLT_MAX, FLT_MAX));
-  if (!ImGui::Begin("Texture Inspector", &open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
+  if (!ImGui::Begin("Signal Inspector", &open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
     ImGui::End();
     return;
   }

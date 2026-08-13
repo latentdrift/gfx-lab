@@ -18,12 +18,12 @@ model transform directly. The gizmo writes the same parameters shown in the pass
 and participates in undo/redo. Middle/right drag and the mouse wheel continue to pan and zoom while a transform
 tool is active.
 
-Open **Window → Texture Inspector** to inspect the selected pass, base pass, or composite render target.
+Open **Window → Signal Inspector** to inspect the selected operation, first Render, or final stack target.
 The inspector provides cursor-centered zoom, panning, texel coordinates, and raw floating-point RGBA values;
 this makes clipped, negative, and above-white composite results visible as data even when the viewport cannot
 display their full numerical range.
 
-The Animation Timeline can switch between its dope sheet and a focused **Curve view**. Select a key first,
+The Timeline can switch between its dope sheet and a focused **Curve view**. Select a key first,
 then inspect or drag the chosen vector/color component in time and value; the exact key editor remains beside it
 for precise entry and interpolation selection.
 
@@ -54,9 +54,10 @@ src/
     AnimationControls.cpp     inspector diamonds and property-key editing
     Inspector.cpp             pipeline-category controls and visual styling
     AnimationEditor.cpp       transport, dope sheet, tracks, and selected-key editing
+    ContextInspector.cpp      selection-owned Overview, Render, Texture, and Final Output editing
     PassInspector.cpp         contextual Render, Interpret, and Composite controls
-    PassDifferenceAudit.cpp  authored selected/reference pass comparison and restore
-    Workspace.cpp             desktop menu, docking layout, and primary tool windows
+    PassDifferenceAudit.cpp   authored selected/reference pass comparison and restore
+    Workspace.cpp             document navigator, viewport, menu, and docking layout
   handbook/
     Handbook.cpp              searchable articles, diagrams, and live comparisons
 ```
@@ -104,9 +105,9 @@ rerendering the scene. These are explicit RGB-derived observer approximations, n
 metamers scene. Its two objects have different sixteen-band reflectance spectra but matching LMS responses
 under the reference daylight/human condition. Its Composite operation reads the Render operation's spectral attachment twice
 and displays human-versus-shifted-observer disagreement. Disable that pass to see the reference match; use the
-Spectral tool to switch to tungsten or tri-band illumination and watch the metameric match fail.
+Spectral section in Render Settings to switch to tungsten or tri-band illumination and watch the metameric match fail.
 
-Graphics Lab uses a persistent dockable workspace rather than one fixed application page. **Scene**, **Signal Stack**, **Operation Inspector**, **Viewport**, every rendering-pipeline category, **Texture Mapping**, **Display Reconstruction**, **Animation Timeline**, and **Pass Differences** are independent tool windows. The contextual inspector and pipeline tools begin as tabs in one right-hand dock node; tear out or rearrange the tools needed for an experiment and manage them under **Window**. **Window → Workspace Layout** supplies Compose, Render, Animate, and Inspect arrangements of the same document and tools; it never changes renderer state. ImGui saves subsequent window and docking changes between runs.
+Graphics Lab uses one persistent document-editing workspace. The **Document** navigator contains the scene, inherited **Scene Defaults**, the ordered operation stack, and **Final Output**. Selecting one of those objects drives the single contextual **Inspector**: Render operations expose Overview, Render Settings, and Material & Texture; Interpret, Composite, and Stereo Analysis expose only their owned controls; Final Output owns display reconstruction. **Window → Workspace Layout** supplies Edit, Animate, and Analyze arrangements without changing document state. ImGui saves subsequent docking changes between runs.
 
 Use **View → UI Scale** to resize text, controls, spacing, tabs, and interaction targets together from 75% to
 200%. `Ctrl+-` and `Ctrl+=` step between the supplied sizes; `Ctrl+0` returns to 100%. Every font size is loaded
@@ -114,23 +115,23 @@ once at startup, so enlarged text remains crisp and repeatedly changing scale do
 
 Floating tools are checked against the current monitor work areas. If a saved position belongs to a disconnected
 or rearranged display, the tool is resized if necessary and recovered to the center of the main display. The
-Animation Timeline also changes between side-by-side and stacked panes as its available width changes.
+Timeline also changes between side-by-side and stacked panes as its available width changes.
 
-Use **File > Import Model** or the Scene window to load OBJ, glTF, or GLB geometry through the native file chooser. The importer applies scene-node transforms, triangulates faces, generates missing smooth normals and usable tangents, preserves UV0, vertex color 0, submesh material assignments, base-color factors, and external or embedded base-color images. It centers the result and scales its longest bounds extent to exactly 3.0 lab units so camera distance, fog, quantization, and pass perturbations remain comparable between unrelated assets. The Scene window reports geometry, material, texture, and attribute facts; missing image references appear as explicit warnings. **Use Model** and **Unload Model** are undoable.
+Use **File > Import Model** or the Document navigator to load OBJ, glTF, or GLB geometry through the native file chooser. The importer applies scene-node transforms, triangulates faces, generates missing smooth normals and usable tangents, preserves UV0, vertex color 0, submesh material assignments, base-color factors, and external or embedded base-color images. It centers the result and scales its longest bounds extent to exactly 3.0 lab units so camera distance, fog, quantization, and pass perturbations remain comparable between unrelated assets. The navigator reports geometry, material, texture, and attribute facts; missing image references appear as explicit warnings. **Use Model** and **Unload Model** are undoable.
 
 The **Texture source** control can be authored on the global base and inherited by every pass. A selected pass stores a local override only when it differs. **Scene material** uses imported submesh materials, **Built-in checker** substitutes the diagnostic texture, **White texel** removes image variation while retaining material factors, and **Imported override** applies a separately imported PNG, JPEG, TGA, or BMP to any scene. A locally overridden texture is copied when its pass is duplicated, so correlated renders can perturb its UVs, sampling, color precision, and compositing independently. The inspector reports dimensions and alpha and exposes sRGB-color versus linear-data interpretation.
 
 This first material boundary intentionally imports only base color and alpha. Normal, emissive, metallic-roughness, occlusion, multiple UV sets, skeletal animation, morph targets, cameras, and lights remain separate future systems. Copying stack JSON records source paths, content hashes, dimensions, material facts, and normalization scale rather than embedding image pixels or vertex buffers.
 
-**Texture Mapping** keeps image assignment and application in one tool. It previews the imported source image and controls mesh UV0 versus model-space planar projection, scale/tiling, rotation and pivot, offset, axis flips, repeat/clamp addressing, filtering, mipmapping, and sRGB interpretation. Every mapping parameter follows the shared Global Base / Selected Pass scope; UV transforms and coordinate source can also be keyed in the animation timeline.
+The Inspector's **Material & Texture** tab keeps image assignment and application together. It previews the imported source image and controls mesh UV0 versus model-space planar projection, scale/tiling, rotation and pivot, offset, axis flips, repeat/clamp addressing, filtering, mipmapping, and sRGB interpretation. Every mapping parameter follows the Scene Defaults / selected Render scope; UV transforms and coordinate source can also be keyed in the timeline.
 
 Undo and redo cover the authored render stack, all renderer and composite settings, pass order and names, animation tracks, camera, scene, hardware target, and timeline configuration. Continuous sliders and viewport-camera drags collapse into one history entry. Playback time, pass selection, comparison view, open windows, and temporary evaluated animation frames are workspace state rather than authored operations, so they do not flood document history.
 
-The document has explicit **Scene defaults** followed by a top-to-bottom **Signal Stack**. A **Render** operation applies inherited renderer state plus sparse local overrides and produces named Color, Depth, Field, and Spectrum16 resources. An **Interpret** operation converts one spectral resource through a selected observer without rerendering the scene. A **Composite** operation combines two named signals with explicit arithmetic. The inspector shows only controls owned by the selected operation; pipeline-category tabs edit Scene defaults or a selected Render operation. Editing a local render value creates an override, and returning it to the scene-default value restores inheritance.
+The document has explicit **Scene Defaults** followed by a top-to-bottom operation stack and **Final Output**. A **Render** operation applies inherited renderer state plus sparse local overrides and produces named Color, Depth, Field, and Spectrum16 resources. An **Interpret** operation converts one spectral resource through a selected observer without rerendering the scene. A **Composite** operation combines two named signals with explicit arithmetic. The Inspector shows only controls owned by the selected object. Editing a local Render value creates an override, and returning it to the scene-default value restores inheritance.
 
 Use **Add operation** to add a Render, spectrum Interpret, or two-input Composite stage. Duplicate a Render to preserve most of a look and change only what should disagree. Named operands use stable identities, so reordering the stack does not silently redirect them. Per-channel operations include difference, multiply, screen, exclusion, minimum/maximum, additive and subtractive hardware color math, half-add, quarter-add, signed color offset, and quantized bitwise XOR. Previous-frame inputs expose decay and UV transformation for controlled feedback; reset their persistent buffer with **View → Reset Frame History**. Each Composite also exposes opacity, gain, bias, encoded-RGB versus linear-light arithmetic, clamp/preserve/wrap range behavior, and optional luminance/depth/edge masks. Files authored before typed operations still load as explicit **Render + composite (legacy)** rows and preserve their original result.
 
-**Display Reconstruction** is deliberately downstream of the render stack. It can leave the final image as direct RGB or approximate composite-NTSC chroma bandwidth and luma/chroma crosstalk, then model scanlines, an aperture grille, and display bloom. These controls affect presentation only: raw pass textures and all A/B arithmetic remain unchanged and inspectable.
+**Final Output** is deliberately downstream of the render stack. Its Inspector can leave the final image as direct RGB or approximate composite-NTSC chroma bandwidth and luma/chroma crosstalk, then model scanlines, an aperture grille, and display bloom. These controls affect presentation only: raw pass textures and all A/B arithmetic remain unchanged and inspectable.
 
 Its RGB observer modes reinterpret the completed image through approximate L, M, S cone and scotopic rod responses. Outputs include the LMS triplet, individual receptor channels, rod vision, a mesopic rod/cone mixture, L-minus-M and blue/yellow opponent channels, rod/cone absolute difference, and quantized rod/cone XOR. Exposure, dark adaptation, rod sensitivity, opponent gain, and XOR precision remain explicit. This is an RGB observer approximation rather than spectral rendering, so it cannot separate metameric spectra that already collapsed to the same RGB value.
 
@@ -142,9 +143,9 @@ The animation catalog covers eligible state across every pipeline category. Cont
 
 In the dope sheet, click a diamond to select it and drag horizontally to retime it. Keys snap to the chosen frame rate; hold Alt while dragging to bypass snapping. Double-click an empty track position to insert a sampled key there, and press Delete or Backspace to remove the selected key. Exact time, value, and interpolation remain editable in the Selected Key pane.
 
-Open **Window > Pass Differences** after duplicating a pass to audit effective disagreements against any reference pass. Each property is labelled inherited or overridden, alongside its local track state. Matching adopts the reference pass's override/inheritance choice and local track; if the reference inherits, the selected pass resumes tracking the global base. Imported texture resources are compared separately from their sampling state.
+Open **Window > Property Comparison** after duplicating a Render to audit effective disagreements against a reference. Each property is labelled inherited or overridden, alongside its local track state. Matching adopts the reference Render's override/inheritance choice and local track; if the reference inherits, the selected Render resumes tracking Scene Defaults. Imported texture resources are compared separately from their sampling state.
 
-The Scene window's **Hardware Target** selector defaults to **Unrestricted**. **PlayStation (PS1)** and **Nintendo 64** normalize every pass to target-representable state, remove unavailable categories and controls, narrow shared controls to supported choices, and display important forced values or labelled emulation substitutes as profile facts. Switching back to Unrestricted unlocks the controls but does not restore values discarded during normalization. Reset buttons are also normalized by the active target.
+The top bar's **Target** selector defaults to **Unrestricted**. **PlayStation (PS1)** and **Nintendo 64** normalize every Render to target-representable state, remove unavailable sections and controls, narrow shared controls to supported choices, and display important forced values or labelled emulation substitutes as profile facts. Switching back to Unrestricted unlocks the controls but does not restore values discarded during normalization. Reset buttons are also normalized by the active target.
 
 The Nintendo 64 target exposes the standard RSP/RDP/VI model: one- or two-cycle `(A - B) x C + D` color combiners, named combiner sources, primitive/environment registers, RDP surface and alpha-compare modes, point/three-point/box texture filters, mip/trilinear/sharpen/detail modes, nine texture formats, tile addressing and calculated 4096-byte TMEM use, RSP texture generation and vertex fog, Z compare/update, coverage antialiasing, RGBA16/RGBA32 framebuffer state, color dithering, and VI reconstruction/divot filters. Coverage and VI behavior are explicitly labelled approximations; the combiner, format quantization, three-point filter, alpha comparison, and TMEM accounting are modeled directly.
 
@@ -154,7 +155,7 @@ Use **File > Copy Stack JSON** to place the same human-readable `graphics-lab.re
 
 Use **Help > Graphics Handbook** to open the built-in technical reference. Start with **From mesh to pixel**, then follow its related-concept links or browse the knowledge map. Every article begins with a plain causal **Quick read** before preserving the precise definition, pipeline location, visible results, interactions, engine vocabulary, and technical diagram. The map groups the pipeline, shading, visibility and output, engine systems, animation, and ray tracing. Reading never changes renderer state; example buttons apply configurations deliberately.
 
-The Scene window provides purpose-built geometry for texture minification, depth precision, transparency ordering, and lighting interpolation experiments in addition to the default torus.
+The Document navigator provides purpose-built scenes for texture minification, depth precision, transparency ordering, and lighting interpolation studies in addition to the default torus.
 
 Changing the selected scene preserves the current renderer state and camera. **Reset scene setup** explicitly applies that scene's recommended starting state and camera framing:
 

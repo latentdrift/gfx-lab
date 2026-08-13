@@ -37,12 +37,12 @@ add_executable(graphics-lab
   src/renderer/TextureReadback.cpp
   src/ui/AnimationEditor.cpp
   src/ui/AnimationControls.cpp
+  src/ui/ContextInspector.cpp
   src/ui/DisplayInspector.cpp
   src/ui/Inspector.cpp
   src/ui/InstrumentWidgets.cpp
   src/ui/PassInspector.cpp
   src/ui/PassDifferenceAudit.cpp
-  src/ui/PipelineTools.cpp
   src/ui/TextureInspector.cpp
   src/ui/TextureMappingEditor.cpp
   src/ui/Windowing.cpp

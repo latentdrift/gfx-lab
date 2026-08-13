@@ -61,7 +61,7 @@ void drawPassDifferenceAudit(bool& open, RenderStack& stack) {
   ImGui::SetNextWindowSize(ImVec2(820.0f, 580.0f), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowSizeConstraints(ImVec2(480.0f * uiScale, 300.0f * uiScale),
     ImVec2(FLT_MAX, FLT_MAX));
-  if (!ImGui::Begin("Pass difference audit", &open)) { ImGui::End(); return; }
+  if (!ImGui::Begin("Property Comparison", &open)) { ImGui::End(); return; }
   keepCurrentWindowVisible();
   if (stack.passes().size() < 2) {
     ImGui::TextWrapped("Duplicate a render pass before auditing differences.");

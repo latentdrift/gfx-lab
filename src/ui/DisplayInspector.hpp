@@ -6,6 +6,6 @@ class RenderStack;
 
 namespace gfxlab::ui {
 
-void drawDisplayInspector(bool& open, RenderStack& stack);
+void drawDisplayInspectorContents(RenderStack& stack);
 
 } // namespace gfxlab::ui

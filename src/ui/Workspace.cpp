@@ -25,7 +25,7 @@ namespace {
 // Dear ImGui otherwise restores the previous topology and leaves the unknown
 // tool as a detached platform window, which is especially fragile across DPI
 // scales and mixed-monitor coordinate spaces.
-constexpr const char* workspaceId = "Graphics Lab Workspace v10";
+constexpr const char* workspaceId = "Graphics Lab Workspace v11";
 
 void buildDefaultLayout(const ImGuiID dockspace, const WorkspaceLayout layout) {
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -36,44 +36,30 @@ void buildDefaultLayout(const ImGuiID dockspace, const WorkspaceLayout layout) {
   ImGuiID center = dockspace;
   ImGuiID left = 0;
   ImGuiID right = 0;
-  const float leftRatio = layout == WorkspaceLayout::Inspect ? 0.17f : 0.19f;
-  const float rightRatio = layout == WorkspaceLayout::Render ? 0.29f : 0.25f;
+  const float leftRatio = 0.20f;
+  const float rightRatio = layout == WorkspaceLayout::Analyze ? 0.31f : 0.28f;
   ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, leftRatio, &left, &center);
   ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, rightRatio, &right, &center);
 
-  ImGuiID leftBottom = 0;
-  ImGuiID leftTop = left;
-  ImGui::DockBuilderSplitNode(leftTop, ImGuiDir_Down, 0.48f, &leftBottom, &leftTop);
-  ImGui::DockBuilderDockWindow("Scene", leftTop);
-  ImGui::DockBuilderDockWindow("Signal Stack", leftBottom);
+  ImGui::DockBuilderDockWindow("Document", left);
   ImGuiID centerBottom = 0;
   ImGuiID centerTop = center;
   const float timelineRatio = layout == WorkspaceLayout::Animate ? 0.46f : 0.30f;
   ImGui::DockBuilderSplitNode(centerTop, ImGuiDir_Down, timelineRatio, &centerBottom, &centerTop);
   ImGui::DockBuilderDockWindow("Viewport", centerTop);
-  ImGui::DockBuilderDockWindow("Animation Timeline", centerBottom);
-  ImGuiID rightTop = right;
-  for (const Category category : pipelineCategories)
-    ImGui::DockBuilderDockWindow(pipelineToolWindowName(category), rightTop);
-  ImGui::DockBuilderDockWindow("Display Reconstruction", rightTop);
-  ImGui::DockBuilderDockWindow("Texture Mapping", rightTop);
-  ImGui::DockBuilderDockWindow("Pass difference audit", rightTop);
-  ImGui::DockBuilderDockWindow("Operation Inspector", rightTop);
-  if (layout == WorkspaceLayout::Inspect) {
-    ImGui::DockBuilderDockWindow("Texture Inspector", rightTop);
-    ImGui::DockBuilderDockWindow("Pass difference audit", rightTop);
+  ImGui::DockBuilderDockWindow("Timeline", centerBottom);
+  ImGui::DockBuilderDockWindow("Inspector", right);
+  if (layout == WorkspaceLayout::Analyze) {
+    ImGui::DockBuilderDockWindow("Signal Inspector", right);
+    ImGui::DockBuilderDockWindow("Property Comparison", right);
   }
   ImGui::DockBuilderFinish(dockspace);
 }
 
 void windowMenu(WorkspaceWindows& windows) {
   if (ImGui::BeginMenu("Workspace Layout")) {
-    if (ImGui::MenuItem("Compose")) {
-      windows.requestedLayout = WorkspaceLayout::Compose;
-      windows.resetLayout = true;
-    }
-    if (ImGui::MenuItem("Render")) {
-      windows.requestedLayout = WorkspaceLayout::Render;
+    if (ImGui::MenuItem("Edit")) {
+      windows.requestedLayout = WorkspaceLayout::Edit;
       windows.resetLayout = true;
     }
     if (ImGui::MenuItem("Animate")) {
@@ -81,8 +67,8 @@ void windowMenu(WorkspaceWindows& windows) {
       windows.animation = true;
       windows.resetLayout = true;
     }
-    if (ImGui::MenuItem("Inspect")) {
-      windows.requestedLayout = WorkspaceLayout::Inspect;
+    if (ImGui::MenuItem("Analyze")) {
+      windows.requestedLayout = WorkspaceLayout::Analyze;
       windows.textureInspector = true;
       windows.passDifferences = true;
       windows.resetLayout = true;
@@ -90,26 +76,15 @@ void windowMenu(WorkspaceWindows& windows) {
     ImGui::EndMenu();
   }
   ImGui::Separator();
-  ImGui::MenuItem("Scene", nullptr, &windows.scene);
-  ImGui::MenuItem("Signal Stack", nullptr, &windows.renderPasses);
+  ImGui::MenuItem("Document", nullptr, &windows.document);
   ImGui::MenuItem("Viewport", nullptr, &windows.viewport);
-  if (ImGui::BeginMenu("Pipeline Tools")) {
-    if (ImGui::MenuItem("Show All")) windows.pipelineTools.open.fill(true);
-    if (ImGui::MenuItem("Hide All")) windows.pipelineTools.open.fill(false);
-    ImGui::Separator();
-    for (std::size_t index = 0; index < pipelineCategories.size(); ++index)
-      ImGui::MenuItem(categoryName(pipelineCategories[index]), nullptr, &windows.pipelineTools.open[index]);
-    ImGui::EndMenu();
-  }
-  ImGui::MenuItem("Operation Inspector", nullptr, &windows.passProperties);
-  ImGui::MenuItem("Animation Timeline", nullptr, &windows.animation);
-  ImGui::MenuItem("Pass Differences", nullptr, &windows.passDifferences);
-  ImGui::MenuItem("Texture Inspector", nullptr, &windows.textureInspector);
-  ImGui::MenuItem("Texture Mapping", nullptr, &windows.textureMapping);
-  ImGui::MenuItem("Display Reconstruction", nullptr, &windows.displayReconstruction);
+  ImGui::MenuItem("Inspector", nullptr, &windows.inspector);
+  ImGui::MenuItem("Timeline", nullptr, &windows.animation);
+  ImGui::MenuItem("Property Comparison", nullptr, &windows.passDifferences);
+  ImGui::MenuItem("Signal Inspector", nullptr, &windows.textureInspector);
   ImGui::Separator();
-  if (ImGui::MenuItem("Restore Compose Layout")) {
-    windows.requestedLayout = WorkspaceLayout::Compose;
+  if (ImGui::MenuItem("Restore Edit Layout")) {
+    windows.requestedLayout = WorkspaceLayout::Edit;
     windows.resetLayout = true;
   }
 }
@@ -117,7 +92,8 @@ void windowMenu(WorkspaceWindows& windows) {
 } // namespace
 
 WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, const bool canRedo,
-    float& uiScale, const bool viewportRecording, const double recordingDurationSeconds) {
+    float& uiScale, const bool viewportRecording, const double recordingDurationSeconds,
+    HardwareProfile& profile) {
   WorkspaceActions actions;
   if (ImGui::BeginMainMenuBar()) {
     if (ImGui::BeginMenu("File")) {
@@ -159,6 +135,18 @@ WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, c
       ImGui::EndMenu();
     }
     ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("Target");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(150.0f);
+    int profileIndex = static_cast<int>(profile);
+    constexpr const char* profileLabels[] = {"Unrestricted", "PlayStation (PS1)", "Nintendo 64"};
+    if (ImGui::Combo("##hardware-profile", &profileIndex, profileLabels, 3)) {
+      profile = static_cast<HardwareProfile>(profileIndex);
+      actions.hardwareProfileChanged = true;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", hardwareProfileDescription(profile));
+    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
     if (viewportRecording) {
       ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.48f, 0.12f, 0.10f, 1.0f));
       ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.62f, 0.16f, 0.13f, 1.0f));
@@ -185,27 +173,17 @@ WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, c
   return actions;
 }
 
-SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile& profile,
+SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStack& stack,
+    AnimationTimeline& timeline, EditorSelection& selection, const HardwareProfile profile,
     const ModelAsset* importedModel) {
   SceneWindowResult result;
   if (!open) return result;
-  if (!ImGui::Begin("Scene", &open)) {
+  if (!ImGui::Begin("Document", &open)) {
     ImGui::End();
     return result;
   }
   keepCurrentWindowVisible();
 
-  ImGui::TextDisabled("HARDWARE TARGET");
-  int profileIndex = static_cast<int>(profile);
-  const char* profileLabels[] = {"Unrestricted", "PlayStation (PS1)", "Nintendo 64"};
-  ImGui::SetNextItemWidth(-1.0f);
-  if (ImGui::Combo("##hardware-profile", &profileIndex, profileLabels, 3)) {
-    profile = static_cast<HardwareProfile>(profileIndex);
-    result.hardwareProfileChanged = true;
-  }
-  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", hardwareProfileDescription(profile));
-
-  ImGui::Spacing();
   ImGui::TextDisabled("SCENE");
   constexpr std::array<const char*, 9> sceneLabels = {"Torus", "Texture minification", "Depth precision",
     "Transparency", "Lighting comparison", "Stencil mask", "Field interference", "SDF iso-surface",
@@ -260,30 +238,30 @@ SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile&
       scene = TestScene::ImportedModel;
     if (ImGui::Button("Unload Model", ImVec2(-1, 0))) result.unloadModel = true;
   }
-  ImGui::End();
-  return result;
-}
-
-void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& timeline,
-    bool& globalScope) {
-  if (!open) return;
-  if (!ImGui::Begin("Signal Stack", &open)) {
-    ImGui::End();
-    return;
+  ImGui::Separator();
+  if (selection.kind == EditorSelectionKind::Operation) {
+    bool found = false;
+    for (std::size_t index = 0; index < stack.passes().size(); ++index) {
+      if (stack.passes()[index].id != selection.operationId) continue;
+      stack.select(index);
+      found = true;
+      break;
+    }
+    if (!found) selection.operationId = stack.selected().id;
   }
-  keepCurrentWindowVisible();
   ImGui::TextDisabled("SCENE DEFAULTS");
-  if (ImGui::Selectable("Scene defaults", globalScope, 0, ImVec2(0.0f, 24.0f))) globalScope = true;
+  if (ImGui::Selectable("Scene defaults", selection.kind == EditorSelectionKind::SceneDefaults,
+      0, ImVec2(0.0f, 26.0f))) selection.kind = EditorSelectionKind::SceneDefaults;
   ImGui::TextDisabled("Inherited by every Render operation unless locally overridden.");
   ImGui::Separator();
-  ImGui::TextDisabled("OPERATIONS — TOP TO BOTTOM");
+  ImGui::TextDisabled("STACK — TOP TO BOTTOM");
   for (std::size_t index = 0; index < stack.passes().size(); ++index) {
     RenderPass& pass = stack.passes()[index];
     ImGui::PushID(static_cast<int>(index));
-    const bool selected = !globalScope && stack.selectedIndex() == index;
+    const bool selected = selection.kind == EditorSelectionKind::Operation && pass.id == selection.operationId;
     if (ImGui::Selectable(pass.name.c_str(), selected, 0, ImVec2(0.0f, 22.0f))) {
       stack.select(index);
-      globalScope = false;
+      selection = {EditorSelectionKind::Operation, pass.id};
     }
     const float rowTop = ImGui::GetItemRectMin().y;
     const char* signalSummary = pass.kind == StackOperationKind::Render
@@ -307,6 +285,7 @@ void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& t
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Operation enabled");
     animationKeyControl(pass, AnimationProperty::PassEnabled, timeline, changed);
     ImGui::SetCursorScreenPos(restoreCursor);
+    ImGui::Dummy(ImVec2(0.0f, 0.0f));
     if (index + 1 < stack.passes().size()) ImGui::Separator();
     ImGui::PopID();
   }
@@ -315,39 +294,46 @@ void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& t
     ImGui::TextDisabled("PRODUCE OR TRANSFORM A SIGNAL");
     if (ImGui::Selectable("Render scene")) {
       stack.addOperation(StackOperationKind::Render);
-      globalScope = false;
+      selection = {EditorSelectionKind::Operation, stack.selected().id};
     }
     if (ImGui::Selectable("Interpret spectrum")) {
       stack.addOperation(StackOperationKind::Interpret);
-      globalScope = false;
+      selection = {EditorSelectionKind::Operation, stack.selected().id};
     }
     if (ImGui::Selectable("Composite two signals")) {
       stack.addOperation(StackOperationKind::Composite);
-      globalScope = false;
+      selection = {EditorSelectionKind::Operation, stack.selected().id};
     }
     if (ImGui::Selectable("Analyze binocular views")) {
       stack.addOperation(StackOperationKind::StereoAnalysis);
-      globalScope = false;
+      selection = {EditorSelectionKind::Operation, stack.selected().id};
     }
     ImGui::EndPopup();
   }
   if (ImGui::Button("Duplicate selected", ImVec2(-1, 0))) {
     stack.duplicateSelected();
-    globalScope = false;
+    selection = {EditorSelectionKind::Operation, stack.selected().id};
   }
   if (ImGui::Button("Up")) stack.moveSelected(-1);
   ImGui::SameLine();
   if (ImGui::Button("Down")) stack.moveSelected(1);
   ImGui::SameLine();
   ImGui::BeginDisabled(stack.passes().size() <= 1);
-  if (ImGui::Button("Delete")) stack.removeSelected();
+  if (ImGui::Button("Delete") && stack.removeSelected())
+    selection = {EditorSelectionKind::Operation, stack.selected().id};
   ImGui::EndDisabled();
+  ImGui::Separator();
+  ImGui::TextDisabled("PRESENTATION");
+  if (ImGui::Selectable("Final output", selection.kind == EditorSelectionKind::FinalOutput,
+      0, ImVec2(0.0f, 26.0f))) selection.kind = EditorSelectionKind::FinalOutput;
+  ImGui::TextDisabled("Stack result followed by display reconstruction.");
   ImGui::End();
+  return result;
 }
 
 ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& compare,
     const RenderStack& stack, RenderPass& displayedPass, const CameraOrbit& camera,
-    AnimationTimeline& timeline, const bool globalScope) {
+    AnimationTimeline& timeline, const bool globalScope, const bool canEditTransform) {
   ViewportWindowResult result;
   if (!open) return result;
   if (!ImGui::Begin("Viewport", &open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
@@ -359,13 +345,13 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   enum class Tool { Orbit, Translate, Scale };
   static Tool tool = Tool::Orbit;
 
-  if (ImGui::RadioButton("Selected", compare == CompareMode::A)) compare = CompareMode::A;
+  if (ImGui::RadioButton("Selected result", compare == CompareMode::A)) compare = CompareMode::A;
   ImGui::SameLine();
-  if (ImGui::RadioButton("Base", compare == CompareMode::B)) compare = CompareMode::B;
+  if (ImGui::RadioButton("First render", compare == CompareMode::B)) compare = CompareMode::B;
   ImGui::SameLine();
   if (ImGui::RadioButton("Split", compare == CompareMode::Split)) compare = CompareMode::Split;
   ImGui::SameLine();
-  if (ImGui::RadioButton("Composite", compare == CompareMode::Relation)) compare = CompareMode::Relation;
+  if (ImGui::RadioButton("Final output", compare == CompareMode::Relation)) compare = CompareMode::Relation;
   ImGui::SameLine();
   const bool hasStereoPair = images.leftEye != 0 && images.rightEye != 0;
   ImGui::BeginDisabled(!hasStereoPair);
@@ -379,14 +365,15 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   ImGui::SameLine();
   const bool selectedRenders = displayedPass.kind == StackOperationKind::Render ||
     displayedPass.kind == StackOperationKind::LegacyRenderComposite;
-  ImGui::BeginDisabled(compare != CompareMode::A || (!globalScope && !selectedRenders));
+  ImGui::BeginDisabled(!canEditTransform || compare != CompareMode::A || (!globalScope && !selectedRenders));
   if (ImGui::RadioButton("Translate", tool == Tool::Translate)) tool = Tool::Translate;
   ImGui::SameLine();
   if (ImGui::RadioButton("Scale", tool == Tool::Scale)) tool = Tool::Scale;
   ImGui::EndDisabled();
   ImGui::SameLine();
-  ImGui::TextDisabled("%s transform", globalScope ? "Scene defaults" :
-    selectedRenders ? "Selected render" : "No geometry on selected operation");
+  ImGui::TextDisabled("%s", !canEditTransform ? "Final output has no transform" : globalScope
+    ? "Scene-default transform" : selectedRenders ? "Selected Render transform"
+    : "Selected operation has no geometry");
   ImGui::Separator();
 
   const ImVec2 available = ImGui::GetContentRegionAvail();
@@ -418,7 +405,7 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
     draw->PopClipRect();
     draw->AddLine(ImVec2(middle, pairOrigin.y), ImVec2(middle, pairEnd.y), IM_COL32(225, 225, 225, 210));
     draw->AddText(ImVec2(pairOrigin.x + 9, pairOrigin.y + 8), IM_COL32(240, 240, 240, 220),
-      compare == CompareMode::StereoPair ? "LEFT EYE" : "BASE PASS");
+      compare == CompareMode::StereoPair ? "LEFT EYE" : "FIRST RENDER");
     draw->AddText(ImVec2(middle + 10, pairOrigin.y + 8), IM_COL32(240, 240, 240, 220),
       compare == CompareMode::StereoPair ? "RIGHT EYE" : stack.selected().name.c_str());
   } else {
@@ -426,7 +413,7 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
       : compare == CompareMode::Relation ? images.composite : images.base;
     draw->AddImage(static_cast<ImTextureID>(texture), origin, end, ImVec2(0, 1), ImVec2(1, 0));
     const char* label = compare == CompareMode::A ? stack.selected().name.c_str()
-      : compare == CompareMode::B ? "BASE PASS" : "COMPOSITE STACK";
+      : compare == CompareMode::B ? "FIRST RENDER" : "FINAL OUTPUT";
     draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240, 240, 240, 220), label);
   }
   // ImGuizmo deliberately refuses activation while a normal ImGui item is hovered. Keep the viewport
@@ -434,7 +421,7 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   // makes a visible gizmo impossible to grab.
   result.hovered = ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(origin, end);
 
-  const bool gizmoVisible = compare == CompareMode::A && tool != Tool::Orbit;
+  const bool gizmoVisible = canEditTransform && compare == CompareMode::A && tool != Tool::Orbit;
   result.acceptsCameraInput = result.hovered && !gizmoVisible;
   if (gizmoVisible) {
     const RendererState& state = displayedPass.renderer;

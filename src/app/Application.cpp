@@ -24,15 +24,11 @@
 #include "assets/ModelAsset.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
-#include "ui/AnimationControls.hpp"
 #include "ui/AnimationEditor.hpp"
-#include "ui/DisplayInspector.hpp"
+#include "ui/ContextInspector.hpp"
 #include "ui/Inspector.hpp"
 #include "ui/PassDifferenceAudit.hpp"
-#include "ui/PassInspector.hpp"
-#include "ui/PipelineTools.hpp"
 #include "ui/TextureInspector.hpp"
-#include "ui/TextureMappingEditor.hpp"
 #include "ui/Workspace.hpp"
 #include "ui/Windowing.hpp"
 
@@ -168,7 +164,7 @@ int runApplication() {
   bool viewportAcceptsCameraInput = false;
   bool viewportGizmoUsing = false;
   bool previewAnimation = true;
-  bool inspectorGlobalScope = true;
+  EditorSelection editorSelection;
   float uiScale = 1.0f;
   float appliedUiScale = 1.0f;
   WorkspaceWindows workspaceWindows;
@@ -292,7 +288,7 @@ int runApplication() {
 
     const WorkspaceActions workspaceActions = beginWorkspace(workspaceWindows,
       editorHistory.canUndo(), editorHistory.canRedo(), uiScale, viewportRecorder.recording(),
-      viewportRecorder.durationSeconds());
+      viewportRecorder.durationSeconds(), hardwareProfile);
     if (workspaceActions.undo) restoreHistory(false);
     if (workspaceActions.redo) restoreHistory(true);
     if (workspaceActions.importModel) importModelFromDialog();
@@ -319,7 +315,7 @@ int runApplication() {
           if (importedModel != nullptr) renderer.setImportedModel(*importedModel);
           else renderer.clearImportedModel();
           renderer.resetFrameHistory();
-          inspectorGlobalScope = true;
+          editorSelection = {};
           compare = CompareMode::Relation;
           documentMessage = "Loaded stack document:\n" + *dialog.path;
         }
@@ -375,15 +371,15 @@ int runApplication() {
     if (workspaceActions.handbook) graphicsHandbook.open();
     if (workspaceActions.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
 
-    const SceneWindowResult sceneResult = drawSceneWindow(workspaceWindows.scene, scene,
-      hardwareProfile, importedModel.get());
+    const SceneWindowResult sceneResult = drawDocumentNavigator(workspaceWindows.document, scene,
+      renderStack, animationTimeline, editorSelection, hardwareProfile, importedModel.get());
     if (sceneResult.importModel) importModelFromDialog();
     if (sceneResult.unloadModel) {
       importedModel.reset();
       renderer.clearImportedModel();
       if (scene == TestScene::ImportedModel) scene = TestScene::Torus;
     }
-    if (sceneResult.hardwareProfileChanged) {
+    if (workspaceActions.hardwareProfileChanged) {
       normalizeDocument(hardwareProfile);
       if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
       if (hardwareProfile != HardwareProfile::Unrestricted &&
@@ -422,13 +418,15 @@ int runApplication() {
       historyModel = importedModel.get();
     }
 
-    drawRenderPassesWindow(workspaceWindows.renderPasses, renderStack, animationTimeline,
-      inspectorGlobalScope);
+    const bool inspectorGlobalScope = editorSelection.kind == EditorSelectionKind::SceneDefaults;
 
     if (workspaceWindows.animation) {
-      if (ImGui::Begin("Animation Timeline", &workspaceWindows.animation)) {
+      if (ImGui::Begin("Timeline", &workspaceWindows.animation)) {
         keepCurrentWindowVisible();
-        drawAnimationEditor(animationTimeline, renderStack, previewAnimation, inspectorGlobalScope);
+        if (editorSelection.kind == EditorSelectionKind::FinalOutput)
+          ImGui::TextWrapped("Final Output has no animatable properties. Select Scene Defaults or an operation to edit its tracks.");
+        else
+          drawAnimationEditor(animationTimeline, renderStack, previewAnimation, inspectorGlobalScope);
       }
       ImGui::End();
     }
@@ -491,75 +489,24 @@ int runApplication() {
     const ViewportWindowResult viewportResult = drawViewportWindow(workspaceWindows.viewport,
       {displayedSelected, displayedBase, displayedComposite, leftEyeTexture, rightEyeTexture},
       compare, renderStack, viewportPass, camera,
-      animationTimeline, inspectorGlobalScope);
+      animationTimeline, inspectorGlobalScope,
+      editorSelection.kind != EditorSelectionKind::FinalOutput);
     viewportHovered = viewportResult.hovered;
     viewportAcceptsCameraInput = viewportResult.acceptsCameraInput;
     viewportGizmoUsing = viewportResult.gizmoUsing;
-    if (inspectorGlobalScope)
+    if (editorSelection.kind == EditorSelectionKind::SceneDefaults)
       applyEditedPass(renderStack.global(), viewportBefore, viewportPass);
-    else
+    else if (editorSelection.kind == EditorSelectionKind::Operation)
       applyEditedLocalPass(renderStack, viewportBefore, viewportPass, viewportTime);
 
     const float inspectorTime = evaluateAnimation ? animationTimeline.timeSeconds : 0.0f;
-    if (workspaceWindows.passProperties) {
-      if (ImGui::Begin("Operation Inspector", &workspaceWindows.passProperties)) {
-        keepCurrentWindowVisible();
-        ImGui::TextDisabled("%s", inspectorGlobalScope ? "SCENE DEFAULTS" :
-          stackOperationKindLabel(renderStack.selected().kind));
-        ImGui::SameLine();
-        ImGui::TextDisabled("/ %s", inspectorGlobalScope ? "inherited renderer" : renderStack.selected().name.c_str());
-        if (inspectorGlobalScope) {
-          if (ImGui::Button("Reset scene defaults")) renderStack.global().renderer = RendererState{};
-        } else {
-          const bool selectedRenders = renderStack.selected().kind == StackOperationKind::Render ||
-            renderStack.selected().kind == StackOperationKind::LegacyRenderComposite;
-          ImGui::BeginDisabled(!selectedRenders);
-          if (ImGui::Button("Clear render overrides")) {
-            renderStack.selected().overrides.clear();
-            renderStack.selected().importedTextureOverride = false;
-            renderStack.selected().importedTexture.reset();
-          }
-          ImGui::EndDisabled();
-        }
-        ImGui::SameLine();
-        const bool canResetSceneSetup = inspectorGlobalScope ||
-          renderStack.selected().kind == StackOperationKind::Render ||
-          renderStack.selected().kind == StackOperationKind::LegacyRenderComposite;
-        ImGui::BeginDisabled(!canResetSceneSetup);
-        if (ImGui::Button("Reset scene setup")) {
-          if (inspectorGlobalScope) {
-            applyRecommendedSetup(scene, renderStack.global().renderer, camera);
-          } else {
-            RenderPass recommended = materializeRenderPass(renderStack, renderStack.selectedIndex(), 0.0f);
-            applyRecommendedSetup(scene, recommended.renderer, camera);
-            replaceRenderPassOverrides(renderStack.selected(), renderStack.global(), recommended);
-          }
-        }
-        ImGui::EndDisabled();
-        ImGui::Separator();
-        const RenderPass displayedBefore = inspectorGlobalScope
-          ? evaluateRenderPass(renderStack.global(), inspectorTime)
-          : materializeRenderPass(renderStack, renderStack.selectedIndex(), inspectorTime);
-        RenderStack inspectorStack = renderStack;
-        inspectorStack.selected() = displayedBefore;
-        drawPassInspector(inspectorStack, animationTimeline, inspectorGlobalScope);
-        if (inspectorGlobalScope)
-          applyEditedPass(renderStack.global(), displayedBefore, inspectorStack.selected());
-        else
-          applyEditedLocalPass(renderStack, displayedBefore, inspectorStack.selected(), inspectorTime);
-      }
-      ImGui::End();
-    }
-
-    drawDisplayInspector(workspaceWindows.displayReconstruction, renderStack);
     const RenderPass textureMappingPass = inspectorGlobalScope
       ? evaluateRenderPass(renderStack.global(), inspectorTime)
       : materializeRenderPass(renderStack, renderStack.selectedIndex(), inspectorTime);
     const GLuint importedTexturePreview = renderer.texturePreview(textureMappingPass.importedTexture.get());
-    drawTextureMappingEditor(workspaceWindows.textureMapping, renderStack, animationTimeline,
-      importedModel.get(), scene, inspectorGlobalScope, inspectorTime, importedTexturePreview);
-    drawPipelineTools(workspaceWindows.pipelineTools, renderStack, animationTimeline, hardwareProfile,
-      importedModel.get(), scene, inspectorGlobalScope, inspectorTime, category, pipelineFocusRequested);
+    drawContextInspector(workspaceWindows.inspector, renderStack, animationTimeline, editorSelection,
+      hardwareProfile, importedModel.get(), scene, camera, inspectorTime, importedTexturePreview,
+      category, pipelineFocusRequested);
     pipelineFocusRequested = false;
 
     const handbook::Action handbookAction = graphicsHandbook.draw(hardwareProfile);
@@ -570,7 +517,7 @@ int runApplication() {
       hardwareProfile = HardwareProfile::Nintendo64;
     if (handbookAction.type == handbook::ActionType::ApplyToA) {
       applyHandbookExample(handbookAction.example, false, renderStack.global().renderer, camera, scene, category);
-      inspectorGlobalScope = true;
+      editorSelection = {};
       pipelineFocusRequested = true;
     } else if (handbookAction.type == handbook::ActionType::ApplyToB) {
       if (renderStack.selectedIndex() == 0) {
@@ -581,7 +528,7 @@ int runApplication() {
       RenderPass comparison = materializeRenderPass(renderStack, renderStack.selectedIndex(), 0.0f);
       applyHandbookExample(handbookAction.example, true, comparison.renderer, camera, scene, category);
       replaceRenderPassOverrides(renderStack.selected(), renderStack.global(), comparison);
-      inspectorGlobalScope = false;
+      editorSelection = {EditorSelectionKind::Operation, renderStack.selected().id};
       pipelineFocusRequested = true;
     } else if (handbookAction.type == handbook::ActionType::LoadComparison) {
       renderStack = RenderStack{};
@@ -600,7 +547,7 @@ int runApplication() {
       category = comparisonCategory;
       pipelineFocusRequested = true;
       compare = CompareMode::Split;
-      inspectorGlobalScope = false;
+      editorSelection = {EditorSelectionKind::Operation, renderStack.selected().id};
     }
     normalizeDocument(hardwareProfile);
     const bool viewportInteraction = viewportHovered && (ImGui::IsMouseDown(ImGuiMouseButton_Left) ||

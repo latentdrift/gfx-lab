@@ -43,6 +43,9 @@ void animationKeyControlAt(RenderPass& pass, const AnimationProperty property,
   }
   ImGui::PopID();
   ImGui::SetCursorScreenPos(nextCursor);
+  // Newer ImGui versions reject a cursor restore that can affect content bounds unless an item is
+  // submitted at the restored position. A zero-size item preserves the surrounding layout.
+  ImGui::Dummy(ImVec2(0.0f, 0.0f));
 }
 
 void animationKeyControl(RenderPass& pass, const AnimationProperty property,
