@@ -6,16 +6,15 @@
 
 namespace gfxlab::ui {
 
-void animationKeyControl(RenderPass& pass, const AnimationProperty property, AnimationTimeline& timeline,
-    const bool valueChanged) {
+void animationKeyControlAt(RenderPass& pass, const AnimationProperty property,
+    AnimationTimeline& timeline, const bool valueChanged, const float anchorScreenY) {
   recordPropertyAnimationEdit(pass, property, timeline, valueChanged);
   PropertyAnimationTrack* track = findPropertyTrack(pass, property);
   const bool keyed = propertyHasKeyAt(pass, property, timeline.timeSeconds);
   const bool animated = track != nullptr;
   const ImVec2 nextCursor = ImGui::GetCursorScreenPos();
-  const ImVec2 previousMinimum = ImGui::GetItemRectMin();
   const float right = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
-  ImGui::SetCursorScreenPos(ImVec2(right - 19.0f, previousMinimum.y));
+  ImGui::SetCursorScreenPos(ImVec2(right - 19.0f, anchorScreenY));
   ImGui::PushID(static_cast<int>(property));
   ImGui::InvisibleButton("##animation-key", ImVec2(18.0f, 18.0f));
   const ImVec2 minimum = ImGui::GetItemRectMin();
@@ -44,6 +43,11 @@ void animationKeyControl(RenderPass& pass, const AnimationProperty property, Ani
   }
   ImGui::PopID();
   ImGui::SetCursorScreenPos(nextCursor);
+}
+
+void animationKeyControl(RenderPass& pass, const AnimationProperty property,
+    AnimationTimeline& timeline, const bool valueChanged) {
+  animationKeyControlAt(pass, property, timeline, valueChanged, ImGui::GetItemRectMin().y);
 }
 
 } // namespace gfxlab::ui

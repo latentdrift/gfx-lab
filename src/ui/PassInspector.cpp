@@ -42,6 +42,7 @@ const char* compactSourceLabel(const CompositeSource source) {
 struct SourceNodeResult {
   bool sourceChanged{false};
   bool passChanged{false};
+  float anchorScreenY{0.0f};
 };
 
 SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& source,
@@ -51,6 +52,7 @@ SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& 
   const float width = ImGui::GetContentRegionAvail().x;
   const std::string label = std::string(title) + "\n" + compactSourceLabel(source);
   if (ImGui::Button(label.c_str(), ImVec2(width, 48.0f))) ImGui::OpenPopup("source-palette");
+  result.anchorScreenY = ImGui::GetItemRectMin().y;
   if (ImGui::BeginPopup("source-palette")) {
     ImGui::TextDisabled("%s SIGNAL", title);
     constexpr CompositeSource simpleSources[] = {
@@ -89,12 +91,18 @@ SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& 
   return result;
 }
 
-bool operationPalette(RelationOperator& operation) {
-  bool changed = false;
+struct OperationPaletteResult {
+  bool changed{false};
+  float anchorScreenY{0.0f};
+};
+
+OperationPaletteResult operationPalette(RelationOperator& operation) {
+  OperationPaletteResult result;
   const std::string label = std::string(relationOperatorEquation(operation)) + "\n" +
     relationOperatorLabel(operation);
   if (ImGui::Button(label.c_str(), ImVec2(-1.0f, 52.0f))) ImGui::OpenPopup("operation-palette");
-  if (!ImGui::BeginPopup("operation-palette")) return false;
+  result.anchorScreenY = ImGui::GetItemRectMin().y;
+  if (!ImGui::BeginPopup("operation-palette")) return result;
   const auto group = [&](const char* heading, const std::initializer_list<RelationOperator> operators) {
     ImGui::SeparatorText(heading);
     for (const RelationOperator candidate : operators) {
@@ -102,7 +110,7 @@ bool operationPalette(RelationOperator& operation) {
         relationOperatorLabel(candidate);
       if (ImGui::Selectable(entry.c_str(), operation == candidate)) {
         operation = candidate;
-        changed = true;
+        result.changed = true;
       }
     }
   };
@@ -116,7 +124,7 @@ bool operationPalette(RelationOperator& operation) {
     RelationOperator::QuarterAdd, RelationOperator::SignedColorOffset});
   group("INTEGER LOGIC", {RelationOperator::BitwiseXor});
   ImGui::EndPopup();
-  return changed;
+  return result;
 }
 
 } // namespace
@@ -197,19 +205,24 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
     ImGui::TableNextColumn();
     const SourceNodeResult sourceAChanged = sourceNode("source-a", "A", pass.composite.sourceA,
       pass.composite.sourceAPassId, stack);
-    animationKeyControl(pass, AnimationProperty::CompositeSourceA, timeline, sourceAChanged.sourceChanged);
-    animationKeyControl(pass, AnimationProperty::CompositeSourceAPass, timeline, sourceAChanged.passChanged);
+    animationKeyControlAt(pass, AnimationProperty::CompositeSourceA, timeline,
+      sourceAChanged.sourceChanged, sourceAChanged.anchorScreenY + 3.0f);
+    animationKeyControlAt(pass, AnimationProperty::CompositeSourceAPass, timeline,
+      sourceAChanged.passChanged, sourceAChanged.anchorScreenY + 25.0f);
     ImGui::TableNextColumn();
     const SourceNodeResult sourceBChanged = sourceNode("source-b", "B", pass.composite.sourceB,
       pass.composite.sourceBPassId, stack);
-    animationKeyControl(pass, AnimationProperty::CompositeSourceB, timeline, sourceBChanged.sourceChanged);
-    animationKeyControl(pass, AnimationProperty::CompositeSourceBPass, timeline, sourceBChanged.passChanged);
+    animationKeyControlAt(pass, AnimationProperty::CompositeSourceB, timeline,
+      sourceBChanged.sourceChanged, sourceBChanged.anchorScreenY + 3.0f);
+    animationKeyControlAt(pass, AnimationProperty::CompositeSourceBPass, timeline,
+      sourceBChanged.passChanged, sourceBChanged.anchorScreenY + 25.0f);
     ImGui::EndTable();
   }
   centeredText("A + B feed");
-  const bool operationChanged = operationPalette(pass.composite.operation);
-  if (operationChanged) resetCompositeTransform(pass.composite);
-  animationKeyControl(pass, AnimationProperty::CompositeOperation, timeline, operationChanged);
+  const OperationPaletteResult operationChanged = operationPalette(pass.composite.operation);
+  if (operationChanged.changed) resetCompositeTransform(pass.composite);
+  animationKeyControlAt(pass, AnimationProperty::CompositeOperation, timeline,
+    operationChanged.changed, operationChanged.anchorScreenY + 17.0f);
   centeredText("OUTPUT");
   if (pass.composite.sourceA == CompositeSource::FixedColor ||
       pass.composite.sourceB == CompositeSource::FixedColor) {
