@@ -197,6 +197,8 @@ int runApplication() {
     historyStack.duplicateSelected();
     historyStack.selected().renderer.lighting.ambient = 0.4f;
     historyStack.selected().perturbation.uvOffset = {0.25f, -0.125f};
+    historyStack.selected().textureSource = TextureSource::ImportedOverride;
+    historyStack.selected().importedTexture = importedTexture.asset;
     setPropertyKeyframe(historyStack.selected(), AnimationProperty::UvOffset, 1.0f);
     historyCamera.yaw = 1.25f;
     historyScene = TestScene::Lighting;
@@ -226,6 +228,9 @@ int runApplication() {
         std::abs(historyRestored.renderStack.selected().perturbation.cameraYaw - 0.2f) > 0.0001f ||
         historyRestored.renderStack.passes().size() != 3 ||
         historyRestored.renderStack.selected().animation.tracks.size() != 1 ||
+        historyRestored.renderStack.selected().textureSource != TextureSource::ImportedOverride ||
+        historyRestored.renderStack.selected().importedTexture == nullptr ||
+        historyRestored.renderStack.selected().importedTexture->contentHash != importedTexture.asset->contentHash ||
         historyRestored.scene != TestScene::Lighting ||
         historyRestored.hardwareProfile != HardwareProfile::Nintendo64 ||
         historyRestored.importedModel == nullptr ||
@@ -541,11 +546,22 @@ int runApplication() {
       ImGui::TextWrapped("%s", importedModel->name.c_str());
       ImGui::TextDisabled("%zu triangles  %zu meshes", importedModel->triangleCount,
         importedModel->sourceMeshCount);
+      ImGui::TextDisabled("%zu materials  %zu base-color textures", importedModel->materials.size(),
+        importedModel->textures.size());
       ImGui::TextDisabled("UV0 %s   colors %s", importedModel->hasTextureCoordinates ? "yes" : "no",
         importedModel->hasVertexColors ? "yes" : "no");
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s\nLongest source bounds extent normalized to 3.0 lab units.",
           importedModel->sourcePath.c_str());
+      if (!importedModel->importWarnings.empty()) {
+        ImGui::TextColored(ImVec4(0.95f, 0.58f, 0.34f, 1.0f), "%zu texture warning%s",
+          importedModel->importWarnings.size(), importedModel->importWarnings.size() == 1 ? "" : "s");
+        if (ImGui::IsItemHovered()) {
+          ImGui::BeginTooltip();
+          for (const std::string& warning : importedModel->importWarnings) ImGui::TextWrapped("%s", warning.c_str());
+          ImGui::EndTooltip();
+        }
+      }
       if (scene != TestScene::ImportedModel && ImGui::Button("Use model", ImVec2(-1, 0)))
         scene = TestScene::ImportedModel;
       if (ImGui::Button("Unload model", ImVec2(-1, 0))) {
@@ -650,7 +666,8 @@ int runApplication() {
       drawPassInspector(inspectorStack, animationTimeline);
       ImGui::Spacing();
       ImGui::Separator();
-      drawInspector(category, inspectorStack.selected(), hardwareProfile, animationTimeline);
+      drawInspector(category, inspectorStack.selected(), hardwareProfile, animationTimeline,
+        importedModel.get(), scene);
       applyEditedPass(renderStack.selected(), displayedBefore, inspectorStack.selected());
     ImGui::EndChild();
     ImGui::End();

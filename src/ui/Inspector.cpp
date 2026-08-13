@@ -1,5 +1,7 @@
 #include "ui/Inspector.hpp"
+#include "app/FileDialog.hpp"
 #include "app/RenderStack.hpp"
+#include "assets/ModelAsset.hpp"
 #include "ui/AnimationControls.hpp"
 
 #include <imgui.h>
@@ -7,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <string>
 
 namespace gfxlab::ui {
 
@@ -86,7 +89,8 @@ int n64TextureBytes(const RendererState::N64& state) {
   return textureBytes + paletteBytes;
 }
 
-void drawInspector(Category category, RenderPass& pass, HardwareProfile profile, AnimationTimeline& timeline) {
+void drawInspector(Category category, RenderPass& pass, HardwareProfile profile, AnimationTimeline& timeline,
+    const ModelAsset* importedModel, const TestScene scene) {
   RendererState& state = pass.renderer;
   const ProfileCapabilities& capabilities = hardwareProfileCapabilities(profile);
   switch (category) {
@@ -236,6 +240,90 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
     }
     case Category::Texture: {
       ImGui::TextUnformatted("TEXTURE"); ImGui::Separator();
+      const char* sourceLabels[] = {"Scene material", "Built-in checker", "Imported override", "White texel"};
+      int textureSource = static_cast<int>(pass.textureSource);
+      if (ImGui::Combo("Texture source", &textureSource, sourceLabels, 4))
+        pass.textureSource = static_cast<TextureSource>(textureSource);
+      const bool imageAssetSource = pass.textureSource == TextureSource::ImportedOverride ||
+        (pass.textureSource == TextureSource::SceneMaterial && scene == TestScene::ImportedModel);
+      if (pass.textureSource == TextureSource::SceneMaterial) {
+        if (scene == TestScene::ImportedModel && importedModel != nullptr) {
+          ImGui::TextDisabled("%zu materials   %zu base-color images", importedModel->materials.size(),
+            importedModel->textures.size());
+          if (!importedModel->hasTextureCoordinates)
+            ImGui::TextColored(ImVec4(0.95f, 0.58f, 0.34f, 1.0f), "Model has no UV0 coordinates");
+          description("Each imported submesh uses the base-color factor and image assigned by its source material.");
+        } else {
+          description("The supplied diagnostic scenes use the built-in checker as their scene material.");
+        }
+      } else if (pass.textureSource == TextureSource::White) {
+        description("Samples a constant white texel. Material factors and lighting remain, but image variation is removed.");
+      } else if (pass.textureSource == TextureSource::BuiltInChecker) {
+        description("Uses the lab's diagnostic color checker instead of the scene's material image.");
+      }
+
+      static std::string textureImportError;
+      if (ImGui::Button(pass.importedTexture == nullptr ? "Import texture" : "Replace texture")) {
+        textureImportError.clear();
+        const FileDialogResult dialog = openTextureFileDialog();
+        if (!dialog.error.empty()) textureImportError = dialog.error;
+        else if (dialog.path.has_value()) {
+          const TextureImportResult imported = importTextureAsset(*dialog.path);
+          if (imported) {
+            pass.importedTexture = imported.asset;
+            pass.importedTextureSrgb = true;
+            pass.textureSource = TextureSource::ImportedOverride;
+            textureImportError.clear();
+          } else {
+            textureImportError = imported.error;
+          }
+        }
+        if (!textureImportError.empty()) ImGui::OpenPopup("Texture import failed");
+      }
+      if (pass.importedTexture != nullptr) {
+        ImGui::SameLine();
+        if (ImGui::Button("Reload")) {
+          const TextureImportResult imported = importTextureAsset(pass.importedTexture->sourcePath);
+          if (imported) pass.importedTexture = imported.asset;
+          else {
+            textureImportError = imported.error;
+            ImGui::OpenPopup("Texture import failed");
+          }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Remove")) {
+          pass.importedTexture.reset();
+          if (pass.textureSource == TextureSource::ImportedOverride)
+            pass.textureSource = TextureSource::SceneMaterial;
+        }
+      }
+      if (ImGui::BeginPopupModal("Texture import failed", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped("%s", textureImportError.c_str());
+        if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+      }
+      if (pass.importedTexture != nullptr) {
+        const TextureAsset& texture = *pass.importedTexture;
+        ImGui::Text("%s", texture.name.c_str());
+        ImGui::TextDisabled("%d x %d RGBA8   alpha %s", texture.width, texture.height,
+          texture.hasAlpha ? "present" : "opaque");
+        if (scene == TestScene::ImportedModel && importedModel != nullptr && !importedModel->hasTextureCoordinates)
+          ImGui::TextColored(ImVec4(0.95f, 0.58f, 0.34f, 1.0f), "Override cannot vary: model has no UV0");
+        ImGui::TextUnformatted("Color interpretation");
+        if (ImGui::RadioButton("sRGB color", pass.importedTextureSrgb)) pass.importedTextureSrgb = true;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Linear data", !pass.importedTextureSrgb)) pass.importedTextureSrgb = false;
+        description("sRGB decodes the stored RGB values before linear-light operations. Linear data leaves them unchanged.");
+        if (pass.textureSource != TextureSource::ImportedOverride) {
+          if (ImGui::Button("Use imported override")) pass.textureSource = TextureSource::ImportedOverride;
+          ImGui::SameLine();
+          ImGui::TextDisabled("Loaded but not selected");
+        }
+      } else if (pass.textureSource == TextureSource::ImportedOverride) {
+        ImGui::TextColored(ImVec4(0.95f, 0.58f, 0.34f, 1.0f), "No override texture is loaded");
+      }
+      ImGui::Spacing();
+      ImGui::Separator();
       if (profile == HardwareProfile::Nintendo64) {
         ImGui::TextUnformatted("RDP texture filter");
         const char* filterLabels[] = {"Point sampling", "Three-point approximate bilinear", "Four-texel box average"};
@@ -282,6 +370,9 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
         const char* formats[] = {"RGBA16 (5:5:5:1)", "RGBA32 (8:8:8:8)", "CI4 + RGBA16 TLUT", "CI8 + RGBA16 TLUT",
           "IA4 (3:1)", "IA8 (4:4)", "IA16 (8:8)", "I4", "I8"};
         ImGui::Combo("##n64-format", &state.n64.textureFormat, formats, 9);
+        if (imageAssetSource && (state.n64.textureFormat == 2 || state.n64.textureFormat == 3))
+          ImGui::TextColored(ImVec4(0.95f, 0.58f, 0.34f, 1.0f),
+            "No generated TLUT: CI is approximated as intensity");
         const char* tileLabels[] = {"16", "32", "64"};
         constexpr int tileValues[] = {16, 32, 64};
         int widthIndex = state.n64.tileWidth == 16 ? 0 : state.n64.tileWidth == 64 ? 2 : 1;
@@ -295,10 +386,15 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
         else ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f), "TMEM working set: %d / 4096 bytes", bytes);
         description("The calculation includes tile texels and CI palette storage. Oversized tiles would require subdivision or another format.");
       } else {
-        ImGui::TextUnformatted("Texture color storage");
-        const char* colorModeLabels[] = {"Direct color", "8-bit index + 256-color CLUT", "4-bit index + 16-color CLUT"};
-        ImGui::Combo("##texture-color-storage", &state.texture.colorMode, colorModeLabels, 3);
-        description("Indexed textures store palette entries rather than RGB texels. CLUT means color lookup table.");
+        if (imageAssetSource) {
+          fixedProfileValue("Texture color storage", "Direct color (image asset)");
+          description("Palette generation is not implicit. Indexed storage remains available for the built-in diagnostic texture.");
+        } else {
+          ImGui::TextUnformatted("Texture color storage");
+          const char* colorModeLabels[] = {"Direct color", "8-bit index + 256-color CLUT", "4-bit index + 16-color CLUT"};
+          ImGui::Combo("##texture-color-storage", &state.texture.colorMode, colorModeLabels, 3);
+          description("Indexed textures store palette entries rather than RGB texels. CLUT means color lookup table.");
+        }
       }
       break;
     }

@@ -46,6 +46,7 @@ struct ModelAsset {
   std::vector<SubmeshAsset> submeshes;
   std::vector<MaterialAsset> materials;
   std::vector<TextureAsset> textures;
+  std::vector<std::string> importWarnings;
   glm::vec3 sourceBoundsMinimum{0.0f};
   glm::vec3 sourceBoundsMaximum{0.0f};
   float normalizationScale = 1.0f;

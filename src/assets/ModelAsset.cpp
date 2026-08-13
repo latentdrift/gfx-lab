@@ -202,6 +202,8 @@ ModelImportResult importModelAsset(const std::string& path) {
           material.baseColorTexture = static_cast<int>(asset->textures.size());
           textureIndices.emplace(reference, material.baseColorTexture);
           asset->textures.push_back(*importedTexture.asset);
+        } else {
+          asset->importWarnings.push_back(material.name + ": " + importedTexture.error);
         }
       }
     }
@@ -275,6 +277,16 @@ ModelImportResult importModelAsset(const std::string& path) {
   for (Vertex& vertex : asset->vertices)
     vertex.position = (vertex.position - center) * asset->normalizationScale;
   asset->contentHash = hashVertices(asset->vertices);
+  for (const MaterialAsset& material : asset->materials) {
+    for (const float component : {material.baseColor.r, material.baseColor.g, material.baseColor.b,
+      material.baseColor.a}) hashFloat(asset->contentHash, component);
+    asset->contentHash ^= static_cast<std::uint64_t>(material.baseColorTexture + 1);
+    asset->contentHash *= 1099511628211ull;
+  }
+  for (const TextureAsset& texture : asset->textures) {
+    asset->contentHash ^= texture.contentHash;
+    asset->contentHash *= 1099511628211ull;
+  }
   return {std::move(asset), {}};
 }
 

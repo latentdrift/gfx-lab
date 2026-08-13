@@ -28,7 +28,7 @@ src/
     RenderStack.cpp           pass definitions, compositing state, and stack export
     State.cpp                 explicit renderer state, scene setups, JSON export
   assets/
-    ModelAsset.cpp            Assimp decoding, validation, attributes, and normalization
+    ModelAsset.cpp            mesh/material import, image decoding, validation, and normalization
   renderer/
     Renderer.cpp              OpenGL resources, state application, and render passes
     Shaders.hpp               scene, output, shadow, and analysis GLSL programs
@@ -52,9 +52,11 @@ src/
 - Undo: Ctrl+Z
 - Redo: Ctrl+Shift+Z or Ctrl+Y
 
-Use **Import model** to load OBJ, glTF, or GLB geometry through the native file chooser. The importer applies scene-node transforms, triangulates faces, generates missing smooth normals and usable tangents, preserves UV0 and vertex color 0 when present, and combines source meshes into one lab mesh. It centers the result and scales its longest bounds extent to exactly 3.0 lab units so camera distance, fog, quantization, and pass perturbations remain comparable between unrelated assets. The left panel reports triangle count, source mesh count, and attribute availability; **Use model** and **Unload model** are undoable.
+Use **Import model** to load OBJ, glTF, or GLB geometry through the native file chooser. The importer applies scene-node transforms, triangulates faces, generates missing smooth normals and usable tangents, preserves UV0, vertex color 0, submesh material assignments, base-color factors, and external or embedded base-color images. It centers the result and scales its longest bounds extent to exactly 3.0 lab units so camera distance, fog, quantization, and pass perturbations remain comparable between unrelated assets. The left panel reports geometry, material, texture, and attribute facts; missing image references appear as explicit warnings. **Use model** and **Unload model** are undoable.
 
-This first import boundary does not recreate source materials, external image textures, skeletal animation, morph targets, cameras, or lights. Material base color becomes the fallback vertex color, while the lab's own checker and diagnostic textures remain the texture inputs. Copying stack JSON records the absolute source path, content hash, mesh facts, and normalization scale rather than embedding the vertex buffer.
+The **Texture source** control belongs to each render pass. **Scene material** uses imported submesh materials, **Built-in checker** substitutes the diagnostic texture, **White texel** removes image variation while retaining material factors, and **Imported override** applies a separately imported PNG, JPEG, TGA, or BMP to any scene. The same override is copied when a pass is duplicated, so two correlated renders can perturb its UVs, sampling, color precision, and compositing independently. The inspector reports dimensions and alpha and exposes sRGB-color versus linear-data interpretation.
+
+This first material boundary intentionally imports only base color and alpha. Normal, emissive, metallic-roughness, occlusion, multiple UV sets, skeletal animation, morph targets, cameras, and lights remain separate future systems. Copying stack JSON records source paths, content hashes, dimensions, material facts, and normalization scale rather than embedding image pixels or vertex buffers.
 
 Undo and redo cover the authored render stack, all renderer and composite settings, pass order and names, animation tracks, camera, scene, hardware target, and timeline configuration. Continuous sliders and viewport-camera drags collapse into one history entry. Playback time, pass selection, comparison view, open windows, and temporary evaluated animation frames are workspace state rather than authored operations, so they do not flood document history.
 
