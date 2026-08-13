@@ -139,8 +139,16 @@ int runApplication() {
       fail("standalone texture import failed validation");
     if (importModelAsset("tests/fixtures/not_a_model.txt"))
       fail("model importer accepted an unsupported file type");
+    while (glGetError() != GL_NO_ERROR) {}
     renderer.setImportedModel(*importedFixture.asset);
     renderer.render(RendererState{}, CameraOrbit{}, TestScene::ImportedModel, false);
+    RenderStack textureRenderValidation;
+    textureRenderValidation.selected().textureSource = TextureSource::ImportedOverride;
+    textureRenderValidation.selected().importedTexture = importedTexture.asset;
+    renderer.renderPass(textureRenderValidation.selected(), CameraOrbit{}, TestScene::ImportedModel, 0);
+    textureRenderValidation.selected().textureSource = TextureSource::White;
+    renderer.renderPass(textureRenderValidation.selected(), CameraOrbit{}, TestScene::ImportedModel, 0);
+    if (glGetError() != GL_NO_ERROR) fail("scene-material or override texture rendering failed validation");
     renderer.clearImportedModel();
     RenderStack validationStack;
     if (validationStack.passes().size() != 2 || !validationStack.duplicateSelected() ||
@@ -230,6 +238,8 @@ int runApplication() {
     compositeValidation.duplicateSelected();
     compositeValidation.passes()[1].perturbation.cameraYaw = 0.01f;
     compositeValidation.passes()[2].perturbation.uvOffset = {1.0f / 256.0f, 0.0f};
+    compositeValidation.passes()[2].textureSource = TextureSource::ImportedOverride;
+    compositeValidation.passes()[2].importedTexture = importedTexture.asset;
     compositeValidation.passes()[2].composite.operation = RelationOperator::Exclusion;
     for (std::size_t passIndex = 0; passIndex < compositeValidation.passes().size(); ++passIndex)
       renderer.renderPass(compositeValidation.passes()[passIndex], camera, scene, passIndex);
@@ -248,6 +258,8 @@ int runApplication() {
         stackConfig.find("\"composite_into_previous\"") == std::string::npos ||
         stackConfig.find("\"animation\"") == std::string::npos ||
         stackConfig.find("\"property_tracks\"") == std::string::npos ||
+        stackConfig.find("\"texture_source\": \"imported_override\"") == std::string::npos ||
+        stackConfig.find("\"imported_texture\"") == std::string::npos ||
         stackConfig.find("\"imported_model\"") == std::string::npos)
       fail("render-pass stack missing from config export");
     constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,

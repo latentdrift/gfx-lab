@@ -96,7 +96,9 @@ uniform bool uPremultiplyAlpha;
 uniform bool uNormalMapping;
 uniform float uNormalStrength;
 uniform bool uLinearLight;
-uniform vec3 uObjectTint;
+uniform vec4 uObjectTint;
+uniform bool uTextureSrgb;
+uniform bool uHasIndexedTexture;
 uniform bool uShadowsEnabled;
 uniform float uShadowBias;
 uniform bool uShadowPcf;
@@ -151,7 +153,7 @@ vec4 n64FormatTexel(ivec2 coordinate, int level) {
   ivec2 indexCoordinate = min(wrapped * indexSize / levelSize, indexSize - 1);
   int paletteIndex = int(round(texelFetch(uIndexedTexture, indexCoordinate, 0).r * 255.0));
   if (uN64TextureFormat == 2) paletteIndex &= 15;
-  if (uN64TextureFormat == 2 || uN64TextureFormat == 3)
+  if ((uN64TextureFormat == 2 || uN64TextureFormat == 3) && uHasIndexedTexture)
     return texelFetch(uClut, ivec2(paletteIndex, 0), 0);
   if (uN64TextureFormat == 0)
     return vec4(round(direct.rgb * 31.0) / 31.0, direct.a >= 0.5 ? 1.0 : 0.0);
@@ -257,11 +259,12 @@ void main() {
   }
   float n64LodFraction = 0.0;
   vec4 texel = uN64Enabled ? sampleN64Texture(uv, n64LodFraction) : sampleSurfaceTexture(uv);
-  float alpha = uVisualization == 0 ? texel.a : 1.0;
+  vec3 objectTint = uLinearLight ? pow(uObjectTint.rgb, vec3(2.2)) : uObjectTint.rgb;
+  float alpha = uVisualization == 0 ? texel.a * uObjectTint.a : 1.0;
   if (uTransparencyMode == 1 && alpha < uAlphaCutoff) discard;
   if (uTransparencyMode == 0) alpha = 1.0;
-  vec3 albedo = uLinearLight ? pow(texel.rgb, vec3(2.2)) : texel.rgb;
-  albedo *= uObjectTint;
+  vec3 albedo = uLinearLight && uTextureSrgb ? pow(texel.rgb, vec3(2.2)) : texel.rgb;
+  albedo *= objectTint;
   if (uVisualization == 1) albedo = vec3(fract(uv), 0.0);
   if (uVisualization == 2) albedo = normal * 0.5 + 0.5;
   if (uVisualization == 3) albedo = vColor;
@@ -287,6 +290,7 @@ void main() {
     color *= 1.0 - shadowAmount() * (1.0 - uAmbient);
 
   if (uN64Enabled) {
+    texel *= uObjectTint;
     vec4 shade = vec4(vColor * (uLightingModel == 0 ? 1.0 : vVertexLighting), 1.0);
     vec4 texel1 = texture(uN64DetailTexture, uv * 4.0);
     vec4 combined = n64CombinerCycle(uN64Cycle0, texel, texel1, shade, vec4(0.0), n64LodFraction);

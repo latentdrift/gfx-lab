@@ -6,17 +6,20 @@
 #include <glm/glm.hpp>
 
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace gfxlab {
 
 struct ModelAsset;
+struct TextureAsset;
 
 enum class CompositeColorSpace { EncodedRgb, LinearLight };
 enum class CompositeRange { Clamp, Preserve, Wrap };
 enum class PassOutput { Color, Depth, Normals, VertexColor };
 enum class CompositeMask { None, PassLuminance, PassDepth, PassEdges };
+enum class TextureSource { SceneMaterial, BuiltInChecker, ImportedOverride, White };
 
 struct PassPerturbation {
   glm::vec3 modelTranslation{0.0f};
@@ -47,6 +50,9 @@ struct RenderPass {
   RendererState renderer;
   PassPerturbation perturbation;
   PassOutput output = PassOutput::Color;
+  TextureSource textureSource = TextureSource::SceneMaterial;
+  std::shared_ptr<const TextureAsset> importedTexture;
+  bool importedTextureSrgb = true;
   CompositeStep composite;
   PassAnimation animation;
 };

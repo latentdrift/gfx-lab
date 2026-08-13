@@ -104,6 +104,7 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   constexpr const char* rangeIds[] = {"clamp_0_to_1", "preserve_signed_hdr", "wrap_fractional_part"};
   constexpr const char* maskIds[] = {"none", "pass_luminance", "pass_depth_0_to_10_units", "pass_image_edges"};
   constexpr const char* interpolationIds[] = {"step", "linear", "smooth_step"};
+  constexpr const char* textureSourceIds[] = {"scene_material", "built_in_checker", "imported_override", "white"};
   const auto escape = [](const std::string& value) {
     std::string result;
     for (const char character : value) {
@@ -136,6 +137,8 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
          << "\", \"content_hash_fnv1a64\": \"" << std::hex << importedModel->contentHash << std::dec
          << "\", \"source_meshes\": " << importedModel->sourceMeshCount
          << ", \"triangles\": " << importedModel->triangleCount
+         << ", \"materials\": " << importedModel->materials.size()
+         << ", \"base_color_textures\": " << importedModel->textures.size()
          << ", \"normalization_scale\": " << importedModel->normalizationScale
          << ", \"has_uv0\": " << importedModel->hasTextureCoordinates
          << ", \"has_vertex_color0\": " << importedModel->hasVertexColors
@@ -155,6 +158,16 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
     json << "    {\n";
     json << "      \"name\": \"" << escape(pass.name) << "\", \"enabled\": " << pass.enabled << ",\n";
     json << "      \"output_buffer\": \"" << outputIds[static_cast<int>(pass.output)] << "\",\n";
+    json << "      \"texture_source\": \"" << textureSourceIds[static_cast<int>(pass.textureSource)] << "\"";
+    if (pass.importedTexture != nullptr) {
+      json << ", \"imported_texture\": {\"name\": \"" << escape(pass.importedTexture->name)
+           << "\", \"source_path\": \"" << escape(pass.importedTexture->sourcePath)
+           << "\", \"content_hash_fnv1a64\": \"" << std::hex << pass.importedTexture->contentHash << std::dec
+           << "\", \"dimensions\": [" << pass.importedTexture->width << ", " << pass.importedTexture->height
+           << "], \"alpha_present\": " << pass.importedTexture->hasAlpha
+           << ", \"color_interpretation\": \"" << (pass.importedTextureSrgb ? "srgb" : "linear_data") << "\"}";
+    }
+    json << ",\n";
     json << "      \"perturbation\": {\n";
     json << "        \"model_translation_units\": [" << p.modelTranslation.x << ", " << p.modelTranslation.y
          << ", " << p.modelTranslation.z << "], \"model_scale\": " << p.modelScale

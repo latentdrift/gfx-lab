@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace gfxlab {
@@ -248,17 +249,25 @@ public:
     makeCheckerTexture();
     makeNormalTexture();
     makeDetailTexture();
+    constexpr std::array<unsigned char, 4> white = {255, 255, 255, 255};
+    glGenTextures(1, &whiteTexture_);
+    glBindTexture(GL_TEXTURE_2D, whiteTexture_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white.data());
+    glGenerateMipmap(GL_TEXTURE_2D);
     glGenFramebuffers(1, &shadowFbo_);
     glGenTextures(1, &shadowTexture_);
   }
 
   ~Impl() {
+    clearImportedMaterialResources();
+    for (const auto& entry : overrideTextures_) glDeleteTextures(1, &entry.second);
     for (RenderTarget& target : passTargets_) target.destroy();
     glDeleteTextures(1, &checkerTexture_);
     glDeleteTextures(1, &indexedTexture_);
     glDeleteTextures(1, &clutTexture_);
     glDeleteTextures(1, &normalTexture_);
     glDeleteTextures(1, &detailTexture_);
+    glDeleteTextures(1, &whiteTexture_);
     glDeleteFramebuffers(1, &shadowFbo_);
     glDeleteTextures(1, &shadowTexture_);
     glDeleteBuffers(1, &vbo_);
@@ -273,11 +282,32 @@ public:
     glDeleteProgram(overdrawProgram_);
   }
 
-  void setImportedModel(const ModelAsset& asset) { uploadGeometry(&asset.vertices); }
-  void clearImportedModel() { uploadGeometry(nullptr); }
+  void setImportedModel(const ModelAsset& asset) {
+    clearImportedMaterialResources();
+    uploadGeometry(&asset.vertices);
+    importedTextureIds_.reserve(asset.textures.size());
+    for (const TextureAsset& texture : asset.textures) importedTextureIds_.push_back(uploadTexture(texture));
+    importedMaterials_.reserve(asset.materials.size());
+    for (const MaterialAsset& material : asset.materials) {
+      const GLuint texture = material.baseColorTexture >= 0 &&
+          static_cast<std::size_t>(material.baseColorTexture) < importedTextureIds_.size()
+        ? importedTextureIds_[static_cast<std::size_t>(material.baseColorTexture)] : 0;
+      importedMaterials_.push_back({material.baseColor, texture});
+    }
+    importedSubmeshes_.reserve(asset.submeshes.size());
+    for (const SubmeshAsset& submesh : asset.submeshes)
+      importedSubmeshes_.push_back({{imported_.first + static_cast<int>(submesh.firstVertex),
+        static_cast<int>(submesh.vertexCount)}, submesh.materialIndex});
+  }
+  void clearImportedModel() {
+    clearImportedMaterialResources();
+    uploadGeometry(nullptr);
+  }
 
   GLuint render(const RendererState& state, const CameraOrbit& camera, TestScene scene, const std::size_t targetIndex,
-      const PassPerturbation& perturbation = {}, const PassOutput output = PassOutput::Color) {
+      const PassPerturbation& perturbation = {}, const PassOutput output = PassOutput::Color,
+      const TextureSource textureSource = TextureSource::SceneMaterial,
+      const TextureAsset* importedTexture = nullptr, const bool importedTextureSrgb = true) {
     if (targetIndex >= passTargets_.size()) return 0;
     RenderTarget& target = passTargets_[targetIndex];
     CameraOrbit passCamera = camera;
@@ -450,19 +480,11 @@ public:
     glUniform3fv(location("uCameraPosition"), 1, glm::value_ptr(passCamera.eye()));
     glUniform2fv(location("uUvOffset"), 1, glm::value_ptr(perturbation.uvOffset));
     glUniform2fv(location("uUvScale"), 1, glm::value_ptr(perturbation.uvScale));
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, checkerTexture_);
     GLint minificationFilter = state.texture.nearestFiltering ? GL_NEAREST : GL_LINEAR;
     if (state.texture.mipmapping) {
       if (state.texture.nearestFiltering) minificationFilter = GL_NEAREST_MIPMAP_NEAREST;
       else minificationFilter = state.texture.trilinear ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR_MIPMAP_NEAREST;
     }
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minificationFilter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, state.texture.nearestFiltering ? GL_NEAREST : GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, state.texture.repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, state.texture.repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
-    if (GLEW_EXT_texture_filter_anisotropic)
-      glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, std::clamp(state.texture.anisotropy, 1.0f, maxAnisotropy_));
     glUniform1i(location("uTexture"), 0);
     glActiveTexture(GL_TEXTURE4);
     glBindTexture(GL_TEXTURE_2D, indexedTexture_);
@@ -472,7 +494,6 @@ public:
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D, clutTexture_);
     glUniform1i(location("uClut"), 5);
-    glUniform1i(location("uTextureColorMode"), state.texture.colorMode);
     glActiveTexture(GL_TEXTURE6);
     glBindTexture(GL_TEXTURE_2D, detailTexture_);
     glUniform1i(location("uN64DetailTexture"), 6);
@@ -483,11 +504,34 @@ public:
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, shadowTexture_);
     glUniform1i(location("uShadowMap"), 2);
+    auto bindSurfaceTexture = [this, &state, minificationFilter](const GLuint texture, const bool srgb,
+        const bool indexedAvailable) {
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, texture);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minificationFilter);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+        state.texture.nearestFiltering ? GL_NEAREST : GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, state.texture.repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, state.texture.repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+      if (GLEW_EXT_texture_filter_anisotropic)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+          std::clamp(state.texture.anisotropy, 1.0f, maxAnisotropy_));
+      glUniform1i(location("uTextureColorMode"), indexedAvailable ? state.texture.colorMode : 0);
+      glUniform1i(location("uHasIndexedTexture"), indexedAvailable);
+      glUniform1i(location("uTextureSrgb"), srgb);
+    };
+    if (textureSource == TextureSource::ImportedOverride && importedTexture != nullptr)
+      bindSurfaceTexture(overrideTexture(importedTexture), importedTextureSrgb, false);
+    else if (textureSource == TextureSource::White)
+      bindSurfaceTexture(whiteTexture_, false, false);
+    else
+      bindSurfaceTexture(checkerTexture_, true, true);
     glBindVertexArray(vao_);
     auto drawMesh = [this, &passTransform](const MeshRange& mesh, const glm::mat4& modelMatrix,
         const glm::vec3& tint) {
       matrix("uModel", passTransform * modelMatrix);
-      glUniform3fv(location("uObjectTint"), 1, glm::value_ptr(tint));
+      const glm::vec4 tintWithAlpha(tint, 1.0f);
+      glUniform4fv(location("uObjectTint"), 1, glm::value_ptr(tintWithAlpha));
       glDrawArrays(GL_TRIANGLES, mesh.first, mesh.count);
     };
     const glm::mat4 identity(1.0f);
@@ -555,7 +599,30 @@ public:
         glDisable(GL_STENCIL_TEST);
         break;
       case TestScene::ImportedModel:
-        drawMesh(imported_, identity, glm::vec3(1.0f));
+        for (const ImportedSubmeshGpu& submesh : importedSubmeshes_) {
+          const ImportedMaterialGpu* material = submesh.materialIndex < importedMaterials_.size()
+            ? &importedMaterials_[submesh.materialIndex] : nullptr;
+          const glm::vec4 baseColor = material != nullptr ? material->baseColor : glm::vec4(1.0f);
+          GLuint surfaceTexture = whiteTexture_;
+          bool surfaceSrgb = false;
+          bool indexedAvailable = false;
+          if (textureSource == TextureSource::BuiltInChecker) {
+            surfaceTexture = checkerTexture_;
+            surfaceSrgb = true;
+            indexedAvailable = true;
+          } else if (textureSource == TextureSource::ImportedOverride && importedTexture != nullptr) {
+            surfaceTexture = overrideTexture(importedTexture);
+            surfaceSrgb = importedTextureSrgb;
+          } else if (textureSource == TextureSource::SceneMaterial && material != nullptr &&
+              material->baseColorTexture != 0) {
+            surfaceTexture = material->baseColorTexture;
+            surfaceSrgb = true;
+          }
+          bindSurfaceTexture(surfaceTexture, surfaceSrgb, indexedAvailable);
+          matrix("uModel", passTransform);
+          glUniform4fv(location("uObjectTint"), 1, glm::value_ptr(baseColor));
+          glDrawArrays(GL_TRIANGLES, submesh.range.first, submesh.range.count);
+        }
         break;
     }
     glDepthMask(GL_TRUE);
@@ -738,6 +805,46 @@ public:
   }
 
 private:
+  struct ImportedMaterialGpu {
+    glm::vec4 baseColor{1.0f};
+    GLuint baseColorTexture = 0;
+  };
+
+  struct ImportedSubmeshGpu {
+    MeshRange range;
+    std::size_t materialIndex = 0;
+  };
+
+  GLuint uploadTexture(const TextureAsset& texture) {
+    GLuint id = 0;
+    glGenTextures(1, &id);
+    glBindTexture(GL_TEXTURE_2D, id);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, texture.width, texture.height, 0, GL_RGBA,
+      GL_UNSIGNED_BYTE, texture.rgba8.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    return id;
+  }
+
+  GLuint overrideTexture(const TextureAsset* texture) {
+    if (texture == nullptr) return 0;
+    const auto existing = overrideTextures_.find(texture->contentHash);
+    if (existing != overrideTextures_.end()) return existing->second;
+    const GLuint uploaded = uploadTexture(*texture);
+    overrideTextures_.emplace(texture->contentHash, uploaded);
+    return uploaded;
+  }
+
+  void clearImportedMaterialResources() {
+    if (!importedTextureIds_.empty())
+      glDeleteTextures(static_cast<GLsizei>(importedTextureIds_.size()), importedTextureIds_.data());
+    importedTextureIds_.clear();
+    importedMaterials_.clear();
+    importedSubmeshes_.clear();
+  }
+
   void uploadGeometry(const std::vector<Vertex>* importedVertices) {
     std::vector<Vertex> combined = baseVertices_;
     imported_ = {static_cast<int>(combined.size()), 0};
@@ -753,11 +860,15 @@ private:
 
   GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0, shadowProgram_ = 0, overdrawProgram_ = 0;
   GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, indexedTexture_ = 0,
-    clutTexture_ = 0, normalTexture_ = 0, detailTexture_ = 0;
+    clutTexture_ = 0, normalTexture_ = 0, detailTexture_ = 0, whiteTexture_ = 0;
   GLint maxSamples_ = 1;
   GLfloat maxAnisotropy_ = 1.0f;
   std::vector<Vertex> baseVertices_;
   MeshRange torus_, plane_, quad_, lowSphere_, smoothSphere_, imported_;
+  std::vector<GLuint> importedTextureIds_;
+  std::vector<ImportedMaterialGpu> importedMaterials_;
+  std::vector<ImportedSubmeshGpu> importedSubmeshes_;
+  std::unordered_map<std::uint64_t, GLuint> overrideTextures_;
   GLuint shadowFbo_ = 0, shadowTexture_ = 0;
   int shadowResolution_ = 0;
   std::array<RenderTarget, RenderStack::maximumPasses> passTargets_;
@@ -909,7 +1020,8 @@ unsigned int Renderer::renderRelation(RelationOperator operation, float gain, fl
 
 unsigned int Renderer::renderPass(const RenderPass& pass, const CameraOrbit& camera, const TestScene scene,
     const std::size_t targetIndex) {
-  return impl_->render(pass.renderer, camera, scene, targetIndex, pass.perturbation, pass.output);
+  return impl_->render(pass.renderer, camera, scene, targetIndex, pass.perturbation, pass.output,
+    pass.textureSource, pass.importedTexture.get(), pass.importedTextureSrgb);
 }
 
 unsigned int Renderer::composite(const RenderStack& stack) { return impl_->composite(stack); }
