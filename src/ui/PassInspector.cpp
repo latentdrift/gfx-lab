@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <initializer_list>
+#include <string>
 
 namespace gfxlab::ui {
 namespace {
@@ -16,6 +18,93 @@ void description(const char* text) {
   ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
   ImGui::TextWrapped("%s", text);
   ImGui::PopStyleColor();
+}
+
+void centeredText(const char* text) {
+  const float offset = std::max(0.0f,
+    (ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(text).x) * 0.5f);
+  ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
+  ImGui::TextDisabled("%s", text);
+}
+
+const char* compactSourceLabel(const CompositeSource source) {
+  switch (source) {
+    case CompositeSource::Accumulator: return "Accumulated result";
+    case CompositeSource::CurrentPass: return "Current pass";
+    case CompositeSource::RenderPass: return "Named render pass";
+    case CompositeSource::FixedColor: return "Fixed RGBA color";
+    case CompositeSource::PreviousFrame: return "Previous frame";
+  }
+  return "Unknown source";
+}
+
+struct SourceNodeResult {
+  bool sourceChanged{false};
+  bool passChanged{false};
+};
+
+SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& source,
+    int& sourcePassId, RenderStack& stack) {
+  SourceNodeResult result;
+  ImGui::PushID(id);
+  const float width = ImGui::GetContentRegionAvail().x;
+  const std::string label = std::string(title) + "\n" + compactSourceLabel(source);
+  if (ImGui::Button(label.c_str(), ImVec2(width, 48.0f))) ImGui::OpenPopup("source-palette");
+  if (ImGui::BeginPopup("source-palette")) {
+    ImGui::TextDisabled("%s SIGNAL", title);
+    constexpr CompositeSource simpleSources[] = {
+      CompositeSource::Accumulator, CompositeSource::CurrentPass,
+      CompositeSource::FixedColor, CompositeSource::PreviousFrame};
+    for (const CompositeSource candidate : simpleSources) {
+      if (ImGui::Selectable(compactSourceLabel(candidate), source == candidate)) {
+        source = candidate;
+        result.sourceChanged = true;
+      }
+    }
+    ImGui::SeparatorText("RAW RENDER PASS");
+    for (const RenderPass& candidate : stack.passes()) {
+      const bool selected = source == CompositeSource::RenderPass && sourcePassId == candidate.id;
+      if (ImGui::Selectable(candidate.name.c_str(), selected)) {
+        result.sourceChanged = source != CompositeSource::RenderPass;
+        result.passChanged = sourcePassId != candidate.id;
+        source = CompositeSource::RenderPass;
+        sourcePassId = candidate.id;
+      }
+    }
+    ImGui::EndPopup();
+  }
+  ImGui::PopID();
+  return result;
+}
+
+bool operationPalette(RelationOperator& operation) {
+  bool changed = false;
+  const std::string label = std::string(relationOperatorEquation(operation)) + "\n" +
+    relationOperatorLabel(operation);
+  if (ImGui::Button(label.c_str(), ImVec2(-1.0f, 52.0f))) ImGui::OpenPopup("operation-palette");
+  if (!ImGui::BeginPopup("operation-palette")) return false;
+  const auto group = [&](const char* heading, const std::initializer_list<RelationOperator> operators) {
+    ImGui::SeparatorText(heading);
+    for (const RelationOperator candidate : operators) {
+      const std::string entry = std::string(relationOperatorEquation(candidate)) + "    " +
+        relationOperatorLabel(candidate);
+      if (ImGui::Selectable(entry.c_str(), operation == candidate)) {
+        operation = candidate;
+        changed = true;
+      }
+    }
+  };
+  group("COMPARE / DISAGREE", {RelationOperator::AbsoluteDifference, RelationOperator::SignedDifference,
+    RelationOperator::PositiveAMinusB, RelationOperator::PositiveBMinusA,
+    RelationOperator::Exclusion, RelationOperator::ANotB, RelationOperator::RelativeDifference});
+  group("LIGHTEN / DARKEN", {RelationOperator::Multiply, RelationOperator::Screen,
+    RelationOperator::Minimum, RelationOperator::Maximum, RelationOperator::CenteredSum});
+  group("HARDWARE COLOR MATH", {RelationOperator::Add, RelationOperator::Average,
+    RelationOperator::HardwareSubtract, RelationOperator::HardwareReverseSubtract,
+    RelationOperator::QuarterAdd, RelationOperator::SignedColorOffset});
+  group("INTEGER LOGIC", {RelationOperator::BitwiseXor});
+  ImGui::EndPopup();
+  return changed;
 }
 
 } // namespace
@@ -91,43 +180,25 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
 
   ImGui::Spacing();
   ImGui::Separator();
-  ImGui::TextDisabled("COMPOSITE OPERANDS");
-  constexpr const char* sourceLabels[] = {
-    "Accumulated result", "Current pass", "Render pass", "Fixed color", "Previous frame"};
-  const auto sourceControl = [&](const char* label, CompositeSource& source, int& sourcePassId,
-      const AnimationProperty sourceProperty, const AnimationProperty passProperty) {
-    int selectedSource = static_cast<int>(source);
-    const bool sourceChanged = ImGui::Combo(label, &selectedSource, sourceLabels, 5);
-    if (sourceChanged) source = static_cast<CompositeSource>(selectedSource);
-    animationKeyControl(pass, sourceProperty, timeline, sourceChanged);
-    if (source != CompositeSource::RenderPass) return;
-    std::array<const char*, RenderStack::maximumPasses> passLabels{};
-    for (std::size_t index = 0; index < stack.passes().size(); ++index)
-      passLabels[index] = stack.passes()[index].name.c_str();
-    int selectedPass = 0;
-    bool foundPass = false;
-    for (std::size_t index = 0; index < stack.passes().size(); ++index) {
-      if (stack.passes()[index].id != sourcePassId) continue;
-      selectedPass = static_cast<int>(index);
-      foundPass = true;
-      break;
-    }
-    ImGui::Indent();
-    const bool passChanged = ImGui::Combo("Render pass", &selectedPass, passLabels.data(),
-      static_cast<int>(stack.passes().size()));
-    if (passChanged) sourcePassId = stack.passes()[static_cast<std::size_t>(selectedPass)].id;
-    animationKeyControl(pass, passProperty, timeline, passChanged);
-    if (!foundPass) ImGui::TextDisabled("Referenced pass no longer exists; using %s.", passLabels[0]);
-    ImGui::Unindent();
-  };
-  ImGui::PushID("source-a");
-  sourceControl("Source A", pass.composite.sourceA, pass.composite.sourceAPassId,
-    AnimationProperty::CompositeSourceA, AnimationProperty::CompositeSourceAPass);
-  ImGui::PopID();
-  ImGui::PushID("source-b");
-  sourceControl("Source B", pass.composite.sourceB, pass.composite.sourceBPassId,
-    AnimationProperty::CompositeSourceB, AnimationProperty::CompositeSourceBPass);
-  ImGui::PopID();
+  ImGui::TextDisabled("COMPOSITE SIGNAL FLOW");
+  if (ImGui::BeginTable("composite-inputs", 2, ImGuiTableFlags_SizingStretchSame)) {
+    ImGui::TableNextColumn();
+    const SourceNodeResult sourceAChanged = sourceNode("source-a", "A", pass.composite.sourceA,
+      pass.composite.sourceAPassId, stack);
+    animationKeyControl(pass, AnimationProperty::CompositeSourceA, timeline, sourceAChanged.sourceChanged);
+    animationKeyControl(pass, AnimationProperty::CompositeSourceAPass, timeline, sourceAChanged.passChanged);
+    ImGui::TableNextColumn();
+    const SourceNodeResult sourceBChanged = sourceNode("source-b", "B", pass.composite.sourceB,
+      pass.composite.sourceBPassId, stack);
+    animationKeyControl(pass, AnimationProperty::CompositeSourceB, timeline, sourceBChanged.sourceChanged);
+    animationKeyControl(pass, AnimationProperty::CompositeSourceBPass, timeline, sourceBChanged.passChanged);
+    ImGui::EndTable();
+  }
+  centeredText("A + B feed");
+  const bool operationChanged = operationPalette(pass.composite.operation);
+  if (operationChanged) resetCompositeTransform(pass.composite);
+  animationKeyControl(pass, AnimationProperty::CompositeOperation, timeline, operationChanged);
+  centeredText("OUTPUT");
   if (pass.composite.sourceA == CompositeSource::FixedColor ||
       pass.composite.sourceB == CompositeSource::FixedColor) {
     const bool colorChanged = ImGui::ColorEdit4("Fixed color", &pass.composite.fixedColor.x,
@@ -149,17 +220,7 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
   description("A and B are independent inputs. A render-pass source reads that pass's raw output, not its composited result.");
 
   ImGui::Spacing();
-  ImGui::TextDisabled("COLOR ARITHMETIC");
-  int operation = static_cast<int>(pass.composite.operation);
-  constexpr int operationCount = static_cast<int>(RelationOperator::BitwiseXor) + 1;
-  std::array<const char*, operationCount> operationLabels{};
-  for (int index = 0; index < operationCount; ++index)
-    operationLabels[static_cast<std::size_t>(index)] = relationOperatorLabel(static_cast<RelationOperator>(index));
-  if (ImGui::Combo("Operation", &operation, operationLabels.data(), operationCount)) {
-    pass.composite.operation = static_cast<RelationOperator>(operation);
-    resetCompositeTransform(pass.composite);
-  }
-  animationKeyControl(pass, AnimationProperty::CompositeOperation, timeline, ImGui::IsItemEdited());
+  ImGui::TextDisabled("COLOR ARITHMETIC PARAMETERS");
   if (pass.composite.operation == RelationOperator::BitwiseXor) {
     const bool bitsChanged = ImGui::SliderInt("Integer channel bits", &pass.composite.bitDepth, 1, 8);
     animationKeyControl(pass, AnimationProperty::CompositeBitDepth, timeline, bitsChanged);

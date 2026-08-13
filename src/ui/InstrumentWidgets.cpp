@@ -64,10 +64,11 @@ DirectionFieldResult directionField(const char* id, float& azimuthDegrees,
   draw->AddText(ImVec2(topLeft.x + 6.0f, topLeft.y + 5.0f), color(ImGuiCol_TextDisabled), "+90 elevation");
   draw->AddText(ImVec2(topLeft.x + 6.0f, bottomRight.y - ImGui::GetTextLineHeight() - 5.0f),
     color(ImGuiCol_TextDisabled), "-90 elevation");
-  const char* azimuthLabel = "azimuth -180                                    +180";
-  const ImVec2 labelSize = ImGui::CalcTextSize(azimuthLabel);
-  draw->AddText(ImVec2(topLeft.x + std::max(5.0f, (size.x - labelSize.x) * 0.5f),
-    bottomRight.y - ImGui::GetTextLineHeight() - 5.0f), color(ImGuiCol_TextDisabled), azimuthLabel);
+  draw->AddText(ImVec2(topLeft.x + size.x * 0.5f - 18.0f, bottomRight.y - ImGui::GetTextLineHeight() - 5.0f),
+    color(ImGuiCol_TextDisabled), "az 0");
+  const ImVec2 rightLabelSize = ImGui::CalcTextSize("+180");
+  draw->AddText(ImVec2(bottomRight.x - rightLabelSize.x - 6.0f, topLeft.y + 5.0f),
+    color(ImGuiCol_TextDisabled), "+180");
   if (hovered) ImGui::SetTooltip("Drag to aim the directional light");
   return result;
 }
@@ -166,6 +167,7 @@ UvCanvasResult uvTransformCanvas(const char* id, glm::vec2& offset,
   };
   ImDrawList* draw = ImGui::GetWindowDrawList();
   const ImVec2 bottomRight(topLeft.x + size.x, topLeft.y + size.y);
+  draw->PushClipRect(topLeft, bottomRight, true);
   draw->AddRectFilled(topLeft, bottomRight, color(ImGuiCol_FrameBg));
   for (int value = -1; value <= 2; ++value) {
     const ImVec2 vertical = toScreen(glm::vec2(static_cast<float>(value), 0.0f));
@@ -188,6 +190,7 @@ UvCanvasResult uvTransformCanvas(const char* id, glm::vec2& offset,
   draw->AddRect(topLeft, bottomRight, color(hovered ? ImGuiCol_HeaderHovered : ImGuiCol_Border));
   draw->AddText(ImVec2(topLeft.x + 6.0f, topLeft.y + 5.0f), color(ImGuiCol_TextDisabled),
     "drag: move   right-drag: rotate   wheel: scale");
+  draw->PopClipRect();
   if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
   return result;
 }
