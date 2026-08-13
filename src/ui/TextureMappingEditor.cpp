@@ -130,9 +130,11 @@ void drawTextureMappingEditor(bool& open, RenderStack& stack, AnimationTimeline&
   const UvCanvasResult canvasChanged = uvTransformCanvas("##uv-transform-canvas",
     edited.perturbation.uvOffset, edited.perturbation.uvScale,
     edited.perturbation.uvRotation, edited.perturbation.uvPivot, texturePreview);
+  ImGui::PushID("uv-canvas-animation-keys");
   animationKeyControl(edited, AnimationProperty::UvOffset, timeline, canvasChanged.offsetChanged);
   animationKeyControl(edited, AnimationProperty::UvScale, timeline, canvasChanged.scaleChanged);
   animationKeyControl(edited, AnimationProperty::UvRotation, timeline, canvasChanged.rotationChanged);
+  ImGui::PopID();
 
   ImGui::TextUnformatted("Exact transform");
   ImGui::TextUnformatted("Scale / tiling");

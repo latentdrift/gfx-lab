@@ -478,8 +478,10 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       ImGui::TextUnformatted("Directional light orientation");
       const DirectionFieldResult directionChanged = directionField("##light-direction",
         state.lighting.azimuth, state.lighting.elevation);
+      ImGui::PushID("light-direction-field-animation-keys");
       animationKeyControl(pass, AnimationProperty::LightAzimuth, timeline, directionChanged.azimuthChanged);
       animationKeyControl(pass, AnimationProperty::LightElevation, timeline, directionChanged.elevationChanged);
+      ImGui::PopID();
       ImGui::SetNextItemWidth(std::max(90.0f, ImGui::GetContentRegionAvail().x * 0.5f - 5.0f));
       const bool azimuthChanged = ImGui::DragFloat("##light-azimuth", &state.lighting.azimuth,
         0.25f, -180.0f, 180.0f, "Azimuth %.1f deg");
@@ -522,8 +524,10 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       const IntervalFieldResult cueChanged = intervalField("##depth-cue-range",
         state.lighting.depthCueStart, state.lighting.depthCueEnd, 0.0f, cueMaximum,
         "surface color", "far color");
+      ImGui::PushID("depth-cue-field-animation-keys");
       animationKeyControl(pass, AnimationProperty::DepthCueStart, timeline, cueChanged.startChanged);
       animationKeyControl(pass, AnimationProperty::DepthCueEnd, timeline, cueChanged.endChanged);
+      ImGui::PopID();
       ImGui::SetNextItemWidth(std::max(90.0f, ImGui::GetContentRegionAvail().x * 0.5f - 5.0f));
       const bool cueStartChanged = ImGui::DragFloat("##cue-start", &state.lighting.depthCueStart,
         0.01f, 0.0f, state.lighting.depthCueEnd, "Start %.2f units");
@@ -651,8 +655,10 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       const float fogMaximum = std::max(12.0f, state.post.fogEnd * 1.2f);
       const IntervalFieldResult fogChanged = intervalField("##fog-range", state.post.fogStart,
         state.post.fogEnd, 0.0f, fogMaximum, "clear", "fully fogged");
+      ImGui::PushID("fog-field-animation-keys");
       animationKeyControl(pass, AnimationProperty::FogStart, timeline, fogChanged.startChanged);
       animationKeyControl(pass, AnimationProperty::FogEnd, timeline, fogChanged.endChanged);
+      ImGui::PopID();
       ImGui::SetNextItemWidth(std::max(90.0f, ImGui::GetContentRegionAvail().x * 0.5f - 5.0f));
       const bool fogStartChanged = ImGui::DragFloat("##fog-start", &state.post.fogStart,
         0.01f, 0.0f, state.post.fogEnd, "Start %.2f units");
