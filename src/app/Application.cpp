@@ -19,6 +19,7 @@
 #include "app/PassEditing.hpp"
 #include "app/RenderStack.hpp"
 #include "app/Validation.hpp"
+#include "app/ViewportRecorder.hpp"
 #include "assets/ModelAsset.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
@@ -39,6 +40,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <utility>
 #include <vector>
@@ -138,6 +140,7 @@ int runApplication() {
   ImGui_ImplOpenGL3_Init("#version 410 core");
 
   Renderer renderer;
+  ViewportRecorder viewportRecorder;
   if (std::getenv("GRAPHICS_LAB_VALIDATE_FILE_DIALOG")) {
     const FileDialogResult dialog = openModelFileDialog();
     if (!dialog.error.empty()) fail("native model file dialog failed validation: " + dialog.error);
@@ -180,6 +183,8 @@ int runApplication() {
   };
   std::shared_ptr<const ModelAsset> importedModel;
   std::string modelImportError;
+  std::string recordingMessage;
+  bool recordingFailed = false;
   EditorHistory editorHistory(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile,
     animationTimeline, importedModel));
   const auto restoreHistory = [&](const bool redo) {
@@ -198,6 +203,13 @@ int runApplication() {
     renderer.resetFrameHistory();
     if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
   };
+
+  const char* recordingValidationPath = std::getenv("GRAPHICS_LAB_VALIDATE_RECORDING");
+  if (recordingValidationPath != nullptr) {
+    std::string validationError;
+    if (!viewportRecorder.start(recordingValidationPath, glfwGetTime(), validationError))
+      fail("viewport recording validation could not start: " + validationError);
+  }
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
@@ -262,7 +274,8 @@ int runApplication() {
     };
 
     const WorkspaceActions workspaceActions = beginWorkspace(workspaceWindows,
-      editorHistory.canUndo(), editorHistory.canRedo(), uiScale);
+      editorHistory.canUndo(), editorHistory.canRedo(), uiScale, viewportRecorder.recording(),
+      viewportRecorder.durationSeconds());
     if (workspaceActions.undo) restoreHistory(false);
     if (workspaceActions.redo) restoreHistory(true);
     if (workspaceActions.importModel) importModelFromDialog();
@@ -270,6 +283,29 @@ int runApplication() {
       const std::string exported = renderStackConfigJson(renderStack, camera, scene, hardwareProfile,
         &animationTimeline, importedModel.get());
       ImGui::SetClipboardText(exported.c_str());
+    }
+    if (workspaceActions.toggleViewportRecording) {
+      recordingMessage.clear();
+      recordingFailed = false;
+      if (viewportRecorder.recording()) {
+        const std::string outputPath = viewportRecorder.outputPath();
+        if (viewportRecorder.stop(recordingMessage))
+          recordingMessage = "Saved viewport recording to:\n" + outputPath;
+        else
+          recordingFailed = true;
+        ImGui::OpenPopup("Viewport recording");
+      } else {
+        const FileDialogResult dialog = saveViewportRecordingDialog();
+        if (!dialog.error.empty()) {
+          recordingMessage = dialog.error;
+          recordingFailed = true;
+          ImGui::OpenPopup("Viewport recording");
+        } else if (dialog.path.has_value() &&
+            !viewportRecorder.start(*dialog.path, frameTime, recordingMessage)) {
+          recordingFailed = true;
+          ImGui::OpenPopup("Viewport recording");
+        }
+      }
     }
     if (workspaceActions.resetFrameHistory) renderer.resetFrameHistory();
     if (workspaceActions.handbook) graphicsHandbook.open();
@@ -296,6 +332,13 @@ int runApplication() {
         modelImportError.clear();
         ImGui::CloseCurrentPopup();
       }
+      ImGui::EndPopup();
+    }
+    if (ImGui::BeginPopupModal("Viewport recording", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+      if (recordingFailed)
+        ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f), "Recording export failed");
+      ImGui::TextWrapped("%s", recordingMessage.c_str());
+      if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
       ImGui::EndPopup();
     }
 
@@ -336,6 +379,17 @@ int runApplication() {
     const GLuint displayedSelected = renderer.reconstructDisplay(selectedTexture, renderStack.display(), 0);
     const GLuint displayedBase = renderer.reconstructDisplay(baseTexture, renderStack.display(), 1);
     const GLuint displayedComposite = renderer.reconstructDisplay(compositeTexture, renderStack.display(), 2);
+    viewportRecorder.capture(displayedSelected, displayedBase, displayedComposite, compare, frameTime);
+    if (recordingValidationPath != nullptr && viewportRecorder.durationSeconds() >= 0.25) {
+      std::string validationError;
+      if (!viewportRecorder.stop(validationError))
+        fail("viewport recording validation could not encode: " + validationError);
+      std::error_code fileError;
+      if (std::filesystem::file_size(recordingValidationPath, fileError) < 1024 || fileError)
+        fail("viewport recording validation produced no usable MP4 file");
+      glfwSetWindowShouldClose(window, GLFW_TRUE);
+      recordingValidationPath = nullptr;
+    }
     const float viewportTime = evaluateAnimation ? animationTimeline.timeSeconds : 0.0f;
     const RenderPass viewportBefore = inspectorGlobalScope
       ? evaluateRenderPass(renderStack.global(), viewportTime)
@@ -465,6 +519,11 @@ int runApplication() {
       glfwMakeContextCurrent(primaryContext);
     }
     glfwSwapBuffers(window);
+  }
+
+  if (viewportRecorder.recording()) {
+    std::string ignoredRecordingError;
+    viewportRecorder.stop(ignoredRecordingError);
   }
 
   ImGui_ImplOpenGL3_Shutdown();

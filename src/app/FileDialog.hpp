@@ -12,5 +12,6 @@ struct FileDialogResult {
 
 [[nodiscard]] FileDialogResult openModelFileDialog();
 [[nodiscard]] FileDialogResult openTextureFileDialog();
+[[nodiscard]] FileDialogResult saveViewportRecordingDialog();
 
 } // namespace gfxlab

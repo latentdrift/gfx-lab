@@ -33,6 +33,7 @@ struct WorkspaceActions {
   bool redo = false;
   bool importModel = false;
   bool copyJson = false;
+  bool toggleViewportRecording = false;
   bool handbook = false;
   bool resetFrameHistory = false;
   bool quit = false;
@@ -56,7 +57,8 @@ struct ViewportWindowResult {
   bool gizmoUsing = false;
 };
 
-WorkspaceActions beginWorkspace(WorkspaceWindows& windows, bool canUndo, bool canRedo, float& uiScale);
+WorkspaceActions beginWorkspace(WorkspaceWindows& windows, bool canUndo, bool canRedo, float& uiScale,
+  bool viewportRecording, double recordingDurationSeconds);
 SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile& profile,
   const ModelAsset* importedModel);
 void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& timeline,

@@ -38,4 +38,23 @@ FileDialogResult openTextureFileDialog() {
   return openFileDialog(filters, 5);
 }
 
+FileDialogResult saveViewportRecordingDialog() {
+  if (NFD_Init() != NFD_OKAY) return {std::nullopt, NFD_GetError()};
+  const nfdu8filteritem_t filters[] = {{"MP4 video", "mp4"}};
+  nfdu8char_t* selectedPath = nullptr;
+  const nfdresult_t result = NFD_SaveDialogU8(&selectedPath, filters, 1, nullptr,
+    "graphics-lab-recording.mp4");
+  FileDialogResult dialog;
+  if (result == NFD_OKAY) {
+    dialog.path = std::string(selectedPath);
+    if (dialog.path->size() < 4 || dialog.path->substr(dialog.path->size() - 4) != ".mp4")
+      *dialog.path += ".mp4";
+    NFD_FreePathU8(selectedPath);
+  } else if (result == NFD_ERROR) {
+    dialog.error = NFD_GetError();
+  }
+  NFD_Quit();
+  return dialog;
+}
+
 } // namespace gfxlab

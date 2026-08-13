@@ -13,6 +13,7 @@ find_package(imgui REQUIRED)
 find_package(assimp REQUIRED)
 find_package(nfd REQUIRED)
 find_package(ZLIB REQUIRED)
+find_program(GRAPHICS_LAB_FFMPEG_EXECUTABLE ffmpeg REQUIRED)
 
 add_executable(graphics-lab
   src/main.cpp
@@ -26,6 +27,7 @@ add_executable(graphics-lab
   src/app/RenderStack.cpp
   src/app/State.cpp
   src/app/Validation.cpp
+  src/app/ViewportRecorder.cpp
   src/handbook/Handbook.cpp
   src/renderer/Renderer.cpp
   src/renderer/TestGeometry.cpp
@@ -50,6 +52,8 @@ target_sources(graphics-lab PRIVATE "${GRAPHICS_LAB_IMGUIZMO_SOURCE}/src/ImGuizm
 target_include_directories(graphics-lab PRIVATE src)
 target_include_directories(graphics-lab SYSTEM PRIVATE "${GRAPHICS_LAB_IMGUIZMO_SOURCE}/src")
 target_compile_features(graphics-lab PRIVATE cxx_std_20)
+target_compile_definitions(graphics-lab PRIVATE
+  GRAPHICS_LAB_FFMPEG_EXECUTABLE="${GRAPHICS_LAB_FFMPEG_EXECUTABLE}")
 target_link_libraries(graphics-lab PRIVATE
   OpenGL::GL
   GLEW::GLEW

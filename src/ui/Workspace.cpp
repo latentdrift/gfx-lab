@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <string>
 
 namespace gfxlab::ui {
@@ -77,7 +78,7 @@ void windowMenu(WorkspaceWindows& windows) {
 } // namespace
 
 WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, const bool canRedo,
-    float& uiScale) {
+    float& uiScale, const bool viewportRecording, const double recordingDurationSeconds) {
   WorkspaceActions actions;
   if (ImGui::BeginMainMenuBar()) {
     if (ImGui::BeginMenu("File")) {
@@ -115,6 +116,20 @@ WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, c
     if (ImGui::BeginMenu("Help")) {
       if (ImGui::MenuItem("Graphics Handbook")) actions.handbook = true;
       ImGui::EndMenu();
+    }
+    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+    if (viewportRecording) {
+      ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.48f, 0.12f, 0.10f, 1.0f));
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.62f, 0.16f, 0.13f, 1.0f));
+      ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.72f, 0.20f, 0.16f, 1.0f));
+      std::array<char, 64> label{};
+      std::snprintf(label.data(), label.size(), "Stop Recording  %02d:%02d",
+        static_cast<int>(recordingDurationSeconds) / 60,
+        static_cast<int>(recordingDurationSeconds) % 60);
+      if (ImGui::Button(label.data())) actions.toggleViewportRecording = true;
+      ImGui::PopStyleColor(3);
+    } else if (ImGui::Button("Record Viewport")) {
+      actions.toggleViewportRecording = true;
     }
     ImGui::EndMainMenuBar();
   }

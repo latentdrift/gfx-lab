@@ -38,7 +38,7 @@
                 );
             };
 
-            nativeBuildInputs = with pkgs; [ cmake ninja pkg-config wrapGAppsHook3 ];
+            nativeBuildInputs = with pkgs; [ cmake ninja pkg-config wrapGAppsHook3 ffmpeg ];
             buildInputs = with pkgs; [
               glew
               glfw
@@ -51,6 +51,7 @@
               gtk3
               gsettings-desktop-schemas
               libGL
+              ffmpeg
               libice
               libsm
               libx11
@@ -88,6 +89,7 @@
               gtk3
               gsettings-desktop-schemas
               libGL
+              ffmpeg
             ];
           };
         });
