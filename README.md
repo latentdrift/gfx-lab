@@ -69,6 +69,7 @@ src/
 - Mouse wheel: zoom
 - Undo: Ctrl+Z
 - Redo: Ctrl+Shift+Z or Ctrl+Y
+- Play/pause animation: Space
 
 Graphics Lab uses a persistent dockable workspace rather than one fixed application page. **Scene**, **Render Passes**, **Pass Properties**, **Viewport**, every rendering-pipeline category, **Texture Mapping**, **Display Reconstruction**, **Animation Timeline**, and **Pass Differences** are independent tool windows. The pipeline, mapping, and final-display tools begin as tabs in one dock node; tear out or rearrange the tools needed for an experiment and manage them under **Window**. **Window → Restore Default Layout** rebuilds the supplied compact workspace. ImGui saves subsequent window and docking changes between runs.
 

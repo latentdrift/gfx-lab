@@ -287,6 +287,7 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
   ImGui::TextDisabled(globalScope ? "GLOBAL ANIMATION" : "LOCAL PASS ANIMATION");
   ImGui::SameLine();
   if (ImGui::Button(timeline.playing ? "Pause" : "Play")) timeline.playing = !timeline.playing;
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("Space");
   ImGui::SameLine();
   if (ImGui::Button("Stop")) { timeline.playing = false; timeline.timeSeconds = 0.0f; }
   ImGui::SameLine();

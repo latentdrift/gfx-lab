@@ -225,6 +225,9 @@ int runApplication() {
         ImGui::IsKeyPressed(ImGuiKey_KeypadAdd, false))) stepUiScale(uiScale, 1);
     if (!io.WantTextInput && commandModifier && ImGui::IsKeyPressed(ImGuiKey_Minus, false))
       stepUiScale(uiScale, -1);
+    if (!io.WantTextInput && !commandModifier && !ImGui::IsAnyItemActive() &&
+        ImGui::IsKeyPressed(ImGuiKey_Space, false))
+      animationTimeline.playing = !animationTimeline.playing;
     if (viewportHovered) {
       if (viewportAcceptsCameraInput && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
         camera.yaw -= io.MouseDelta.x * 0.008f;
