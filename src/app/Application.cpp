@@ -154,8 +154,15 @@ int runApplication() {
     if (std::abs(evaluatedAnimation.selected().perturbation.modelTranslation.x - 1.0f) > 0.0001f ||
         std::abs(evaluatedAnimation.selected().composite.gain - 3.0f) > 0.0001f ||
         !removePropertyKeyframe(animationValidation.selected(), AnimationProperty::ModelTranslation, 2.0f) ||
-        findPropertyTrack(animationValidation.selected(), AnimationProperty::CompositeGain) == nullptr)
+        findPropertyTrack(animationValidation.selected(), AnimationProperty::CompositeGain) == nullptr ||
+        animationValidation.selected().animation.tracks.size() != 2)
       fail("render-pass keyframe interpolation failed validation");
+    PropertyAnimationTrack* gainTrack = findPropertyTrack(animationValidation.selected(),
+      AnimationProperty::CompositeGain);
+    gainTrack->interpolation = KeyframeInterpolation::Step;
+    if (std::abs(evaluateRenderStack(animationValidation, 1.0f).selected().composite.gain - 1.0f) > 0.0001f ||
+        !propertyHasKeyAt(animationValidation.selected(), AnimationProperty::CompositeGain, 2.0f))
+      fail("independent property tracks or step interpolation failed validation");
     AnimationTimeline timelineValidation;
     timelineValidation.durationSeconds = 2.0f;
     timelineValidation.timeSeconds = 1.5f;
@@ -233,6 +240,7 @@ int runApplication() {
         stackConfig.find("\"perturbation\"") == std::string::npos ||
         stackConfig.find("\"composite_into_previous\"") == std::string::npos ||
         stackConfig.find("\"animation\"") == std::string::npos ||
+        stackConfig.find("\"property_tracks\"") == std::string::npos ||
         stackConfig.find("\"imported_model\"") == std::string::npos)
       fail("render-pass stack missing from config export");
     constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,

@@ -38,7 +38,6 @@ void drawTrackRow(AnimationTimeline& timeline, RenderStack& stack, const std::si
     PropertyAnimationTrack& track, const float labelWidth) {
   RenderPass& pass = stack.passes()[passIndex];
   const AnimationPropertyInfo& info = animationPropertyInfo(track.property);
-  const ImVec2 rowStart = ImGui::GetCursorScreenPos();
   const float rowWidth = ImGui::GetContentRegionAvail().x;
   const float trackWidth = std::max(80.0f, rowWidth - labelWidth);
   ImGui::TextUnformatted(info.label.data());
@@ -59,7 +58,7 @@ void drawTrackRow(AnimationTimeline& timeline, RenderStack& stack, const std::si
     const float normalized = timeline.durationSeconds > 0.0f ? key.timeSeconds / timeline.durationSeconds : 0.0f;
     const ImVec2 center(areaMinimum.x + std::clamp(normalized, 0.0f, 1.0f) * trackWidth, centerY);
     const bool isSelected = selected(passIndex, track.property, key.timeSeconds);
-    const ImU32 color = propertyHasKeyAt(pass, track.property, timeline.timeSeconds)
+    const ImU32 color = std::abs(key.timeSeconds - timeline.timeSeconds) <= 0.0001f
       ? IM_COL32(245, 187, 72, 255) : IM_COL32(127, 183, 213, 255);
     drawDiamond(draw, center, color, isSelected);
     const glm::vec2 delta(ImGui::GetIO().MousePos.x - center.x, ImGui::GetIO().MousePos.y - center.y);
@@ -85,7 +84,6 @@ void drawTrackRow(AnimationTimeline& timeline, RenderStack& stack, const std::si
   }
   ImGui::PopID();
   ImGui::PopID();
-  static_cast<void>(rowStart);
 }
 
 void drawSelectedKeyEditor(AnimationTimeline& timeline, RenderStack& stack) {
