@@ -759,6 +759,9 @@ public:
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, imageB);
     glUniform1i(glGetUniformLocation(relationProgram_, "uImageB"), 1);
+    glUniform1i(glGetUniformLocation(relationProgram_, "uSourceAMode"), static_cast<int>(step.sourceA));
+    glUniform1i(glGetUniformLocation(relationProgram_, "uSourceBMode"), static_cast<int>(step.sourceB));
+    glUniform4fv(glGetUniformLocation(relationProgram_, "uFixedColor"), 1, glm::value_ptr(step.fixedColor));
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, maskDepth);
     glUniform1i(glGetUniformLocation(relationProgram_, "uMaskDepth"), 2);
@@ -798,7 +801,26 @@ public:
         accumulated = passTexture;
         continue;
       }
-      accumulated = compositeTextures(accumulated, passTexture, passTargets_[passIndex].depthTexture,
+      const auto sourceTexture = [&](const CompositeSource source, const int sourcePass) {
+        switch (source) {
+        case CompositeSource::Accumulator: return accumulated;
+        case CompositeSource::CurrentPass: return passTexture;
+        case CompositeSource::RenderPass: {
+          const std::size_t index = static_cast<std::size_t>(std::clamp(sourcePass, 0,
+            static_cast<int>(stack.passes().size()) - 1));
+          return passTargets_[index].outputTexture;
+        }
+        case CompositeSource::FixedColor: return passTexture;
+        }
+        return passTexture;
+      };
+      const GLuint imageA = sourceTexture(pass.composite.sourceA, pass.composite.sourceAPass);
+      const GLuint imageB = sourceTexture(pass.composite.sourceB, pass.composite.sourceBPass);
+      std::size_t maskPassIndex = passIndex;
+      if (pass.composite.sourceB == CompositeSource::RenderPass)
+        maskPassIndex = static_cast<std::size_t>(std::clamp(pass.composite.sourceBPass, 0,
+          static_cast<int>(stack.passes().size()) - 1));
+      accumulated = compositeTextures(imageA, imageB, passTargets_[maskPassIndex].depthTexture,
         pass.renderer, pass.composite, compositeIndex++);
     }
     return accumulated;

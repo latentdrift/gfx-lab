@@ -438,6 +438,9 @@ inline constexpr const char* relationFragmentShader = R"GLSL(
 in vec2 vUv;
 uniform sampler2D uImageA;
 uniform sampler2D uImageB;
+uniform int uSourceAMode;
+uniform int uSourceBMode;
+uniform vec4 uFixedColor;
 uniform int uOperator;
 uniform float uGain;
 uniform float uBias;
@@ -456,8 +459,8 @@ vec3 signedPow(vec3 value, float exponent) {
 }
 
 void main() {
-  vec3 storedA = texture(uImageA, vUv).rgb;
-  vec3 storedB = texture(uImageB, vUv).rgb;
+  vec3 storedA = uSourceAMode == 3 ? uFixedColor.rgb : texture(uImageA, vUv).rgb;
+  vec3 storedB = uSourceBMode == 3 ? uFixedColor.rgb : texture(uImageB, vUv).rgb;
   vec3 a = uColorSpace == 1 ? signedPow(storedA, 2.2) : storedA;
   vec3 b = uColorSpace == 1 ? signedPow(storedB, 2.2) : storedB;
   vec3 relation;
@@ -472,7 +475,13 @@ void main() {
   else if (uOperator == 8) relation = max(a, b);
   else if (uOperator == 9) relation = a * (1.0 - b);
   else if (uOperator == 10) relation = a + b - 1.0;
-  else relation = a / max(b, vec3(1.0 / 255.0)) - 1.0;
+  else if (uOperator == 11) relation = a / max(b, vec3(1.0 / 255.0)) - 1.0;
+  else if (uOperator == 12) relation = a + b;
+  else if (uOperator == 13) relation = (a + b) * 0.5;
+  else if (uOperator == 14) relation = a - b;
+  else if (uOperator == 15) relation = b - a;
+  else if (uOperator == 16) relation = a + b * 0.25;
+  else relation = a + b - 0.5;
   relation = relation * uGain + uBias;
   if (uRangeMode == 0) relation = clamp(relation, 0.0, 1.0);
   else if (uRangeMode == 2) relation = fract(relation);

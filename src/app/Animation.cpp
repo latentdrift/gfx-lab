@@ -45,7 +45,12 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   CONT("composite_gain", "Composite gain", "Composite", 1, K::Float, 0, 16),
   CONT("composite_bias", "Composite bias", "Composite", 1, K::Float, -1, 1),
   CONT("composite_opacity", "Composite opacity", "Composite", 1, K::Float, 0, 1),
-  STEP("composite_operation", "Composite operation", "Composite", K::Enumeration, 0, 11),
+  STEP("composite_operation", "Composite operation", "Composite", K::Enumeration, 0, 17),
+  STEP("composite_source_a", "Composite source A", "Composite operands", K::Enumeration, 0, 3),
+  STEP("composite_source_b", "Composite source B", "Composite operands", K::Enumeration, 0, 3),
+  STEP("composite_source_a_pass", "Source A render pass", "Composite operands", K::Integer, 0, 7),
+  STEP("composite_source_b_pass", "Source B render pass", "Composite operands", K::Integer, 0, 7),
+  CONT("composite_fixed_color", "Composite fixed color", "Composite operands", 4, K::Color4, 0, 1),
   STEP("composite_color_space", "Composite color space", "Composite", K::Enumeration, 0, 1),
   STEP("composite_range", "Composite range", "Composite", K::Enumeration, 0, 2),
   STEP("composite_mask", "Composite mask", "Composite", K::Enumeration, 0, 3),
@@ -202,7 +207,9 @@ const char* animationPropertyDiscreteValueLabel(const AnimationProperty property
   switch (property) {
   case AnimationProperty::PassOutput: { constexpr std::array labels = {"Color", "Linear depth", "Normals", "Vertex colors"}; return label(labels); }
   case AnimationProperty::TextureSource: { constexpr std::array labels = {"Scene material", "Built-in checker", "Imported override", "White texel"}; return label(labels); }
-  case AnimationProperty::CompositeOperation: return value >= 0 && value <= 11 ? relationOperatorLabel(static_cast<RelationOperator>(value)) : nullptr;
+  case AnimationProperty::CompositeOperation: return value >= 0 && value <= 17 ? relationOperatorLabel(static_cast<RelationOperator>(value)) : nullptr;
+  case AnimationProperty::CompositeSourceA:
+  case AnimationProperty::CompositeSourceB: { constexpr std::array labels = {"Accumulated result", "Current pass", "Render pass", "Fixed color"}; return label(labels); }
   case AnimationProperty::CompositeColorSpace: { constexpr std::array labels = {"Encoded RGB", "Linear light"}; return label(labels); }
   case AnimationProperty::CompositeRange: { constexpr std::array labels = {"Clamp 0..1", "Preserve signed/HDR", "Wrap fractional"}; return label(labels); }
   case AnimationProperty::CompositeMask: { constexpr std::array labels = {"None", "Pass luminance", "Pass depth", "Pass edges"}; return label(labels); }
@@ -250,6 +257,11 @@ glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty
   case AnimationProperty::CompositeBias: return glm::vec4(pass.composite.bias);
   case AnimationProperty::CompositeOpacity: return glm::vec4(pass.composite.opacity);
   case AnimationProperty::CompositeOperation: return glm::vec4(static_cast<float>(pass.composite.operation));
+  case AnimationProperty::CompositeSourceA: return glm::vec4(static_cast<float>(pass.composite.sourceA));
+  case AnimationProperty::CompositeSourceB: return glm::vec4(static_cast<float>(pass.composite.sourceB));
+  case AnimationProperty::CompositeSourceAPass: return glm::vec4(pass.composite.sourceAPass);
+  case AnimationProperty::CompositeSourceBPass: return glm::vec4(pass.composite.sourceBPass);
+  case AnimationProperty::CompositeFixedColor: return pass.composite.fixedColor;
   case AnimationProperty::CompositeColorSpace: return glm::vec4(static_cast<float>(pass.composite.colorSpace));
   case AnimationProperty::CompositeRange: return glm::vec4(static_cast<float>(pass.composite.range));
   case AnimationProperty::CompositeMask: return glm::vec4(static_cast<float>(pass.composite.mask));
@@ -370,6 +382,11 @@ void setAnimationPropertyValue(RenderPass& pass, const AnimationProperty propert
   case AnimationProperty::CompositeBias: pass.composite.bias = value.x; break;
   case AnimationProperty::CompositeOpacity: pass.composite.opacity = value.x; break;
   case AnimationProperty::CompositeOperation: pass.composite.operation = static_cast<RelationOperator>(static_cast<int>(std::round(value.x))); break;
+  case AnimationProperty::CompositeSourceA: pass.composite.sourceA = static_cast<CompositeSource>(static_cast<int>(std::round(value.x))); break;
+  case AnimationProperty::CompositeSourceB: pass.composite.sourceB = static_cast<CompositeSource>(static_cast<int>(std::round(value.x))); break;
+  case AnimationProperty::CompositeSourceAPass: pass.composite.sourceAPass = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::CompositeSourceBPass: pass.composite.sourceBPass = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::CompositeFixedColor: pass.composite.fixedColor = value; break;
   case AnimationProperty::CompositeColorSpace: pass.composite.colorSpace = static_cast<CompositeColorSpace>(static_cast<int>(std::round(value.x))); break;
   case AnimationProperty::CompositeRange: pass.composite.range = static_cast<CompositeRange>(static_cast<int>(std::round(value.x))); break;
   case AnimationProperty::CompositeMask: pass.composite.mask = static_cast<CompositeMask>(static_cast<int>(std::round(value.x))); break;

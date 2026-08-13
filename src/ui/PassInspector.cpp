@@ -87,9 +87,45 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
 
   ImGui::Spacing();
   ImGui::Separator();
-  ImGui::TextDisabled("COMPOSITE INTO PREVIOUS RESULT");
+  ImGui::TextDisabled("COMPOSITE OPERANDS");
+  constexpr const char* sourceLabels[] = {"Accumulated result", "Current pass", "Render pass", "Fixed color"};
+  const auto sourceControl = [&](const char* label, CompositeSource& source, int& sourcePass,
+      const AnimationProperty sourceProperty, const AnimationProperty passProperty) {
+    int selectedSource = static_cast<int>(source);
+    const bool sourceChanged = ImGui::Combo(label, &selectedSource, sourceLabels, 4);
+    if (sourceChanged) source = static_cast<CompositeSource>(selectedSource);
+    animationKeyControl(pass, sourceProperty, timeline, sourceChanged);
+    if (source != CompositeSource::RenderPass) return;
+    std::array<const char*, RenderStack::maximumPasses> passLabels{};
+    for (std::size_t index = 0; index < stack.passes().size(); ++index)
+      passLabels[index] = stack.passes()[index].name.c_str();
+    sourcePass = std::clamp(sourcePass, 0, static_cast<int>(stack.passes().size()) - 1);
+    ImGui::Indent();
+    const bool passChanged = ImGui::Combo("Render pass", &sourcePass, passLabels.data(),
+      static_cast<int>(stack.passes().size()));
+    animationKeyControl(pass, passProperty, timeline, passChanged);
+    ImGui::Unindent();
+  };
+  ImGui::PushID("source-a");
+  sourceControl("Source A", pass.composite.sourceA, pass.composite.sourceAPass,
+    AnimationProperty::CompositeSourceA, AnimationProperty::CompositeSourceAPass);
+  ImGui::PopID();
+  ImGui::PushID("source-b");
+  sourceControl("Source B", pass.composite.sourceB, pass.composite.sourceBPass,
+    AnimationProperty::CompositeSourceB, AnimationProperty::CompositeSourceBPass);
+  ImGui::PopID();
+  if (pass.composite.sourceA == CompositeSource::FixedColor ||
+      pass.composite.sourceB == CompositeSource::FixedColor) {
+    const bool colorChanged = ImGui::ColorEdit4("Fixed color", &pass.composite.fixedColor.x,
+      ImGuiColorEditFlags_Float);
+    animationKeyControl(pass, AnimationProperty::CompositeFixedColor, timeline, colorChanged);
+  }
+  description("A and B are independent inputs. A render-pass source reads that pass's raw output, not its composited result.");
+
+  ImGui::Spacing();
+  ImGui::TextDisabled("COLOR ARITHMETIC");
   int operation = static_cast<int>(pass.composite.operation);
-  constexpr int operationCount = static_cast<int>(RelationOperator::RelativeDifference) + 1;
+  constexpr int operationCount = static_cast<int>(RelationOperator::SignedColorOffset) + 1;
   std::array<const char*, operationCount> operationLabels{};
   for (int index = 0; index < operationCount; ++index)
     operationLabels[static_cast<std::size_t>(index)] = relationOperatorLabel(static_cast<RelationOperator>(index));

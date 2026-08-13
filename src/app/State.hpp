@@ -67,6 +67,12 @@ enum class RelationOperator {
   ANotB,
   CenteredSum,
   RelativeDifference,
+  Add,
+  Average,
+  HardwareSubtract,
+  HardwareReverseSubtract,
+  QuarterAdd,
+  SignedColorOffset,
 };
 enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask, ImportedModel };
 
