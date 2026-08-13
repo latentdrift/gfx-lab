@@ -66,6 +66,8 @@ bool animationPropertyIsPassLocal(const AnimationProperty property) {
   case AnimationProperty::CompositeSourceB:
   case AnimationProperty::CompositeSourceAPass:
   case AnimationProperty::CompositeSourceBPass:
+  case AnimationProperty::CompositeInterpretationA:
+  case AnimationProperty::CompositeInterpretationB:
   case AnimationProperty::CompositeFixedColor:
   case AnimationProperty::CompositeBitDepth:
   case AnimationProperty::CompositeHistoryDecay:
@@ -431,7 +433,12 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
          << "\", \"source_a\": {\"type\": \"" << sourceIds[static_cast<int>(c.sourceA)]
          << "\", \"pass_id\": " << c.sourceAPassId << "}, \"source_b\": {\"type\": \""
          << sourceIds[static_cast<int>(c.sourceB)] << "\", \"pass_id\": " << c.sourceBPassId
-         << "}, \"fixed_color_rgba\": [" << c.fixedColor.r << ", " << c.fixedColor.g << ", "
+         << "}, \"interpretation_a\": \"";
+    constexpr std::array<const char*, 8> interpretationIds = {"raw_rgb", "l_cone", "m_cone", "s_cone",
+      "cone_luminance", "rod", "red_green_opponent", "blue_yellow_opponent"};
+    json << interpretationIds[static_cast<int>(c.interpretationA)] << "\", \"interpretation_b\": \""
+         << interpretationIds[static_cast<int>(c.interpretationB)]
+         << "\", \"fixed_color_rgba\": [" << c.fixedColor.r << ", " << c.fixedColor.g << ", "
          << c.fixedColor.b << ", " << c.fixedColor.a << "]"
          << ", \"bit_depth\": " << c.bitDepth << ", \"previous_frame\": {\"decay\": " << c.historyDecay
          << ", \"uv_offset\": [" << c.historyUvOffset.x << ", " << c.historyUvOffset.y

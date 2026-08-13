@@ -163,6 +163,8 @@ void parseComposite(const Json& source, CompositeStep& composite) {
     "previous_frame", "render_pass_field"};
   constexpr std::array colorSpaceIds = {"encoded_rgb", "linear_light"};
   constexpr std::array rangeIds = {"clamp_0_to_1", "preserve_signed_hdr", "wrap_fractional_part"};
+  constexpr std::array interpretationIds = {"raw_rgb", "l_cone", "m_cone", "s_cone", "cone_luminance",
+    "rod", "red_green_opponent", "blue_yellow_opponent"};
   constexpr std::array maskIds = {"none", "pass_luminance", "pass_depth_0_to_10_units", "pass_image_edges",
     "pass_field"};
   const std::string operationId = source.value("operation", "absolute_difference");
@@ -182,6 +184,10 @@ void parseComposite(const Json& source, CompositeStep& composite) {
     composite.sourceBPassId = operand.value("pass_id", composite.sourceBPassId);
   }
   if (source.contains("fixed_color_rgba")) composite.fixedColor = vectorValue(source.at("fixed_color_rgba"), 4);
+  composite.interpretationA = enumFromId(source.value("interpretation_a", "raw_rgb"), interpretationIds,
+    CompositeInterpretation::RawRgb);
+  composite.interpretationB = enumFromId(source.value("interpretation_b", "raw_rgb"), interpretationIds,
+    CompositeInterpretation::RawRgb);
   composite.bitDepth = std::clamp(source.value("bit_depth", composite.bitDepth), 1, 8);
   if (source.contains("previous_frame") && source.at("previous_frame").is_object()) {
     const Json& history = source.at("previous_frame");

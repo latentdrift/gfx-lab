@@ -91,6 +91,12 @@ specular disagreement, and monocular occlusion. Reduce composite gain to inspect
 the convergence distance to move the zero-disparity plane, or switch the second pass to signed difference with
 a `0.5` bias to retain disparity direction.
 
+[`single-world-cone-rod-xor.json`](examples/single-world-cone-rod-xor.json) demonstrates observer inputs at the
+composite boundary. Both operands read the exact same raw render pass; A measures approximate cone luminance,
+B measures approximate rod response, and the compositor XORs their five-bit measurements. Change either
+operand interpretation to L, M, S, rod, cone luminance, or centered opponent response without duplicating or
+rerendering the scene. These are explicit RGB-derived observer approximations, not spectral measurements.
+
 Graphics Lab uses a persistent dockable workspace rather than one fixed application page. **Scene**, **Render Passes**, **Pass Properties**, **Viewport**, every rendering-pipeline category, **Texture Mapping**, **Display Reconstruction**, **Animation Timeline**, and **Pass Differences** are independent tool windows. The pipeline, mapping, and final-display tools begin as tabs in one dock node; tear out or rearrange the tools needed for an experiment and manage them under **Window**. **Window → Restore Default Layout** rebuilds the supplied compact workspace. ImGui saves subsequent window and docking changes between runs.
 
 Use **View → UI Scale** to resize text, controls, spacing, tabs, and interaction targets together from 75% to

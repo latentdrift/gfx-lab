@@ -341,6 +341,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         stackConfig.find("\"composite_into_previous\"") == std::string::npos ||
         stackConfig.find("\"source_a\"") == std::string::npos ||
         stackConfig.find("\"pass_id\"") == std::string::npos ||
+        stackConfig.find("\"interpretation_a\"") == std::string::npos ||
+        stackConfig.find("\"interpretation_b\"") == std::string::npos ||
         stackConfig.find("\"fixed_color_rgba\"") == std::string::npos ||
         stackConfig.find("\"previous_frame\"") == std::string::npos ||
         stackConfig.find("\"display_reconstruction\"") == std::string::npos ||
@@ -420,6 +422,51 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         binocularDocument.document->camera, binocularDocument.document->scene, passIndex);
     if (renderer.composite(binocularDocument.document->renderStack) == 0)
       fail("binocular disparity example failed render validation");
+    StackDocumentLoadResult observerOperandDocument =
+      loadStackDocumentFile("examples/single-world-cone-rod-xor.json");
+    if (!observerOperandDocument || observerOperandDocument.document->renderStack.passes().size() != 2 ||
+        observerOperandDocument.document->renderStack.passes()[1].composite.sourceA !=
+          CompositeSource::RenderPass ||
+        observerOperandDocument.document->renderStack.passes()[1].composite.sourceAPassId != 1 ||
+        observerOperandDocument.document->renderStack.passes()[1].composite.sourceBPassId != 1 ||
+        observerOperandDocument.document->renderStack.passes()[1].composite.interpretationA !=
+          CompositeInterpretation::ConeLuminance ||
+        observerOperandDocument.document->renderStack.passes()[1].composite.interpretationB !=
+          CompositeInterpretation::RodResponse ||
+        observerOperandDocument.document->renderStack.passes()[1].composite.operation !=
+          RelationOperator::BitwiseXor)
+      fail("observer-operand example failed document loading validation");
+    for (std::size_t passIndex = 0;
+         passIndex < observerOperandDocument.document->renderStack.passes().size(); ++passIndex)
+      renderer.renderPass(materializeRenderPass(observerOperandDocument.document->renderStack, passIndex),
+        observerOperandDocument.document->camera, observerOperandDocument.document->scene, passIndex);
+    for (int interpretation = static_cast<int>(CompositeInterpretation::RawRgb);
+         interpretation <= static_cast<int>(CompositeInterpretation::BlueYellowOpponent); ++interpretation) {
+      observerOperandDocument.document->renderStack.passes()[1].composite.interpretationA =
+        static_cast<CompositeInterpretation>(interpretation);
+      observerOperandDocument.document->renderStack.passes()[1].composite.interpretationB =
+        static_cast<CompositeInterpretation>(interpretation);
+      if (renderer.composite(observerOperandDocument.document->renderStack) == 0)
+        fail("composite observer interpretation failed render validation");
+    }
+    observerOperandDocument.document->renderStack.passes()[1].composite.interpretationA =
+      CompositeInterpretation::ConeLuminance;
+    observerOperandDocument.document->renderStack.passes()[1].composite.interpretationB =
+      CompositeInterpretation::RodResponse;
+    const std::string observerRoundTripJson = renderStackConfigJson(
+      observerOperandDocument.document->renderStack, observerOperandDocument.document->camera,
+      observerOperandDocument.document->scene, observerOperandDocument.document->hardwareProfile,
+      &observerOperandDocument.document->timeline);
+    if (!saveStackDocumentFile(roundTripPath.string(), observerRoundTripJson, documentIoError))
+      fail("observer-operand document save validation failed: " + documentIoError);
+    const StackDocumentLoadResult observerRoundTrip = loadStackDocumentFile(roundTripPath.string());
+    std::filesystem::remove(roundTripPath, removeError);
+    if (!observerRoundTrip ||
+        observerRoundTrip.document->renderStack.passes()[1].composite.interpretationA !=
+          CompositeInterpretation::ConeLuminance ||
+        observerRoundTrip.document->renderStack.passes()[1].composite.interpretationB !=
+          CompositeInterpretation::RodResponse)
+      fail("composite observer interpretations failed JSON round-trip validation");
     constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,
       handbook::Example::AffineMapping, handbook::Example::TextureMinification, handbook::Example::NormalMapping,
       handbook::Example::LightingInterpolation, handbook::Example::DepthPrecision, handbook::Example::Transparency,

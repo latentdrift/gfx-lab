@@ -42,11 +42,12 @@ const char* compactSourceLabel(const CompositeSource source) {
 struct SourceNodeResult {
   bool sourceChanged{false};
   bool passChanged{false};
+  bool interpretationChanged{false};
   float anchorScreenY{0.0f};
 };
 
 SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& source,
-    int& sourcePassId, RenderStack& stack) {
+    int& sourcePassId, CompositeInterpretation& interpretation, RenderStack& stack) {
   SourceNodeResult result;
   ImGui::PushID(id);
   const float width = ImGui::GetContentRegionAvail().x;
@@ -87,6 +88,15 @@ SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& 
     }
     ImGui::EndPopup();
   }
+  constexpr const char* interpretationLabels[] = {"Raw RGB", "L cone response", "M cone response",
+    "S cone response", "Cone luminance", "Rod response", "Red-green opponent (centered)",
+    "Blue-yellow opponent (centered)"};
+  int interpretationIndex = static_cast<int>(interpretation);
+  ImGui::SetNextItemWidth(-1.0f);
+  result.interpretationChanged = ImGui::Combo("##interpretation", &interpretationIndex,
+    interpretationLabels, 8);
+  if (result.interpretationChanged)
+    interpretation = static_cast<CompositeInterpretation>(interpretationIndex);
   ImGui::PopID();
   return result;
 }
@@ -211,18 +221,22 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
   if (ImGui::BeginTable("composite-inputs", 2, ImGuiTableFlags_SizingStretchSame)) {
     ImGui::TableNextColumn();
     const SourceNodeResult sourceAChanged = sourceNode("source-a", "A", pass.composite.sourceA,
-      pass.composite.sourceAPassId, stack);
+      pass.composite.sourceAPassId, pass.composite.interpretationA, stack);
     animationKeyControlAt(pass, AnimationProperty::CompositeSourceA, timeline,
       sourceAChanged.sourceChanged, sourceAChanged.anchorScreenY + 3.0f);
     animationKeyControlAt(pass, AnimationProperty::CompositeSourceAPass, timeline,
       sourceAChanged.passChanged, sourceAChanged.anchorScreenY + 25.0f);
+    animationKeyControl(pass, AnimationProperty::CompositeInterpretationA, timeline,
+      sourceAChanged.interpretationChanged);
     ImGui::TableNextColumn();
     const SourceNodeResult sourceBChanged = sourceNode("source-b", "B", pass.composite.sourceB,
-      pass.composite.sourceBPassId, stack);
+      pass.composite.sourceBPassId, pass.composite.interpretationB, stack);
     animationKeyControlAt(pass, AnimationProperty::CompositeSourceB, timeline,
       sourceBChanged.sourceChanged, sourceBChanged.anchorScreenY + 3.0f);
     animationKeyControlAt(pass, AnimationProperty::CompositeSourceBPass, timeline,
       sourceBChanged.passChanged, sourceBChanged.anchorScreenY + 25.0f);
+    animationKeyControl(pass, AnimationProperty::CompositeInterpretationB, timeline,
+      sourceBChanged.interpretationChanged);
     ImGui::EndTable();
   }
   centeredText("A + B feed");
@@ -249,7 +263,18 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
         0.25f, 4.0f, "%.4f"));
     description("Previous frame reads the last completed composite. Decay is applied before color arithmetic.");
   }
-  description("A and B are independent inputs. A render-pass source reads that pass's raw output. A named pass field reads its dedicated scalar field buffer, not its color image.");
+  description("A and B independently choose both a signal source and an interpretation. Receptor interpretations measure encoded RGB through an approximate observer before arithmetic. A named pass field remains a dedicated scalar field buffer rather than material color.");
+  if (pass.composite.interpretationA != CompositeInterpretation::RawRgb ||
+      pass.composite.interpretationB != CompositeInterpretation::RawRgb) {
+    DisplayReconstructionState& observer = stack.display();
+    ImGui::SeparatorText("RGB OBSERVER APPROXIMATION");
+    ImGui::SliderFloat("Receptor exposure", &observer.observerExposureStops, -6.0f, 6.0f, "%+.1f stops");
+    ImGui::SliderFloat("Rod sensitivity", &observer.rodSensitivity, 0.25f, 16.0f, "%.2fx",
+      ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("Opponent gain", &observer.opponentGain, 0.25f, 16.0f, "%.2fx",
+      ImGuiSliderFlags_Logarithmic);
+    description("These parameters belong to the shared RGB observer model. Operand interpretation runs before composite color-space conversion and does not require final display reconstruction to be enabled.");
+  }
 
   ImGui::Spacing();
   ImGui::TextDisabled("COLOR ARITHMETIC PARAMETERS");

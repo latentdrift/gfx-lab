@@ -42,6 +42,8 @@ enum class AnimationProperty {
   CompositeSourceB,
   CompositeSourceAPass,
   CompositeSourceBPass,
+  CompositeInterpretationA,
+  CompositeInterpretationB,
   CompositeFixedColor,
   CompositeBitDepth,
   CompositeHistoryDecay,

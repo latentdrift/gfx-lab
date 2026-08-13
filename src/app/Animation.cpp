@@ -55,6 +55,8 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   STEP("composite_source_b", "Composite source B", "Composite operands", K::Enumeration, 0, 5),
   STEP("composite_source_a_pass", "Source A render-pass ID", "Composite operands", K::Integer, 1, 65535),
   STEP("composite_source_b_pass", "Source B render-pass ID", "Composite operands", K::Integer, 1, 65535),
+  STEP("composite_interpretation_a", "Source A interpretation", "Composite operands", K::Enumeration, 0, 7),
+  STEP("composite_interpretation_b", "Source B interpretation", "Composite operands", K::Enumeration, 0, 7),
   CONT("composite_fixed_color", "Composite fixed color", "Composite operands", 4, K::Color4, 0, 1),
   STEP("composite_bit_depth", "Composite bit depth", "Composite arithmetic", K::Integer, 1, 8),
   CONT("composite_history_decay", "Previous-frame decay", "Composite history", 1, K::Float, 0, 1),
@@ -254,6 +256,8 @@ const char* animationPropertyDiscreteValueLabel(const AnimationProperty property
   case AnimationProperty::CompositeOperation: return value >= 0 && value <= 18 ? relationOperatorLabel(static_cast<RelationOperator>(value)) : nullptr;
   case AnimationProperty::CompositeSourceA:
   case AnimationProperty::CompositeSourceB: { constexpr std::array labels = {"Accumulated result", "Current pass", "Render pass", "Fixed color", "Previous frame", "Render-pass field"}; return label(labels); }
+  case AnimationProperty::CompositeInterpretationA:
+  case AnimationProperty::CompositeInterpretationB: { constexpr std::array labels = {"Raw RGB", "L cone", "M cone", "S cone", "Cone luminance", "Rod", "Red-green opponent", "Blue-yellow opponent"}; return label(labels); }
   case AnimationProperty::CompositeColorSpace: { constexpr std::array labels = {"Encoded RGB", "Linear light"}; return label(labels); }
   case AnimationProperty::CompositeRange: { constexpr std::array labels = {"Clamp 0..1", "Preserve signed/HDR", "Wrap fractional"}; return label(labels); }
   case AnimationProperty::CompositeMask: { constexpr std::array labels = {"None", "Pass luminance", "Pass depth", "Pass edges", "Pass field"}; return label(labels); }
@@ -315,6 +319,8 @@ glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty
   case AnimationProperty::CompositeSourceB: return glm::vec4(static_cast<float>(pass.composite.sourceB));
   case AnimationProperty::CompositeSourceAPass: return glm::vec4(pass.composite.sourceAPassId);
   case AnimationProperty::CompositeSourceBPass: return glm::vec4(pass.composite.sourceBPassId);
+  case AnimationProperty::CompositeInterpretationA: return glm::vec4(static_cast<float>(pass.composite.interpretationA));
+  case AnimationProperty::CompositeInterpretationB: return glm::vec4(static_cast<float>(pass.composite.interpretationB));
   case AnimationProperty::CompositeFixedColor: return pass.composite.fixedColor;
   case AnimationProperty::CompositeBitDepth: return glm::vec4(pass.composite.bitDepth);
   case AnimationProperty::CompositeHistoryDecay: return glm::vec4(pass.composite.historyDecay);
@@ -483,6 +489,8 @@ void setAnimationPropertyValue(RenderPass& pass, const AnimationProperty propert
   case AnimationProperty::CompositeSourceB: pass.composite.sourceB = static_cast<CompositeSource>(static_cast<int>(std::round(value.x))); break;
   case AnimationProperty::CompositeSourceAPass: pass.composite.sourceAPassId = static_cast<int>(std::round(value.x)); break;
   case AnimationProperty::CompositeSourceBPass: pass.composite.sourceBPassId = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::CompositeInterpretationA: pass.composite.interpretationA = static_cast<CompositeInterpretation>(static_cast<int>(std::round(value.x))); break;
+  case AnimationProperty::CompositeInterpretationB: pass.composite.interpretationB = static_cast<CompositeInterpretation>(static_cast<int>(std::round(value.x))); break;
   case AnimationProperty::CompositeFixedColor: pass.composite.fixedColor = value; break;
   case AnimationProperty::CompositeBitDepth: pass.composite.bitDepth = static_cast<int>(std::round(value.x)); break;
   case AnimationProperty::CompositeHistoryDecay: pass.composite.historyDecay = value.x; break;

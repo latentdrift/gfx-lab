@@ -572,6 +572,8 @@ uniform sampler2D uImageA;
 uniform sampler2D uImageB;
 uniform int uSourceAMode;
 uniform int uSourceBMode;
+uniform int uInterpretationA;
+uniform int uInterpretationB;
 uniform vec4 uFixedColor;
 uniform int uBitDepth;
 uniform float uHistoryDecay;
@@ -591,6 +593,9 @@ uniform float uMaskNearPlane;
 uniform bool uMaskOrthographic;
 uniform bool uMaskFieldSignedDistance;
 uniform float uMaskSdfPreviewRange;
+uniform float uObserverExposureStops;
+uniform float uRodSensitivity;
+uniform float uOpponentGain;
 out vec4 fragColor;
 
 vec3 signedPow(vec3 value, float exponent) {
@@ -607,6 +612,34 @@ vec3 finiteColor(vec3 value) {
   return vec3(finiteChannel(value.r), finiteChannel(value.g), finiteChannel(value.b));
 }
 
+vec3 linearRgbToLms(vec3 rgb) {
+  return vec3(dot(rgb, vec3(0.31399022, 0.63951294, 0.04649755)),
+    dot(rgb, vec3(0.15537241, 0.75789446, 0.08670142)),
+    dot(rgb, vec3(0.01775239, 0.10944209, 0.87256922)));
+}
+
+vec3 interpretSignal(vec3 encodedRgb, int interpretation) {
+  if (interpretation == 0) return encodedRgb;
+  vec3 linearRgb = pow(max(encodedRgb, vec3(0.0)), vec3(2.2)) * exp2(uObserverExposureStops);
+  vec3 lms = max(linearRgbToLms(linearRgb), vec3(0.0));
+  vec3 cone = 1.0 - exp(-lms);
+  float measurement;
+  if (interpretation == 1) measurement = cone.x;
+  else if (interpretation == 2) measurement = cone.y;
+  else if (interpretation == 3) measurement = cone.z;
+  else if (interpretation == 4) measurement = 0.5 * (cone.x + cone.y);
+  else if (interpretation == 5) {
+    float rodLinear = max(dot(linearRgb, vec3(0.04, 0.68, 0.28)), 0.0) * uRodSensitivity;
+    measurement = 1.0 - exp(-rodLinear);
+  } else if (interpretation == 6) {
+    measurement = 0.5 + 0.5 * clamp((cone.x - cone.y) * uOpponentGain, -1.0, 1.0);
+  } else {
+    measurement = 0.5 + 0.5 * clamp((cone.z - 0.5 * (cone.x + cone.y)) * uOpponentGain,
+      -1.0, 1.0);
+  }
+  return vec3(pow(clamp(measurement, 0.0, 1.0), 1.0 / 2.2));
+}
+
 void main() {
   vec2 historyUv = (vUv - 0.5) * uHistoryUvScale + 0.5 + uHistoryUvOffset;
   vec3 storedA = uSourceAMode == 3 ? uFixedColor.rgb :
@@ -619,6 +652,8 @@ void main() {
   storedB = finiteColor(storedB);
   if (uSourceAMode == 4) storedA *= uHistoryDecay;
   if (uSourceBMode == 4) storedB *= uHistoryDecay;
+  storedA = interpretSignal(storedA, uInterpretationA);
+  storedB = interpretSignal(storedB, uInterpretationB);
   vec3 a = uColorSpace == 1 ? signedPow(storedA, 2.2) : storedA;
   vec3 b = uColorSpace == 1 ? signedPow(storedB, 2.2) : storedB;
   vec3 relation;

@@ -17,6 +17,10 @@ struct TextureAsset;
 
 enum class CompositeColorSpace { EncodedRgb, LinearLight };
 enum class CompositeRange { Clamp, Preserve, Wrap };
+enum class CompositeInterpretation {
+  RawRgb, LResponse, MResponse, SResponse, ConeLuminance, RodResponse,
+  RedGreenOpponent, BlueYellowOpponent
+};
 enum class PassOutput { Color, Depth, Normals, VertexColor, FieldSignal };
 enum class CompositeMask { None, PassLuminance, PassDepth, PassEdges, PassField };
 enum class CompositeSource {
@@ -80,6 +84,8 @@ struct CompositeStep {
   CompositeSource sourceB = CompositeSource::CurrentPass;
   int sourceAPassId = 1;
   int sourceBPassId = 1;
+  CompositeInterpretation interpretationA = CompositeInterpretation::RawRgb;
+  CompositeInterpretation interpretationB = CompositeInterpretation::RawRgb;
   glm::vec4 fixedColor{1.0f};
   int bitDepth = 8;
   float historyDecay = 0.96f;

@@ -998,7 +998,8 @@ public:
 
   GLuint compositeTextures(const GLuint imageA, const GLuint imageB, const GLuint maskDepth,
       const GLuint maskField,
-      const RendererState& maskState, const CompositeStep& step, const std::size_t outputIndex) {
+      const RendererState& maskState, const CompositeStep& step,
+      const DisplayReconstructionState& observer, const std::size_t outputIndex) {
     const std::size_t pingPong = outputIndex % relationFbos_.size();
     glBindFramebuffer(GL_FRAMEBUFFER, relationFbos_[pingPong]);
     glViewport(0, 0, relationWidth_, relationHeight_);
@@ -1014,6 +1015,14 @@ public:
     glUniform1i(glGetUniformLocation(relationProgram_, "uImageB"), 1);
     glUniform1i(glGetUniformLocation(relationProgram_, "uSourceAMode"), static_cast<int>(step.sourceA));
     glUniform1i(glGetUniformLocation(relationProgram_, "uSourceBMode"), static_cast<int>(step.sourceB));
+    glUniform1i(glGetUniformLocation(relationProgram_, "uInterpretationA"),
+      static_cast<int>(step.interpretationA));
+    glUniform1i(glGetUniformLocation(relationProgram_, "uInterpretationB"),
+      static_cast<int>(step.interpretationB));
+    glUniform1f(glGetUniformLocation(relationProgram_, "uObserverExposureStops"),
+      observer.observerExposureStops);
+    glUniform1f(glGetUniformLocation(relationProgram_, "uRodSensitivity"), observer.rodSensitivity);
+    glUniform1f(glGetUniformLocation(relationProgram_, "uOpponentGain"), observer.opponentGain);
     glUniform4fv(glGetUniformLocation(relationProgram_, "uFixedColor"), 1, glm::value_ptr(step.fixedColor));
     glUniform1i(glGetUniformLocation(relationProgram_, "uBitDepth"), std::clamp(step.bitDepth, 1, 8));
     glUniform1f(glGetUniformLocation(relationProgram_, "uHistoryDecay"), step.historyDecay);
@@ -1053,7 +1062,8 @@ public:
     step.gain = gain;
     step.bias = bias;
     return compositeTextures(passTargets_[0].outputTexture, passTargets_[1].outputTexture,
-      passTargets_[1].depthTexture, passTargets_[1].fieldTexture, RendererState{}, step, 0);
+      passTargets_[1].depthTexture, passTargets_[1].fieldTexture, RendererState{}, step,
+      DisplayReconstructionState{}, 0);
   }
 
   GLuint composite(const RenderStack& stack) {
@@ -1092,7 +1102,8 @@ public:
           pass.composite.sourceB == CompositeSource::RenderPassField)
         maskPassIndex = passIndexForId(pass.composite.sourceBPassId);
       accumulated = compositeTextures(imageA, imageB, passTargets_[maskPassIndex].depthTexture,
-        passTargets_[maskPassIndex].fieldTexture, pass.renderer, pass.composite, compositeIndex++);
+        passTargets_[maskPassIndex].fieldTexture, pass.renderer, pass.composite, stack.display(),
+        compositeIndex++);
     }
     if (accumulated != 0) copyToFrameHistory(accumulated);
     return accumulated;
