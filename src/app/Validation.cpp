@@ -406,6 +406,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     fieldValidation.field.discardThreshold = 0.45f;
     fieldValidation.field.surfaceColorInfluence = 0.4f;
     fieldValidation.field.emissionInfluence = 0.8f;
+    fieldValidation.lighting.shadows = true;
     renderer.render(fieldValidation, fieldCamera, TestScene::FieldInterference, false);
     if (std::abs(evaluateRenderPass(animatedField, 1.0f).renderer.field.phaseOffset - 1.5707963f) > 0.0001f ||
         std::abs(evaluatedField.renderer.field.vertexDisplacement - 0.41f) > 0.0001f ||

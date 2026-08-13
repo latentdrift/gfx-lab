@@ -400,6 +400,20 @@ public:
       glUseProgram(shadowProgram_);
       glUniformMatrix4fv(glGetUniformLocation(shadowProgram_, "uLightSpace"), 1, GL_FALSE, glm::value_ptr(lightSpace));
       glUniform1f(glGetUniformLocation(shadowProgram_, "uQuantization"), state.geometry.vertexQuantization);
+      glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldEnabled"), state.field.enabled);
+      glUniform3fv(glGetUniformLocation(shadowProgram_, "uFieldSourceA"), 1, glm::value_ptr(state.field.sourceA));
+      glUniform3fv(glGetUniformLocation(shadowProgram_, "uFieldSourceB"), 1, glm::value_ptr(state.field.sourceB));
+      glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldWavelength"), state.field.wavelength);
+      glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldPhaseOffset"), state.field.phaseOffset);
+      glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldAmplitudeA"), state.field.amplitudeA);
+      glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldAmplitudeB"), state.field.amplitudeB);
+      glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldFalloff"), state.field.falloff);
+      glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldBandSharpness"), state.field.bandSharpness);
+      glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldVisualization"), state.field.visualization);
+      glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldVertexDisplacement"), state.field.vertexDisplacement);
+      glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldSignedDisplacement"), state.field.signedDisplacement);
+      glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldDiscardEnabled"), state.field.discardBelowEnabled);
+      glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldDiscardThreshold"), state.field.discardThreshold);
       glBindVertexArray(vao_);
       auto drawShadow = [this, &passTransform](const MeshRange& mesh, const glm::mat4& modelMatrix) {
         const glm::mat4 transformed = passTransform * modelMatrix;

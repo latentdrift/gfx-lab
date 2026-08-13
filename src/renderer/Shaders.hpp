@@ -755,19 +755,72 @@ void main() {
 inline constexpr const char* shadowVertexShader = R"GLSL(
 #version 410 core
 layout(location=0) in vec3 aPosition;
+layout(location=1) in vec3 aNormal;
 uniform mat4 uModel;
 uniform mat4 uLightSpace;
 uniform float uQuantization;
+uniform bool uFieldEnabled;
+uniform vec3 uFieldSourceA;
+uniform vec3 uFieldSourceB;
+uniform float uFieldWavelength;
+uniform float uFieldPhaseOffset;
+uniform float uFieldAmplitudeA;
+uniform float uFieldAmplitudeB;
+uniform float uFieldFalloff;
+uniform float uFieldBandSharpness;
+uniform int uFieldVisualization;
+uniform float uFieldVertexDisplacement;
+uniform bool uFieldSignedDisplacement;
+out float vShadowFieldSignal;
+
+float evaluateField(vec3 worldPosition) {
+  float distanceA = length(worldPosition - uFieldSourceA);
+  float distanceB = length(worldPosition - uFieldSourceB);
+  float wavelength = max(uFieldWavelength, 0.001);
+  float waveNumber = 6.28318530718 / wavelength;
+  float phaseA = waveNumber * distanceA;
+  float phaseB = waveNumber * distanceB + uFieldPhaseOffset;
+  float envelopeA = uFieldAmplitudeA * exp(-uFieldFalloff * distanceA);
+  float envelopeB = uFieldAmplitudeB * exp(-uFieldFalloff * distanceB);
+  float waveA = envelopeA * cos(phaseA);
+  float waveB = envelopeB * cos(phaseB);
+  float value;
+  if (uFieldVisualization == 0) value = 0.5 + 0.5 * cos(phaseA);
+  else if (uFieldVisualization == 1) value = 0.5 + 0.5 * cos(phaseB);
+  else if (uFieldVisualization == 2) value = 0.5 + 0.5 * cos(phaseA - phaseB);
+  else if (uFieldVisualization == 3) {
+    float maximumAmplitude = max(uFieldAmplitudeA + uFieldAmplitudeB, 0.001);
+    value = (waveA + waveB) * (waveA + waveB) / (maximumAmplitude * maximumAmplitude);
+  } else if (uFieldVisualization == 4)
+    value = clamp(abs(distanceA - distanceB) / (4.0 * wavelength), 0.0, 1.0);
+  else {
+    float contour = abs(fract(abs(distanceA - distanceB) / wavelength) - 0.5) * 2.0;
+    value = 1.0 - contour;
+  }
+  return pow(clamp(value, 0.0, 1.0), max(uFieldBandSharpness, 0.01));
+}
+
 void main() {
   vec3 position = aPosition;
   if (uQuantization > 0.0) position = round(position / uQuantization) * uQuantization;
-  gl_Position = uLightSpace * uModel * vec4(position, 1.0);
+  vec4 world = uModel * vec4(position, 1.0);
+  vec3 worldNormal = normalize(mat3(transpose(inverse(uModel))) * aNormal);
+  vShadowFieldSignal = uFieldEnabled ? evaluateField(world.xyz) : 0.0;
+  float displacementSignal = uFieldSignedDisplacement ? vShadowFieldSignal * 2.0 - 1.0 : vShadowFieldSignal;
+  world.xyz += worldNormal * uFieldVertexDisplacement * displacementSignal;
+  gl_Position = uLightSpace * world;
 }
 )GLSL";
 
 inline constexpr const char* shadowFragmentShader = R"GLSL(
 #version 410 core
-void main() {}
+in float vShadowFieldSignal;
+uniform bool uFieldEnabled;
+uniform bool uFieldDiscardEnabled;
+uniform float uFieldDiscardThreshold;
+void main() {
+  if (uFieldEnabled && uFieldDiscardEnabled && vShadowFieldSignal < uFieldDiscardThreshold) discard;
+}
 )GLSL";
 
 inline constexpr const char* overdrawVertexShader = R"GLSL(
