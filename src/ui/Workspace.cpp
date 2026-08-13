@@ -19,7 +19,7 @@
 namespace gfxlab::ui {
 namespace {
 
-constexpr const char* workspaceId = "Graphics Lab Workspace v2";
+constexpr const char* workspaceId = "Graphics Lab Workspace v3";
 
 void buildDefaultLayout(const ImGuiID dockspace) {
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -37,20 +37,23 @@ void buildDefaultLayout(const ImGuiID dockspace) {
   ImGuiID leftTop = left;
   ImGui::DockBuilderSplitNode(leftTop, ImGuiDir_Down, 0.48f, &leftBottom, &leftTop);
   ImGui::DockBuilderDockWindow("Scene", leftTop);
-  ImGui::DockBuilderDockWindow("Render Passes", leftTop);
-  ImGui::DockBuilderDockWindow("Pipeline", leftBottom);
+  ImGui::DockBuilderDockWindow("Render Passes", leftBottom);
   ImGui::DockBuilderDockWindow("Viewport", center);
-  ImGui::DockBuilderDockWindow("Pipeline Inspector", right);
-  ImGui::DockBuilderDockWindow("Pass difference audit", right);
+  ImGuiID rightBottom = 0;
+  ImGuiID rightTop = right;
+  ImGui::DockBuilderSplitNode(rightTop, ImGuiDir_Down, 0.34f, &rightBottom, &rightTop);
+  ImGui::DockBuilderDockWindow("Pipeline Inspector", rightTop);
+  ImGui::DockBuilderDockWindow("Pass difference audit", rightTop);
+  ImGui::DockBuilderDockWindow("Pass Properties", rightBottom);
   ImGui::DockBuilderFinish(dockspace);
 }
 
 void windowMenu(WorkspaceWindows& windows) {
   ImGui::MenuItem("Scene", nullptr, &windows.scene);
   ImGui::MenuItem("Render Passes", nullptr, &windows.renderPasses);
-  ImGui::MenuItem("Pipeline", nullptr, &windows.pipeline);
   ImGui::MenuItem("Viewport", nullptr, &windows.viewport);
   ImGui::MenuItem("Pipeline Inspector", nullptr, &windows.inspector);
+  ImGui::MenuItem("Pass Properties", nullptr, &windows.passProperties);
   ImGui::MenuItem("Animation Timeline", nullptr, &windows.animation);
   ImGui::MenuItem("Pass Differences", nullptr, &windows.passDifferences);
   ImGui::MenuItem("Texture Inspector", nullptr, &windows.textureInspector);
@@ -205,20 +208,19 @@ void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& t
   ImGui::End();
 }
 
-void drawPipelineWindow(bool& open, Category& category, const HardwareProfile profile) {
-  if (!open) return;
-  if (!ImGui::Begin("Pipeline", &open)) {
-    ImGui::End();
-    return;
-  }
+void drawPipelineTabs(Category& category, const HardwareProfile profile) {
   constexpr std::array<Category, 11> categories = {Category::Geometry, Category::Camera, Category::Rasterization,
     Category::Surface, Category::Texture, Category::Lighting, Category::Depth, Category::Stencil, Category::Color,
     Category::Post, Category::Output};
-  for (const Category candidate : categories) {
-    if (!categoryAvailableForHardwareProfile(profile, candidate)) continue;
-    if (ImGui::Selectable(categoryName(candidate), category == candidate, 0, ImVec2(0, 28))) category = candidate;
+  if (ImGui::BeginTable("Pipeline categories", 3, ImGuiTableFlags_SizingStretchSame)) {
+    for (const Category candidate : categories) {
+      if (!categoryAvailableForHardwareProfile(profile, candidate)) continue;
+      ImGui::TableNextColumn();
+      if (ImGui::Selectable(categoryName(candidate), category == candidate, 0, ImVec2(-1.0f, 22.0f)))
+        category = candidate;
+    }
+    ImGui::EndTable();
   }
-  ImGui::End();
 }
 
 ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& compare,

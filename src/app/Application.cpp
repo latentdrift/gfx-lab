@@ -233,7 +233,6 @@ int runApplication() {
 
     drawRenderPassesWindow(workspaceWindows.renderPasses, renderStack, animationTimeline,
       inspectorGlobalScope);
-    drawPipelineWindow(workspaceWindows.pipeline, category, hardwareProfile);
 
     if (workspaceWindows.animation) {
       ImGui::SetNextWindowSize(ImVec2(980.0f, 300.0f), ImGuiCond_FirstUseEver);
@@ -271,14 +270,13 @@ int runApplication() {
     else
       applyEditedLocalPass(renderStack, viewportBefore, viewportPass, viewportTime);
 
-    if (workspaceWindows.inspector) {
-      if (ImGui::Begin("Pipeline Inspector", &workspaceWindows.inspector)) {
-        ImGui::TextDisabled("EDITING");
+    const float inspectorTime = evaluateAnimation ? animationTimeline.timeSeconds : 0.0f;
+    if (workspaceWindows.passProperties) {
+      if (ImGui::Begin("Pass Properties", &workspaceWindows.passProperties)) {
+        ImGui::TextDisabled("EDITING SCOPE");
         if (ImGui::RadioButton("Global base", inspectorGlobalScope)) inspectorGlobalScope = true;
         ImGui::SameLine();
         if (ImGui::RadioButton("Selected pass", !inspectorGlobalScope)) inspectorGlobalScope = false;
-        ImGui::SameLine();
-        ImGui::TextDisabled("/ %s", categoryName(category));
         if (inspectorGlobalScope) {
           if (ImGui::Button("Reset global renderer")) renderStack.global().renderer = RendererState{};
         } else {
@@ -299,16 +297,30 @@ int runApplication() {
           }
         }
         ImGui::Separator();
-
-        RenderStack inspectorStack = renderStack;
-        const float inspectorTime = evaluateAnimation ? animationTimeline.timeSeconds : 0.0f;
         const RenderPass displayedBefore = inspectorGlobalScope
           ? evaluateRenderPass(renderStack.global(), inspectorTime)
           : materializeRenderPass(renderStack, renderStack.selectedIndex(), inspectorTime);
+        RenderStack inspectorStack = renderStack;
         inspectorStack.selected() = displayedBefore;
         drawPassInspector(inspectorStack, animationTimeline, inspectorGlobalScope);
-        ImGui::Spacing();
+        if (inspectorGlobalScope)
+          applyEditedPass(renderStack.global(), displayedBefore, inspectorStack.selected());
+        else
+          applyEditedLocalPass(renderStack, displayedBefore, inspectorStack.selected(), inspectorTime);
+      }
+      ImGui::End();
+    }
+
+    if (workspaceWindows.inspector) {
+      if (ImGui::Begin("Pipeline Inspector", &workspaceWindows.inspector)) {
+        ImGui::TextDisabled("%s", inspectorGlobalScope ? "GLOBAL BASE" : renderStack.selected().name.c_str());
+        drawPipelineTabs(category, hardwareProfile);
         ImGui::Separator();
+        const RenderPass displayedBefore = inspectorGlobalScope
+          ? evaluateRenderPass(renderStack.global(), inspectorTime)
+          : materializeRenderPass(renderStack, renderStack.selectedIndex(), inspectorTime);
+        RenderStack inspectorStack = renderStack;
+        inspectorStack.selected() = displayedBefore;
         drawInspector(category, inspectorStack.selected(), hardwareProfile, animationTimeline,
           importedModel.get(), scene);
         if (inspectorGlobalScope)

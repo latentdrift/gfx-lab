@@ -16,9 +16,9 @@ namespace gfxlab::ui {
 struct WorkspaceWindows {
   bool scene = true;
   bool renderPasses = true;
-  bool pipeline = true;
   bool viewport = true;
   bool inspector = true;
+  bool passProperties = true;
   bool animation = false;
   bool passDifferences = false;
   bool textureInspector = false;
@@ -57,7 +57,7 @@ SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile&
   const ModelAsset* importedModel);
 void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& timeline,
   bool& globalScope);
-void drawPipelineWindow(bool& open, Category& category, HardwareProfile profile);
+void drawPipelineTabs(Category& category, HardwareProfile profile);
 ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& compare,
   const RenderStack& stack, RenderPass& displayedPass, const CameraOrbit& camera,
   AnimationTimeline& timeline, bool globalScope);
