@@ -130,6 +130,19 @@ uniform vec2 uUvOffset;
 uniform vec2 uUvScale;
 uniform float uUvRotation;
 uniform vec2 uUvPivot;
+uniform bool uFieldEnabled;
+uniform bool uFieldAffects;
+uniform vec3 uFieldSourceA;
+uniform vec3 uFieldSourceB;
+uniform float uFieldWavelength;
+uniform float uFieldPhaseOffset;
+uniform float uFieldAmplitudeA;
+uniform float uFieldAmplitudeB;
+uniform float uFieldFalloff;
+uniform float uFieldBandSharpness;
+uniform int uFieldVisualization;
+uniform vec3 uFieldLowColor;
+uniform vec3 uFieldHighColor;
 out vec4 fragColor;
 
 vec4 sampleSurfaceTexture(vec2 uv) {
@@ -249,6 +262,37 @@ float shadowAmount() {
   return shadow / 9.0;
 }
 
+vec3 fieldColor() {
+  float distanceA = length(vWorldPosition - uFieldSourceA);
+  float distanceB = length(vWorldPosition - uFieldSourceB);
+  float wavelength = max(uFieldWavelength, 0.001);
+  float waveNumber = 6.28318530718 / wavelength;
+  float phaseA = waveNumber * distanceA;
+  float phaseB = waveNumber * distanceB + uFieldPhaseOffset;
+  float envelopeA = uFieldAmplitudeA * exp(-uFieldFalloff * distanceA);
+  float envelopeB = uFieldAmplitudeB * exp(-uFieldFalloff * distanceB);
+  float waveA = envelopeA * cos(phaseA);
+  float waveB = envelopeB * cos(phaseB);
+  float value = 0.0;
+  if (uFieldVisualization == 0) value = 0.5 + 0.5 * cos(phaseA);
+  else if (uFieldVisualization == 1) value = 0.5 + 0.5 * cos(phaseB);
+  else if (uFieldVisualization == 2)
+    value = 0.5 + 0.5 * cos(phaseA - phaseB);
+  else if (uFieldVisualization == 3) {
+    float maximumAmplitude = max(uFieldAmplitudeA + uFieldAmplitudeB, 0.001);
+    value = (waveA + waveB) * (waveA + waveB) / (maximumAmplitude * maximumAmplitude);
+  } else if (uFieldVisualization == 4) {
+    value = clamp(abs(distanceA - distanceB) / (4.0 * wavelength), 0.0, 1.0);
+  } else {
+    float contour = abs(fract(abs(distanceA - distanceB) / wavelength) - 0.5) * 2.0;
+    value = 1.0 - contour;
+  }
+  value = pow(clamp(value, 0.0, 1.0), max(uFieldBandSharpness, 0.01));
+  vec3 middleColor = mix(vec3(0.10, 0.42, 0.88), uFieldHighColor, 0.28);
+  return value < 0.5 ? mix(uFieldLowColor, middleColor, value * 2.0)
+    : mix(middleColor, uFieldHighColor, value * 2.0 - 1.0);
+}
+
 void main() {
   vec2 uv = (uAffineMapping ? vUvAffine : vUvPerspective);
   float uvCos = cos(uUvRotation);
@@ -310,6 +354,8 @@ void main() {
     if (uN64AlphaCompare == 1 && alpha < uN64AlphaThreshold) discard;
     if (uN64AlphaCompare == 2 && alpha < n64AlphaNoise(ivec2(gl_FragCoord.xy))) discard;
   }
+
+  if (uFieldEnabled && uFieldAffects) color = fieldColor();
 
   if (uWireframe) {
     vec3 width = fwidth(vBarycentric);

@@ -26,6 +26,7 @@ const char* testSceneName(TestScene scene) {
     case TestScene::Transparency: return "transparency";
     case TestScene::Lighting: return "lighting_comparison";
     case TestScene::StencilMask: return "stencil_mask";
+    case TestScene::FieldInterference: return "field_interference";
     case TestScene::ImportedModel: return "imported_model";
   }
   return "unknown";
@@ -92,6 +93,17 @@ void applyRecommendedSetup(TestScene scene, RendererState& state, CameraOrbit& c
       camera.yaw = 0.0f;
       camera.pitch = 0.0f;
       camera.distance = 5.0f;
+      break;
+    case TestScene::FieldInterference:
+      state.field.enabled = true;
+      state.lighting.model = 0;
+      state.texture.nearestFiltering = false;
+      state.output.width = 640;
+      state.output.height = 480;
+      camera.yaw = 0.72f;
+      camera.pitch = 0.56f;
+      camera.distance = 7.4f;
+      camera.target = glm::vec3(0.0f, -0.35f, 0.0f);
       break;
     case TestScene::ImportedModel:
       camera.distance = 5.2f;
@@ -358,6 +370,21 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
   json << "    \"vertex_depth_cue\": {\"enabled\": " << boolean(state.lighting.depthCue)
        << ", \"start_units\": " << state.lighting.depthCueStart << ", \"end_units\": " << state.lighting.depthCueEnd
        << ", \"far_color_rgb\": [" << state.lighting.farColor.r << ", " << state.lighting.farColor.g << ", " << state.lighting.farColor.b << "]}\n";
+  json << "  },\n";
+  constexpr const char* fieldViews[] = {"source_a_phase", "source_b_phase", "phase_difference",
+    "interference_intensity", "absolute_distance_difference", "distance_difference_contours"};
+  json << "  \"field\": {\n";
+  json << "    \"enabled\": " << boolean(state.field.enabled) << ",\n";
+  json << "    \"source_a_position_units\": [" << state.field.sourceA.x << ", " << state.field.sourceA.y << ", " << state.field.sourceA.z << "],\n";
+  json << "    \"source_b_position_units\": [" << state.field.sourceB.x << ", " << state.field.sourceB.y << ", " << state.field.sourceB.z << "],\n";
+  json << "    \"wavelength_units\": " << state.field.wavelength << ",\n";
+  json << "    \"relative_phase_radians\": " << state.field.phaseOffset << ",\n";
+  json << "    \"amplitudes\": [" << state.field.amplitudeA << ", " << state.field.amplitudeB << "],\n";
+  json << "    \"distance_falloff\": " << state.field.falloff << ",\n";
+  json << "    \"band_sharpness\": " << state.field.bandSharpness << ",\n";
+  json << "    \"visualization\": \"" << fieldViews[std::clamp(state.field.visualization, 0, 5)] << "\",\n";
+  json << "    \"low_color_rgb\": [" << state.field.lowColor.r << ", " << state.field.lowColor.g << ", " << state.field.lowColor.b << "],\n";
+  json << "    \"high_color_rgb\": [" << state.field.highColor.r << ", " << state.field.highColor.g << ", " << state.field.highColor.b << "]\n";
   json << "  },\n";
   json << "  \"depth\": {\n";
   json << "    \"test_enabled\": " << boolean(state.depth.testing) << ",\n";

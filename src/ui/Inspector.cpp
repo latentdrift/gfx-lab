@@ -545,6 +545,64 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
         : "Computes a depth factor at vertices, interpolates it, then blends shaded color toward the far color.");
       break;
     }
+    case Category::Field: {
+      ImGui::TextUnformatted("FIELD"); ImGui::Separator();
+      animationKeyControl(pass, AnimationProperty::FieldEnabled, timeline,
+        ImGui::Checkbox("Evaluate world-space field", &state.field.enabled));
+      description("Evaluates two distance-derived wave fields at each visible world-space surface point.");
+      ImGui::BeginDisabled(!state.field.enabled);
+      ImGui::TextUnformatted("Source positions and interference preview");
+      const FieldSourceCanvasResult sourceCanvas = fieldSourceCanvas("##field-sources",
+        state.field.sourceA, state.field.sourceB, state.field.wavelength, state.field.phaseOffset,
+        state.field.amplitudeA, state.field.amplitudeB, state.field.falloff);
+      ImGui::PushID("field-source-canvas-animation-keys");
+      animationKeyControl(pass, AnimationProperty::FieldSourceA, timeline, sourceCanvas.sourceAChanged);
+      animationKeyControl(pass, AnimationProperty::FieldSourceB, timeline, sourceCanvas.sourceBChanged);
+      ImGui::PopID();
+      animationKeyControl(pass, AnimationProperty::FieldSourceA, timeline,
+        ImGui::DragFloat3("Source A position", &state.field.sourceA.x, 0.01f, -8.0f, 8.0f, "%.2f"));
+      animationKeyControl(pass, AnimationProperty::FieldSourceB, timeline,
+        ImGui::DragFloat3("Source B position", &state.field.sourceB.x, 0.01f, -8.0f, 8.0f, "%.2f"));
+      ImGui::SeparatorText("WAVE MODEL");
+      animationKeyControl(pass, AnimationProperty::FieldWavelength, timeline,
+        ImGui::DragFloat("Wavelength", &state.field.wavelength, 0.005f, 0.05f, 8.0f, "%.3f units"));
+      animationKeyControl(pass, AnimationProperty::FieldPhaseOffset, timeline,
+        ImGui::SliderAngle("Relative phase", &state.field.phaseOffset, -180.0f, 180.0f, "%.1f deg"));
+      ImGui::SetNextItemWidth(std::max(90.0f, ImGui::GetContentRegionAvail().x * 0.5f - 5.0f));
+      const bool amplitudeAChanged = ImGui::DragFloat("##field-amplitude-a", &state.field.amplitudeA,
+        0.01f, 0.0f, 4.0f, "A amplitude %.2f");
+      animationKeyControl(pass, AnimationProperty::FieldAmplitudeA, timeline, amplitudeAChanged);
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(-1.0f);
+      const bool amplitudeBChanged = ImGui::DragFloat("##field-amplitude-b", &state.field.amplitudeB,
+        0.01f, 0.0f, 4.0f, "B amplitude %.2f");
+      animationKeyControl(pass, AnimationProperty::FieldAmplitudeB, timeline, amplitudeBChanged);
+      animationKeyControl(pass, AnimationProperty::FieldFalloff, timeline,
+        ImGui::DragFloat("Distance falloff", &state.field.falloff, 0.005f, 0.0f, 2.0f, "%.3f"));
+      ImGui::SeparatorText("VISUALIZE");
+      constexpr const char* viewLabels[] = {"Source A phase", "Source B phase", "Phase difference",
+        "Interference intensity", "Absolute distance difference", "Distance-difference contours"};
+      bool fieldVisualizationChanged = false;
+      if (ImGui::BeginTable("field-visualizations", 2, ImGuiTableFlags_SizingStretchSame)) {
+        for (int view = 0; view < 6; ++view) {
+          ImGui::TableNextColumn();
+          if (ImGui::Selectable(viewLabels[view], state.field.visualization == view,
+              ImGuiSelectableFlags_None, ImVec2(0.0f, ImGui::GetFrameHeight())))
+            { state.field.visualization = view; fieldVisualizationChanged = true; }
+        }
+        ImGui::EndTable();
+      }
+      animationKeyControl(pass, AnimationProperty::FieldVisualization, timeline, fieldVisualizationChanged);
+      animationKeyControl(pass, AnimationProperty::FieldBandSharpness, timeline,
+        ImGui::DragFloat("Band sharpness", &state.field.bandSharpness, 0.01f, 0.1f, 8.0f, "%.2f"));
+      animationKeyControl(pass, AnimationProperty::FieldLowColor, timeline,
+        ImGui::ColorEdit3("Low / destructive color", &state.field.lowColor.x));
+      animationKeyControl(pass, AnimationProperty::FieldHighColor, timeline,
+        ImGui::ColorEdit3("High / constructive color", &state.field.highColor.x));
+      description("Interference intensity evaluates |E_A + E_B| squared. Phase-difference views expose the relationship directly.");
+      ImGui::EndDisabled();
+      break;
+    }
     case Category::Depth: {
       ImGui::TextUnformatted("DEPTH"); ImGui::Separator();
       if (profile == HardwareProfile::Nintendo64) {
@@ -731,6 +789,7 @@ const char* categoryName(Category category) {
     case Category::Surface: return "Surface";
     case Category::Texture: return "Texture";
     case Category::Lighting: return "Lighting";
+    case Category::Field: return "Field";
     case Category::Depth: return "Depth";
     case Category::Stencil: return "Stencil";
     case Category::Color: return "Color";

@@ -19,6 +19,7 @@ const char* pipelineToolWindowName(const Category category) {
     case Category::Surface: return "Surface##pipeline-tool";
     case Category::Texture: return "Texture##pipeline-tool";
     case Category::Lighting: return "Lighting##pipeline-tool";
+    case Category::Field: return "Field##pipeline-tool";
     case Category::Depth: return "Depth##pipeline-tool";
     case Category::Stencil: return "Stencil##pipeline-tool";
     case Category::Color: return "Color##pipeline-tool";

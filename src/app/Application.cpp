@@ -322,7 +322,8 @@ int runApplication() {
     if (sceneResult.hardwareProfileChanged) {
       normalizeDocument(hardwareProfile);
       if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
-      if (hardwareProfile != HardwareProfile::Unrestricted && scene == TestScene::StencilMask)
+      if (hardwareProfile != HardwareProfile::Unrestricted &&
+          (scene == TestScene::StencilMask || scene == TestScene::FieldInterference))
         scene = TestScene::Torus;
     }
     if (!modelImportError.empty()) ImGui::OpenPopup("Model import failed");

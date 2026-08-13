@@ -104,6 +104,18 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   CONT("depth_cue_start", "Depth cue start", "Lighting", 1, K::Float, 0, 100),
   CONT("depth_cue_end", "Depth cue end", "Lighting", 1, K::Float, 0, 100),
   CONT("far_color", "Depth cue far color", "Lighting", 3, K::Color3, 0, 1),
+  STEP("field_enabled", "Field enabled", "Field", K::Boolean, 0, 1),
+  CONT("field_source_a", "Field source A", "Field sources", 3, K::Vec3, -8, 8),
+  CONT("field_source_b", "Field source B", "Field sources", 3, K::Vec3, -8, 8),
+  CONT("field_wavelength", "Field wavelength", "Field waves", 1, K::Float, 0.05f, 8),
+  CONT("field_phase_offset", "Relative phase", "Field waves", 1, K::Angle, -6.283f, 6.283f),
+  CONT("field_amplitude_a", "Source A amplitude", "Field sources", 1, K::Float, 0, 4),
+  CONT("field_amplitude_b", "Source B amplitude", "Field sources", 1, K::Float, 0, 4),
+  CONT("field_falloff", "Field distance falloff", "Field waves", 1, K::Float, 0, 2),
+  CONT("field_band_sharpness", "Field band sharpness", "Field display", 1, K::Float, 0.1f, 8),
+  STEP("field_visualization", "Field visualization", "Field display", K::Enumeration, 0, 5),
+  CONT("field_low_color", "Field low color", "Field display", 3, K::Color3, 0, 1),
+  CONT("field_high_color", "Field high color", "Field display", 3, K::Color3, 0, 1),
   STEP("depth_test_enabled", "Depth test enabled", "Depth", K::Boolean, 0, 1),
   STEP("depth_write_enabled", "Depth writes enabled", "Depth", K::Boolean, 0, 1),
   FIXED("depth_precision", "Depth-buffer precision", "Depth", 1, K::Integer, 16, 24),
@@ -226,6 +238,7 @@ const char* animationPropertyDiscreteValueLabel(const AnimationProperty property
   case AnimationProperty::TransparencyOperation: { constexpr std::array labels = {"Opaque", "Alpha test", "Straight alpha", "Premultiplied alpha", "Additive", "Multiply", "PS1 average", "PS1 additive", "PS1 subtractive", "PS1 quarter-add"}; return label(labels); }
   case AnimationProperty::TextureColorStorage: { constexpr std::array labels = {"Direct color", "Indexed 8-bit", "Indexed 4-bit"}; return label(labels); }
   case AnimationProperty::LightingModel: { constexpr std::array labels = {"Unlit", "Gouraud Lambert", "Phong-shaded Lambert", "Phong reflection", "Blinn-Phong reflection"}; return label(labels); }
+  case AnimationProperty::FieldVisualization: { constexpr std::array labels = {"Source A phase", "Source B phase", "Phase difference", "Interference intensity", "Absolute distance difference", "Distance-difference contours"}; return label(labels); }
   case AnimationProperty::DepthComparison: { constexpr std::array labels = {"Less", "Less or equal", "Greater", "Always"}; return label(labels); }
   case AnimationProperty::DepthVisualization: { constexpr std::array labels = {"Off", "Raw window depth", "Linear camera depth"}; return label(labels); }
   case AnimationProperty::N64CycleType: { constexpr std::array labels = {"1-cycle", "2-cycle"}; return label(labels, 1); }
@@ -323,6 +336,18 @@ glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty
   case AnimationProperty::DepthCueStart: return glm::vec4(pass.renderer.lighting.depthCueStart);
   case AnimationProperty::DepthCueEnd: return glm::vec4(pass.renderer.lighting.depthCueEnd);
   case AnimationProperty::FarColor: return glm::vec4(pass.renderer.lighting.farColor, 1.0f);
+  case AnimationProperty::FieldEnabled: return glm::vec4(pass.renderer.field.enabled ? 1.0f : 0.0f);
+  case AnimationProperty::FieldSourceA: return glm::vec4(pass.renderer.field.sourceA, 0.0f);
+  case AnimationProperty::FieldSourceB: return glm::vec4(pass.renderer.field.sourceB, 0.0f);
+  case AnimationProperty::FieldWavelength: return glm::vec4(pass.renderer.field.wavelength);
+  case AnimationProperty::FieldPhaseOffset: return glm::vec4(pass.renderer.field.phaseOffset);
+  case AnimationProperty::FieldAmplitudeA: return glm::vec4(pass.renderer.field.amplitudeA);
+  case AnimationProperty::FieldAmplitudeB: return glm::vec4(pass.renderer.field.amplitudeB);
+  case AnimationProperty::FieldFalloff: return glm::vec4(pass.renderer.field.falloff);
+  case AnimationProperty::FieldBandSharpness: return glm::vec4(pass.renderer.field.bandSharpness);
+  case AnimationProperty::FieldVisualization: return glm::vec4(pass.renderer.field.visualization);
+  case AnimationProperty::FieldLowColor: return glm::vec4(pass.renderer.field.lowColor, 1.0f);
+  case AnimationProperty::FieldHighColor: return glm::vec4(pass.renderer.field.highColor, 1.0f);
   case AnimationProperty::DepthTestEnabled: return glm::vec4(pass.renderer.depth.testing ? 1.0f : 0.0f);
   case AnimationProperty::DepthWriteEnabled: return glm::vec4(pass.renderer.depth.writing ? 1.0f : 0.0f);
   case AnimationProperty::DepthPrecision: return glm::vec4(pass.renderer.depth.precision);
@@ -455,6 +480,18 @@ void setAnimationPropertyValue(RenderPass& pass, const AnimationProperty propert
   case AnimationProperty::DepthCueStart: pass.renderer.lighting.depthCueStart = value.x; break;
   case AnimationProperty::DepthCueEnd: pass.renderer.lighting.depthCueEnd = value.x; break;
   case AnimationProperty::FarColor: pass.renderer.lighting.farColor = glm::vec3(value); break;
+  case AnimationProperty::FieldEnabled: pass.renderer.field.enabled = value.x >= 0.5f; break;
+  case AnimationProperty::FieldSourceA: pass.renderer.field.sourceA = glm::vec3(value); break;
+  case AnimationProperty::FieldSourceB: pass.renderer.field.sourceB = glm::vec3(value); break;
+  case AnimationProperty::FieldWavelength: pass.renderer.field.wavelength = value.x; break;
+  case AnimationProperty::FieldPhaseOffset: pass.renderer.field.phaseOffset = value.x; break;
+  case AnimationProperty::FieldAmplitudeA: pass.renderer.field.amplitudeA = value.x; break;
+  case AnimationProperty::FieldAmplitudeB: pass.renderer.field.amplitudeB = value.x; break;
+  case AnimationProperty::FieldFalloff: pass.renderer.field.falloff = value.x; break;
+  case AnimationProperty::FieldBandSharpness: pass.renderer.field.bandSharpness = value.x; break;
+  case AnimationProperty::FieldVisualization: pass.renderer.field.visualization = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::FieldLowColor: pass.renderer.field.lowColor = glm::vec3(value); break;
+  case AnimationProperty::FieldHighColor: pass.renderer.field.highColor = glm::vec3(value); break;
   case AnimationProperty::DepthTestEnabled: pass.renderer.depth.testing = value.x >= 0.5f; break;
   case AnimationProperty::DepthWriteEnabled: pass.renderer.depth.writing = value.x >= 0.5f; break;
   case AnimationProperty::DepthPrecision: pass.renderer.depth.precision = static_cast<int>(std::round(value.x)); break;

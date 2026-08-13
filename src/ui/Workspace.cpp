@@ -21,7 +21,7 @@
 namespace gfxlab::ui {
 namespace {
 
-constexpr const char* workspaceId = "Graphics Lab Workspace v7";
+constexpr const char* workspaceId = "Graphics Lab Workspace v8";
 
 void buildDefaultLayout(const ImGuiID dockspace) {
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -170,10 +170,10 @@ SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile&
 
   ImGui::Spacing();
   ImGui::TextDisabled("SCENE");
-  constexpr std::array<const char*, 6> sceneLabels = {"Torus", "Texture minification", "Depth precision",
-    "Transparency", "Lighting comparison", "Stencil mask"};
+  constexpr std::array<const char*, 7> sceneLabels = {"Torus", "Texture minification", "Depth precision",
+    "Transparency", "Lighting comparison", "Stencil mask", "Field interference"};
   const char* currentLabel = scene == TestScene::ImportedModel && importedModel != nullptr
-    ? importedModel->name.c_str() : sceneLabels[std::min(static_cast<int>(scene), 5)];
+    ? importedModel->name.c_str() : sceneLabels[std::clamp(static_cast<int>(scene), 0, 6)];
   ImGui::SetNextItemWidth(-1.0f);
   if (ImGui::BeginCombo("##scene", currentLabel)) {
     for (int option = 0; option < 5; ++option) {
@@ -183,6 +183,9 @@ SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile&
     if (profile == HardwareProfile::Unrestricted &&
         ImGui::Selectable(sceneLabels[5], scene == TestScene::StencilMask))
       scene = TestScene::StencilMask;
+    if (profile == HardwareProfile::Unrestricted &&
+        ImGui::Selectable(sceneLabels[6], scene == TestScene::FieldInterference))
+      scene = TestScene::FieldInterference;
     if (importedModel != nullptr &&
         ImGui::Selectable(importedModel->name.c_str(), scene == TestScene::ImportedModel))
       scene = TestScene::ImportedModel;

@@ -381,6 +381,21 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     }
     applyRecommendedSetup(TestScene::Torus, current, camera);
     scene = TestScene::Torus;
+    RendererState fieldValidation;
+    CameraOrbit fieldCamera;
+    applyRecommendedSetup(TestScene::FieldInterference, fieldValidation, fieldCamera);
+    if (!fieldValidation.field.enabled ||
+        renderer.render(fieldValidation, fieldCamera, TestScene::FieldInterference, false) == 0)
+      fail("world-space field interference scene failed validation");
+    RenderPass animatedField;
+    animatedField.renderer = fieldValidation;
+    setPropertyKeyframe(animatedField, AnimationProperty::FieldPhaseOffset, 0.0f);
+    animatedField.renderer.field.phaseOffset = 3.14159265f;
+    setPropertyKeyframe(animatedField, AnimationProperty::FieldPhaseOffset, 2.0f);
+    if (std::abs(evaluateRenderPass(animatedField, 1.0f).renderer.field.phaseOffset - 1.5707963f) > 0.0001f ||
+        configJson(fieldValidation, fieldCamera, TestScene::FieldInterference,
+          HardwareProfile::Unrestricted).find("\"field\"") == std::string::npos)
+      fail("field animation or renderer-state export failed validation");
     current.lighting.depthCue = true;
     for (int textureColorMode = 0; textureColorMode <= 2; ++textureColorMode) {
       current.texture.colorMode = textureColorMode;

@@ -195,4 +195,85 @@ UvCanvasResult uvTransformCanvas(const char* id, glm::vec2& offset,
   return result;
 }
 
+FieldSourceCanvasResult fieldSourceCanvas(const char* id, glm::vec3& sourceA,
+    glm::vec3& sourceB, const float wavelength, const float phaseOffset,
+    const float amplitudeA, const float amplitudeB, const float falloff, const float height) {
+  FieldSourceCanvasResult result;
+  const float width = std::max(180.0f, ImGui::GetContentRegionAvail().x);
+  const ImVec2 topLeft = ImGui::GetCursorScreenPos();
+  const ImVec2 size(width, height);
+  const ImGuiID itemId = ImGui::GetID(id);
+  ImGui::InvisibleButton(id, size, ImGuiButtonFlags_MouseButtonLeft);
+  const auto toScreen = [&](const glm::vec3 source) {
+    return ImVec2(topLeft.x + (source.x + 4.0f) / 8.0f * size.x,
+      topLeft.y + (4.0f - source.z) / 8.0f * size.y);
+  };
+  if (ImGui::IsItemActivated()) {
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const ImVec2 a = toScreen(sourceA);
+    const ImVec2 b = toScreen(sourceB);
+    const float distanceA = (mouse.x - a.x) * (mouse.x - a.x) + (mouse.y - a.y) * (mouse.y - a.y);
+    const float distanceB = (mouse.x - b.x) * (mouse.x - b.x) + (mouse.y - b.y) * (mouse.y - b.y);
+    ImGui::GetStateStorage()->SetInt(itemId, distanceA <= distanceB ? 0 : 1);
+  }
+  if (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    glm::vec3& source = ImGui::GetStateStorage()->GetInt(itemId, 0) == 0 ? sourceA : sourceB;
+    source.x = std::clamp((mouse.x - topLeft.x) / size.x * 8.0f - 4.0f, -4.0f, 4.0f);
+    source.z = std::clamp(4.0f - (mouse.y - topLeft.y) / size.y * 8.0f, -4.0f, 4.0f);
+    if (ImGui::GetStateStorage()->GetInt(itemId, 0) == 0) result.sourceAChanged = true;
+    else result.sourceBChanged = true;
+  }
+
+  ImDrawList* draw = ImGui::GetWindowDrawList();
+  const ImVec2 bottomRight(topLeft.x + size.x, topLeft.y + size.y);
+  draw->PushClipRect(topLeft, bottomRight, true);
+  constexpr int columns = 40;
+  constexpr int rows = 24;
+  const float safeWavelength = std::max(wavelength, 0.01f);
+  const float waveNumber = 6.28318530718f / safeWavelength;
+  for (int row = 0; row < rows; ++row) {
+    for (int column = 0; column < columns; ++column) {
+      const float x = -4.0f + (static_cast<float>(column) + 0.5f) / columns * 8.0f;
+      const float z = 4.0f - (static_cast<float>(row) + 0.5f) / rows * 8.0f;
+      // The preview samples the world-space field on y = 0. Keep source height in
+      // the distance calculation so raising a source changes this instrument in
+      // the same way that it changes the rendered scene.
+      const float distanceA = std::sqrt((x - sourceA.x) * (x - sourceA.x) +
+        sourceA.y * sourceA.y + (z - sourceA.z) * (z - sourceA.z));
+      const float distanceB = std::sqrt((x - sourceB.x) * (x - sourceB.x) +
+        sourceB.y * sourceB.y + (z - sourceB.z) * (z - sourceB.z));
+      const float waveA = amplitudeA * std::exp(-falloff * distanceA) * std::cos(waveNumber * distanceA);
+      const float waveB = amplitudeB * std::exp(-falloff * distanceB) *
+        std::cos(waveNumber * distanceB + phaseOffset);
+      const float normalization = std::max(0.001f, amplitudeA + amplitudeB);
+      const float intensity = clamp01((waveA + waveB) * (waveA + waveB) /
+        (normalization * normalization));
+      const ImVec4 low(0.02f, 0.035f, 0.075f, 1.0f);
+      const ImVec4 high(0.95f, 0.66f, 0.28f, 1.0f);
+      const ImVec4 tint(low.x + (high.x - low.x) * intensity,
+        low.y + (high.y - low.y) * intensity,
+        low.z + (high.z - low.z) * intensity, 1.0f);
+      const ImVec2 cellA(topLeft.x + static_cast<float>(column) / columns * size.x,
+        topLeft.y + static_cast<float>(row) / rows * size.y);
+      const ImVec2 cellB(topLeft.x + static_cast<float>(column + 1) / columns * size.x + 1.0f,
+        topLeft.y + static_cast<float>(row + 1) / rows * size.y + 1.0f);
+      draw->AddRectFilled(cellA, cellB, ImGui::ColorConvertFloat4ToU32(tint));
+    }
+  }
+  const ImVec2 a = toScreen(sourceA);
+  const ImVec2 b = toScreen(sourceB);
+  draw->AddCircleFilled(a, 8.0f, IM_COL32(100, 220, 255, 255));
+  draw->AddCircle(a, 11.0f, IM_COL32_WHITE, 24, 1.5f);
+  draw->AddCircleFilled(b, 8.0f, IM_COL32(255, 120, 190, 255));
+  draw->AddCircle(b, 11.0f, IM_COL32_WHITE, 24, 1.5f);
+  draw->AddText(ImVec2(a.x + 12.0f, a.y - 8.0f), IM_COL32_WHITE, "A");
+  draw->AddText(ImVec2(b.x + 12.0f, b.y - 8.0f), IM_COL32_WHITE, "B");
+  draw->AddRect(topLeft, bottomRight, color(ImGuiCol_Border));
+  draw->AddText(ImVec2(topLeft.x + 6.0f, topLeft.y + 5.0f), IM_COL32(230, 230, 230, 180),
+    "top view: drag either source");
+  draw->PopClipRect();
+  return result;
+}
+
 } // namespace gfxlab::ui

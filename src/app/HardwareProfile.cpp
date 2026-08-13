@@ -94,6 +94,7 @@ const ProfileCapabilities& hardwareProfileCapabilities(HardwareProfile profile) 
 void normalizeForHardwareProfile(HardwareProfile profile, RendererState& state) {
   if (profile == HardwareProfile::Unrestricted) return;
   state.n64.enabled = profile == HardwareProfile::Nintendo64;
+  state.field.enabled = false;
 
   if (profile == HardwareProfile::Nintendo64) {
     if (state.n64.mipmapMode >= 2) state.n64.cycleType = 2;
@@ -182,7 +183,7 @@ void normalizeForHardwareProfile(HardwareProfile profile, RendererState& state) 
 
 bool categoryAvailableForHardwareProfile(HardwareProfile profile, Category category) {
   if (profile == HardwareProfile::Unrestricted) return true;
-  return category != Category::Stencil && category != Category::Post;
+  return category != Category::Field && category != Category::Stencil && category != Category::Post;
 }
 
 } // namespace gfxlab
