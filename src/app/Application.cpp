@@ -29,6 +29,7 @@
 #include "ui/PassInspector.hpp"
 #include "ui/TextureInspector.hpp"
 #include "ui/Workspace.hpp"
+#include "ui/Windowing.hpp"
 
 #include <algorithm>
 #include <array>
@@ -56,29 +57,44 @@ bool isNintendo64Example(handbook::Example example) {
   return example >= handbook::Example::N64ThreePoint && example <= handbook::Example::N64VideoInterface;
 }
 
-void applyUiScale(const float scale) {
-  setStyle();
-  ImGui::GetStyle().ScaleAllSizes(scale);
+constexpr std::array<float, 8> uiScales = {0.75f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f};
+
+std::array<ImFont*, uiScales.size()> createUiFonts() {
+  std::array<ImFont*, uiScales.size()> fonts{};
   ImGuiIO& io = ImGui::GetIO();
-  io.Fonts->Clear();
-  ImFontConfig fontConfig;
-  fontConfig.SizePixels = 13.0f * scale;
-  io.Fonts->AddFontDefault(&fontConfig);
-  ImGui_ImplOpenGL3_DestroyFontsTexture();
+  for (std::size_t index = 0; index < uiScales.size(); ++index) {
+    ImFontConfig config;
+    config.SizePixels = 13.0f * uiScales[index];
+    fonts[index] = io.Fonts->AddFontDefault(&config);
+  }
+  return fonts;
+}
+
+std::size_t uiScaleIndex(const float scale) {
+  const auto closest = std::min_element(uiScales.begin(), uiScales.end(), [scale](const float a, const float b) {
+    return std::abs(a - scale) < std::abs(b - scale);
+  });
+  return static_cast<std::size_t>(std::distance(uiScales.begin(), closest));
+}
+
+void applyUiScale(const float scale, const std::array<ImFont*, uiScales.size()>& fonts,
+    const ImGuiStyle& baseStyle) {
+  ImGui::GetStyle() = baseStyle;
+  ImGui::GetStyle().ScaleAllSizes(scale);
+  ImGui::GetIO().FontDefault = fonts[uiScaleIndex(scale)];
 }
 
 void stepUiScale(float& scale, const int direction) {
-  constexpr std::array<float, 8> scales = {0.75f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f};
   if (direction > 0) {
-    const auto next = std::find_if(scales.begin(), scales.end(), [scale](const float candidate) {
+    const auto next = std::find_if(uiScales.begin(), uiScales.end(), [scale](const float candidate) {
       return candidate > scale + 0.001f;
     });
-    scale = next == scales.end() ? scales.back() : *next;
+    scale = next == uiScales.end() ? uiScales.back() : *next;
   } else {
-    const auto next = std::find_if(scales.rbegin(), scales.rend(), [scale](const float candidate) {
+    const auto next = std::find_if(uiScales.rbegin(), uiScales.rend(), [scale](const float candidate) {
       return candidate < scale - 0.001f;
     });
-    scale = next == scales.rend() ? scales.front() : *next;
+    scale = next == uiScales.rend() ? uiScales.front() : *next;
   }
 }
 
@@ -111,7 +127,10 @@ int runApplication() {
   if (glfwGetPlatform() != GLFW_PLATFORM_WAYLAND)
 #endif
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+  const std::array<ImFont*, uiScales.size()> uiFonts = createUiFonts();
+  ImGui::GetIO().FontDefault = uiFonts[uiScaleIndex(1.0f)];
   setStyle();
+  const ImGuiStyle baseUiStyle = ImGui::GetStyle();
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init("#version 410 core");
 
@@ -179,7 +198,7 @@ int runApplication() {
     previousFrameTime = frameTime;
     animationTimeline.advance(deltaSeconds);
     if (std::abs(uiScale - appliedUiScale) > 0.001f) {
-      applyUiScale(uiScale);
+      applyUiScale(uiScale, uiFonts, baseUiStyle);
       appliedUiScale = uiScale;
     }
     ImGui_ImplOpenGL3_NewFrame();
@@ -272,9 +291,13 @@ int runApplication() {
       inspectorGlobalScope);
 
     if (workspaceWindows.animation) {
-      ImGui::SetNextWindowSize(ImVec2(980.0f, 300.0f), ImGuiCond_FirstUseEver);
-      if (ImGui::Begin("Animation Timeline", &workspaceWindows.animation))
+      ImGui::SetNextWindowSize(ImVec2(900.0f, 420.0f), ImGuiCond_FirstUseEver);
+      ImGui::SetNextWindowSizeConstraints(ImVec2(420.0f * uiScale, 260.0f * uiScale),
+        ImVec2(FLT_MAX, FLT_MAX));
+      if (ImGui::Begin("Animation Timeline", &workspaceWindows.animation)) {
+        keepCurrentWindowVisible();
         drawAnimationEditor(animationTimeline, renderStack, previewAnimation, inspectorGlobalScope);
+      }
       ImGui::End();
     }
 
@@ -310,6 +333,7 @@ int runApplication() {
     const float inspectorTime = evaluateAnimation ? animationTimeline.timeSeconds : 0.0f;
     if (workspaceWindows.passProperties) {
       if (ImGui::Begin("Pass Properties", &workspaceWindows.passProperties)) {
+        keepCurrentWindowVisible();
         ImGui::TextDisabled("EDITING SCOPE");
         if (ImGui::RadioButton("Global base", inspectorGlobalScope)) inspectorGlobalScope = true;
         ImGui::SameLine();
@@ -350,6 +374,7 @@ int runApplication() {
 
     if (workspaceWindows.inspector) {
       if (ImGui::Begin("Pipeline Inspector", &workspaceWindows.inspector)) {
+        keepCurrentWindowVisible();
         ImGui::TextDisabled("%s", inspectorGlobalScope ? "GLOBAL BASE" : renderStack.selected().name.c_str());
         drawPipelineTabs(category, hardwareProfile);
         ImGui::Separator();

@@ -1,6 +1,7 @@
 #include "ui/TextureInspector.hpp"
 
 #include "renderer/TextureReadback.hpp"
+#include "ui/Windowing.hpp"
 
 #include <imgui.h>
 
@@ -13,20 +14,25 @@ namespace gfxlab::ui {
 
 void drawTextureInspector(bool& open, const ViewportImages& images, const std::string_view selectedPassName) {
   if (!open) return;
+  const float uiScale = ImGui::GetFontSize() / 13.0f;
+  ImGui::SetNextWindowSize(ImVec2(720.0f, 520.0f), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSizeConstraints(ImVec2(320.0f * uiScale, 240.0f * uiScale),
+    ImVec2(FLT_MAX, FLT_MAX));
   if (!ImGui::Begin("Texture Inspector", &open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
     ImGui::End();
     return;
   }
+  keepCurrentWindowVisible();
 
   enum class Source { Selected, Base, Composite };
   static Source source = Source::Selected;
   static float zoom = 1.0f;
   static ImVec2 center(0.5f, 0.5f);
-  if (ImGui::RadioButton("Selected pass", source == Source::Selected)) source = Source::Selected;
-  ImGui::SameLine();
-  if (ImGui::RadioButton("Base pass", source == Source::Base)) source = Source::Base;
-  ImGui::SameLine();
-  if (ImGui::RadioButton("Composite", source == Source::Composite)) source = Source::Composite;
+  constexpr std::array<const char*, 3> sourceLabels = {"Selected pass", "Base pass", "Composite"};
+  int sourceIndex = static_cast<int>(source);
+  ImGui::SetNextItemWidth(150.0f);
+  if (ImGui::Combo("##texture-source", &sourceIndex, sourceLabels.data(), sourceLabels.size()))
+    source = static_cast<Source>(sourceIndex);
   ImGui::SameLine();
   if (ImGui::Button("Fit")) {
     zoom = 1.0f;

@@ -1,5 +1,6 @@
 #include "handbook/Handbook.hpp"
 #include "app/HardwareProfile.hpp"
+#include "ui/Windowing.hpp"
 
 #include <imgui.h>
 
@@ -763,7 +764,8 @@ Action Handbook::draw(gfxlab::HardwareProfile profile) {
   ImGuiIO& io = ImGui::GetIO();
   ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.05f, io.DisplaySize.y * 0.05f), ImGuiCond_Appearing);
   ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.90f, io.DisplaySize.y * 0.90f), ImGuiCond_Appearing);
-  ImGui::SetNextWindowSizeConstraints(ImVec2(900, 600), io.DisplaySize);
+  ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(900.0f, io.DisplaySize.x * 0.8f),
+    std::min(600.0f, io.DisplaySize.y * 0.8f)), io.DisplaySize);
   if (focusRequested_) {
     ImGui::SetNextWindowFocus();
     focusRequested_ = false;
@@ -772,12 +774,13 @@ Action Handbook::draw(gfxlab::HardwareProfile profile) {
     ImGui::End();
     return action;
   }
+  gfxlab::ui::keepCurrentWindowVisible();
 
   ImGui::TextUnformatted("GRAPHICS HANDBOOK");
   ImGui::SameLine();
   ImGui::TextDisabled("Mechanisms, pipeline locations, interactions, and engine vocabulary");
-  ImGui::SameLine(ImGui::GetWindowWidth() - 285.0f);
-  ImGui::SetNextItemWidth(260.0f);
+  if (ImGui::GetContentRegionAvail().x >= 280.0f) ImGui::SameLine(ImGui::GetWindowWidth() - 285.0f);
+  ImGui::SetNextItemWidth(std::min(260.0f, ImGui::GetContentRegionAvail().x));
   ImGui::InputTextWithHint("##handbook-search", "Search terminology...", search_.data(), search_.size());
   ImGui::Separator();
 

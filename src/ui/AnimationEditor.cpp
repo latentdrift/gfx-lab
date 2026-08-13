@@ -55,10 +55,11 @@ void drawTrackRow(AnimationTimeline& timeline, RenderPass& pass, const std::size
     PropertyAnimationTrack& track, const float labelWidth) {
   const AnimationPropertyInfo& info = animationPropertyInfo(track.property);
   const float rowWidth = ImGui::GetContentRegionAvail().x;
-  const float trackWidth = std::max(80.0f, rowWidth - labelWidth);
+  const float effectiveLabelWidth = std::clamp(labelWidth, 70.0f, std::max(70.0f, rowWidth - 80.0f));
+  const float trackWidth = std::max(40.0f, rowWidth - effectiveLabelWidth);
   ImGui::TextUnformatted(info.label.data());
   if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s — %s", info.group.data(), pass.name.c_str());
-  ImGui::SameLine(labelWidth);
+  ImGui::SameLine(effectiveLabelWidth);
   ImGui::InvisibleButton("##track", ImVec2(trackWidth, 19.0f));
   const ImVec2 areaMinimum = ImGui::GetItemRectMin();
   const ImVec2 areaMaximum = ImGui::GetItemRectMax();
@@ -281,7 +282,7 @@ void drawCurveEditor(AnimationTimeline& timeline, RenderStack& stack) {
 void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& previewAtPlayhead,
     const bool globalScope) {
   static bool curveView = false;
-  ImGui::BeginChild("Animation timeline", ImVec2(0.0f, 238.0f), true);
+  ImGui::BeginChild("Animation editor contents", ImVec2(0.0f, 0.0f), false);
   ImGui::AlignTextToFramePadding();
   ImGui::TextDisabled(globalScope ? "GLOBAL ANIMATION" : "LOCAL PASS ANIMATION");
   ImGui::SameLine();
@@ -289,6 +290,8 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
   ImGui::SameLine();
   if (ImGui::Button("Stop")) { timeline.playing = false; timeline.timeSeconds = 0.0f; }
   ImGui::SameLine();
+  if (ImGui::Button(curveView ? "Dope sheet" : "Curve view")) curveView = !curveView;
+
   ImGui::Checkbox("Loop", &timeline.loop);
   ImGui::SameLine();
   ImGui::Checkbox("Preview", &previewAtPlayhead);
@@ -297,22 +300,25 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
   if (ImGui::IsItemHovered()) ImGui::SetTooltip("When an animatable inspector control changes, write or replace its key at the playhead.");
   ImGui::SameLine();
   ImGui::Checkbox("All passes", &timeline.showAllPasses);
-  ImGui::SameLine();
-  ImGui::SetNextItemWidth(85.0f);
+
+  ImGui::SetNextItemWidth(100.0f);
   ImGui::DragFloat("Duration", &timeline.durationSeconds, 0.1f, 0.1f, 120.0f, "%.1f s");
   timeline.durationSeconds = std::max(timeline.durationSeconds, 0.1f);
   ImGui::SameLine();
-  ImGui::SetNextItemWidth(75.0f);
+  ImGui::SetNextItemWidth(90.0f);
   ImGui::DragFloat("Rate", &timeline.playbackRate, 0.05f, -4.0f, 4.0f, "%.2fx");
 
-  ImGui::SetNextItemWidth(std::max(160.0f, ImGui::GetContentRegionAvail().x - 390.0f));
-  if (ImGui::SliderFloat("Time", &timeline.timeSeconds, 0.0f, timeline.durationSeconds, "%.3f s"))
+  ImGui::Text("Time   %.3f s", timeline.timeSeconds);
+  ImGui::SetNextItemWidth(-1.0f);
+  if (ImGui::SliderFloat("##timeline-time", &timeline.timeSeconds, 0.0f, timeline.durationSeconds, "%.3f s"))
     timeline.playing = false;
-  ImGui::SameLine();
-  ImGui::SetNextItemWidth(180.0f);
+
   const std::vector<AnimationProperty> properties = animatableProperties(globalScope);
   propertyToAdd = std::clamp(propertyToAdd, 0, static_cast<int>(properties.size()) - 1);
   const AnimationProperty chosenProperty = properties[static_cast<std::size_t>(propertyToAdd)];
+  const float actionWidth = ImGui::CalcTextSize("Key property").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+  ImGui::SetNextItemWidth(std::max(120.0f, ImGui::GetContentRegionAvail().x - actionWidth -
+    ImGui::GetStyle().ItemSpacing.x));
   if (ImGui::BeginCombo("##property-to-key", animationPropertyInfo(chosenProperty).label.data())) {
     std::string_view previousGroup;
     for (std::size_t index = 0; index < properties.size(); ++index) {
@@ -339,16 +345,23 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
     previewAtPlayhead = true;
   }
 
-  ImGui::SameLine();
-  if (ImGui::Button(curveView ? "Dope sheet" : "Curve view")) curveView = !curveView;
-
-  const float editorWidth = 290.0f;
-  ImGui::BeginChild("Dope sheet tracks", ImVec2(std::max(200.0f, ImGui::GetContentRegionAvail().x - editorWidth - 7.0f), 146.0f), true);
+  const ImVec2 editorAvailable = ImGui::GetContentRegionAvail();
+  const float uiScale = ImGui::GetFontSize() / 13.0f;
+  const bool horizontalPanes = editorAvailable.x >= 640.0f * uiScale;
+  const float editorWidth = horizontalPanes ? std::clamp(editorAvailable.x * 0.34f,
+    250.0f * uiScale, 360.0f * uiScale)
+    : editorAvailable.x;
+  const float tracksWidth = horizontalPanes
+    ? std::max(200.0f * uiScale, editorAvailable.x - editorWidth - ImGui::GetStyle().ItemSpacing.x)
+    : editorAvailable.x;
+  const float tracksHeight = horizontalPanes ? editorAvailable.y
+    : std::max(100.0f * uiScale, editorAvailable.y * 0.58f);
+  ImGui::BeginChild("Animation tracks", ImVec2(tracksWidth, tracksHeight), true);
   if (curveView) {
     drawCurveEditor(timeline, stack);
     ImGui::EndChild();
-    ImGui::SameLine();
-    ImGui::BeginChild("Selected key editor", ImVec2(0.0f, 146.0f), true);
+    if (horizontalPanes) ImGui::SameLine();
+    ImGui::BeginChild("Selected key editor", ImVec2(0.0f, horizontalPanes ? editorAvailable.y : 0.0f), true);
     drawSelectedKeyEditor(timeline, stack);
     ImGui::EndChild();
     ImGui::EndChild();
@@ -399,8 +412,8 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
   }
   if (!anyTracks) ImGui::TextWrapped("No animated properties. Choose a real parameter above and press Key property, or use a diamond beside an inspector control.");
   ImGui::EndChild();
-  ImGui::SameLine();
-  ImGui::BeginChild("Selected key editor", ImVec2(0.0f, 146.0f), true);
+  if (horizontalPanes) ImGui::SameLine();
+  ImGui::BeginChild("Selected key editor", ImVec2(0.0f, horizontalPanes ? editorAvailable.y : 0.0f), true);
   drawSelectedKeyEditor(timeline, stack);
   ImGui::EndChild();
   ImGui::EndChild();

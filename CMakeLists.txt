@@ -36,6 +36,7 @@ add_executable(graphics-lab
   src/ui/PassInspector.cpp
   src/ui/PassDifferenceAudit.cpp
   src/ui/TextureInspector.cpp
+  src/ui/Windowing.cpp
   src/ui/Workspace.cpp
 )
 if(NOT EXISTS "${GRAPHICS_LAB_IMGUIZMO_SOURCE}/src/ImGuizmo.cpp")

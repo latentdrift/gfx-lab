@@ -3,6 +3,7 @@
 #include "app/Animation.hpp"
 #include "app/RenderStack.hpp"
 #include "assets/ModelAsset.hpp"
+#include "ui/Windowing.hpp"
 
 #include <imgui.h>
 
@@ -56,8 +57,12 @@ void replaceTrack(RenderPass& destination, const RenderPass& source, const Anima
 
 void drawPassDifferenceAudit(bool& open, RenderStack& stack) {
   if (!open) return;
+  const float uiScale = ImGui::GetFontSize() / 13.0f;
   ImGui::SetNextWindowSize(ImVec2(820.0f, 580.0f), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSizeConstraints(ImVec2(480.0f * uiScale, 300.0f * uiScale),
+    ImVec2(FLT_MAX, FLT_MAX));
   if (!ImGui::Begin("Pass difference audit", &open)) { ImGui::End(); return; }
+  keepCurrentWindowVisible();
   if (stack.passes().size() < 2) {
     ImGui::TextWrapped("Duplicate a render pass before auditing differences.");
     ImGui::End();
@@ -69,7 +74,6 @@ void drawPassDifferenceAudit(bool& open, RenderStack& stack) {
   ImGui::TextDisabled("SELECTED PASS");
   ImGui::SameLine();
   ImGui::TextUnformatted(stack.selected().name.c_str());
-  ImGui::SameLine();
   ImGui::TextDisabled("REFERENCE");
   ImGui::SameLine();
   ImGui::SetNextItemWidth(180.0f);
@@ -79,7 +83,6 @@ void drawPassDifferenceAudit(bool& open, RenderStack& stack) {
     ImGui::EndCombo();
   }
   static bool animatedOnly = false;
-  ImGui::SameLine();
   ImGui::Checkbox("Animated differences only", &animatedOnly);
   ImGui::TextWrapped("Only authored disagreements are shown. Match reference copies the reference base value and its property track; if the reference is static, the selected track is removed.");
   ImGui::Separator();

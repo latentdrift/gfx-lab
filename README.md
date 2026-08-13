@@ -73,8 +73,12 @@ src/
 Graphics Lab uses a persistent dockable workspace rather than one fixed application page. **Scene**, **Render Passes**, **Pass Properties**, **Viewport**, **Pipeline Inspector**, **Animation Timeline**, and **Pass Differences** are independent tool windows. Resize or rearrange them, drag a window outside the main application to give it a native OS window, close tools that are not relevant, and reopen them from **Window**. **Window > Restore Default Layout** rebuilds the supplied compact workspace. ImGui saves subsequent window and docking changes between runs.
 
 Use **View → UI Scale** to resize text, controls, spacing, tabs, and interaction targets together from 75% to
-200%. `Ctrl+-` and `Ctrl+=` step between the supplied sizes; `Ctrl+0` returns to 100%. Fonts are rebuilt at the
-chosen pixel size so enlarged text remains crisp.
+200%. `Ctrl+-` and `Ctrl+=` step between the supplied sizes; `Ctrl+0` returns to 100%. Every font size is loaded
+once at startup, so enlarged text remains crisp and repeatedly changing scale does not rebuild live GPU resources.
+
+Floating tools are checked against the current monitor work areas. If a saved position belongs to a disconnected
+or rearranged display, the tool is resized if necessary and recovered to the center of the main display. The
+Animation Timeline also changes between side-by-side and stacked panes as its available width changes.
 
 Use **File > Import Model** or the Scene window to load OBJ, glTF, or GLB geometry through the native file chooser. The importer applies scene-node transforms, triangulates faces, generates missing smooth normals and usable tangents, preserves UV0, vertex color 0, submesh material assignments, base-color factors, and external or embedded base-color images. It centers the result and scales its longest bounds extent to exactly 3.0 lab units so camera distance, fog, quantization, and pass perturbations remain comparable between unrelated assets. The Scene window reports geometry, material, texture, and attribute facts; missing image references appear as explicit warnings. **Use Model** and **Unload Model** are undoable.
 

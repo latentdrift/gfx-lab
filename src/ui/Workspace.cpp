@@ -3,6 +3,7 @@
 #include "assets/ModelAsset.hpp"
 #include "ui/AnimationControls.hpp"
 #include "ui/Inspector.hpp"
+#include "ui/Windowing.hpp"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -122,6 +123,7 @@ SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile&
     ImGui::End();
     return result;
   }
+  keepCurrentWindowVisible();
 
   ImGui::TextDisabled("HARDWARE TARGET");
   int profileIndex = static_cast<int>(profile);
@@ -189,6 +191,7 @@ void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& t
     ImGui::End();
     return;
   }
+  keepCurrentWindowVisible();
   ImGui::TextDisabled("BOTTOM TO TOP");
   for (std::size_t index = 0; index < stack.passes().size(); ++index) {
     RenderPass& pass = stack.passes()[index];
@@ -247,6 +250,7 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
     ImGui::End();
     return result;
   }
+  keepCurrentWindowVisible();
 
   enum class Tool { Orbit, Translate, Scale };
   static Tool tool = Tool::Orbit;
