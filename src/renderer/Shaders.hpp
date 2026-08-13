@@ -26,6 +26,19 @@ uniform float uDepthCueEnd;
 uniform bool uN64TextureGeneration;
 uniform float uNormalInflation;
 uniform int uUvMapping;
+uniform bool uFieldEnabled;
+uniform bool uFieldGeometryAffects;
+uniform vec3 uFieldSourceA;
+uniform vec3 uFieldSourceB;
+uniform float uFieldWavelength;
+uniform float uFieldPhaseOffset;
+uniform float uFieldAmplitudeA;
+uniform float uFieldAmplitudeB;
+uniform float uFieldFalloff;
+uniform float uFieldBandSharpness;
+uniform int uFieldVisualization;
+uniform float uFieldVertexDisplacement;
+uniform bool uFieldSignedDisplacement;
 
 out vec3 vWorldPosition;
 out vec3 vNormal;
@@ -37,14 +50,47 @@ out float vVertexLighting;
 out float vDepthCue;
 out vec4 vTangent;
 out vec4 vLightPosition;
+out float vFieldSignal;
+flat out int vFieldConsumerAffects;
+
+float evaluateField(vec3 worldPosition) {
+  float distanceA = length(worldPosition - uFieldSourceA);
+  float distanceB = length(worldPosition - uFieldSourceB);
+  float wavelength = max(uFieldWavelength, 0.001);
+  float waveNumber = 6.28318530718 / wavelength;
+  float phaseA = waveNumber * distanceA;
+  float phaseB = waveNumber * distanceB + uFieldPhaseOffset;
+  float envelopeA = uFieldAmplitudeA * exp(-uFieldFalloff * distanceA);
+  float envelopeB = uFieldAmplitudeB * exp(-uFieldFalloff * distanceB);
+  float waveA = envelopeA * cos(phaseA);
+  float waveB = envelopeB * cos(phaseB);
+  float value;
+  if (uFieldVisualization == 0) value = 0.5 + 0.5 * cos(phaseA);
+  else if (uFieldVisualization == 1) value = 0.5 + 0.5 * cos(phaseB);
+  else if (uFieldVisualization == 2) value = 0.5 + 0.5 * cos(phaseA - phaseB);
+  else if (uFieldVisualization == 3) {
+    float maximumAmplitude = max(uFieldAmplitudeA + uFieldAmplitudeB, 0.001);
+    value = (waveA + waveB) * (waveA + waveB) / (maximumAmplitude * maximumAmplitude);
+  } else if (uFieldVisualization == 4) {
+    value = clamp(abs(distanceA - distanceB) / (4.0 * wavelength), 0.0, 1.0);
+  } else {
+    float contour = abs(fract(abs(distanceA - distanceB) / wavelength) - 0.5) * 2.0;
+    value = 1.0 - contour;
+  }
+  return pow(clamp(value, 0.0, 1.0), max(uFieldBandSharpness, 0.01));
+}
 
 void main() {
   vec3 position = aPosition + aNormal * uNormalInflation;
   if (uQuantization > 0.0)
     position = round(position / uQuantization) * uQuantization;
   vec4 world = uModel * vec4(position, 1.0);
-  vWorldPosition = world.xyz;
   vNormal = normalize(mat3(transpose(inverse(uModel))) * aNormal);
+  vFieldSignal = uFieldEnabled && uFieldGeometryAffects ? evaluateField(world.xyz) : 0.0;
+  vFieldConsumerAffects = uFieldEnabled && uFieldGeometryAffects ? 1 : 0;
+  float displacementSignal = uFieldSignedDisplacement ? vFieldSignal * 2.0 - 1.0 : vFieldSignal;
+  world.xyz += vNormal * uFieldVertexDisplacement * displacementSignal;
+  vWorldPosition = world.xyz;
   vec3 viewNormal = normalize(mat3(uView) * vNormal);
   vec2 mappedUv = uUvMapping == 1 ? position.xy + 0.5 :
     uUvMapping == 2 ? position.xz + 0.5 :
@@ -79,6 +125,8 @@ in float vVertexLighting;
 in float vDepthCue;
 in vec4 vTangent;
 in vec4 vLightPosition;
+in float vFieldSignal;
+flat in int vFieldConsumerAffects;
 
 uniform sampler2D uTexture;
 uniform sampler2D uIndexedTexture;
@@ -130,6 +178,12 @@ uniform vec2 uUvOffset;
 uniform vec2 uUvScale;
 uniform float uUvRotation;
 uniform vec2 uUvPivot;
+uniform bool uFieldDiscardEnabled;
+uniform float uFieldDiscardThreshold;
+uniform float uFieldSurfaceColorInfluence;
+uniform float uFieldEmissionInfluence;
+uniform vec3 uFieldLowColor;
+uniform vec3 uFieldHighColor;
 out vec4 fragColor;
 
 vec4 sampleSurfaceTexture(vec2 uv) {
@@ -250,6 +304,7 @@ float shadowAmount() {
 }
 
 void main() {
+  if (vFieldConsumerAffects != 0 && uFieldDiscardEnabled && vFieldSignal < uFieldDiscardThreshold) discard;
   vec2 uv = (uAffineMapping ? vUvAffine : vUvPerspective);
   float uvCos = cos(uUvRotation);
   float uvSin = sin(uUvRotation);
@@ -309,6 +364,15 @@ void main() {
     alpha = combined.a;
     if (uN64AlphaCompare == 1 && alpha < uN64AlphaThreshold) discard;
     if (uN64AlphaCompare == 2 && alpha < n64AlphaNoise(ivec2(gl_FragCoord.xy))) discard;
+  }
+
+  vec3 fieldMiddle = mix(vec3(0.10, 0.42, 0.88), uFieldHighColor, 0.28);
+  vec3 fieldColor = vFieldSignal < 0.5
+    ? mix(uFieldLowColor, fieldMiddle, vFieldSignal * 2.0)
+    : mix(fieldMiddle, uFieldHighColor, vFieldSignal * 2.0 - 1.0);
+  if (vFieldConsumerAffects != 0) {
+    color = mix(color, fieldColor, uFieldSurfaceColorInfluence);
+    color += fieldColor * vFieldSignal * uFieldEmissionInfluence;
   }
 
   if (uWireframe) {

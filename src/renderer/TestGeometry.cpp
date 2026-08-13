@@ -75,15 +75,13 @@ std::vector<Vertex> makeSphere(int longitudeSegments, int latitudeSegments) {
   return vertices;
 }
 
-std::vector<Vertex> makeTorus() {
-  constexpr int majorSegments = 16;
-  constexpr int minorSegments = 8;
+std::vector<Vertex> makeTorus(const int majorSegments, const int minorSegments) {
   constexpr float majorRadius = 1.15f;
   constexpr float minorRadius = 0.46f;
   std::vector<Vertex> vertices;
   vertices.reserve(majorSegments * minorSegments * 6);
 
-  auto point = [](int majorIndex, int minorIndex) {
+  auto point = [=](int majorIndex, int minorIndex) {
     const float u = static_cast<float>(majorIndex) / majorSegments;
     const float v = static_cast<float>(minorIndex) / minorSegments;
     const float a = u * glm::two_pi<float>();

@@ -398,9 +398,19 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     setPropertyKeyframe(animatedField, AnimationProperty::FieldPhaseOffset, 0.0f);
     animatedField.renderer.field.phaseOffset = 3.14159265f;
     setPropertyKeyframe(animatedField, AnimationProperty::FieldPhaseOffset, 2.0f);
+    setPropertyKeyframe(animatedField, AnimationProperty::FieldVertexDisplacement, 0.0f);
+    animatedField.renderer.field.vertexDisplacement = 0.6f;
+    setPropertyKeyframe(animatedField, AnimationProperty::FieldVertexDisplacement, 2.0f);
+    const RenderPass evaluatedField = evaluateRenderPass(animatedField, 1.0f);
+    fieldValidation.field.discardBelowEnabled = true;
+    fieldValidation.field.discardThreshold = 0.45f;
+    fieldValidation.field.surfaceColorInfluence = 0.4f;
+    fieldValidation.field.emissionInfluence = 0.8f;
+    renderer.render(fieldValidation, fieldCamera, TestScene::FieldInterference, false);
     if (std::abs(evaluateRenderPass(animatedField, 1.0f).renderer.field.phaseOffset - 1.5707963f) > 0.0001f ||
+        std::abs(evaluatedField.renderer.field.vertexDisplacement - 0.41f) > 0.0001f ||
         configJson(fieldValidation, fieldCamera, TestScene::FieldInterference,
-          HardwareProfile::Unrestricted).find("\"field\"") == std::string::npos)
+          HardwareProfile::Unrestricted).find("\"consumers\"") == std::string::npos)
       fail("field animation or renderer-state export failed validation");
     current.lighting.depthCue = true;
     for (int textureColorMode = 0; textureColorMode <= 2; ++textureColorMode) {

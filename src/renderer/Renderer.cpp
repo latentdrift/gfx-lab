@@ -215,6 +215,7 @@ public:
       return range;
     };
     torus_ = appendMesh(makeTorus());
+    denseTorus_ = appendMesh(makeTorus(64, 32));
     plane_ = appendMesh(makePlane(7.0f, 16.0f, 8, 24));
     quad_ = appendMesh(makeQuad());
     lowSphere_ = appendMesh(makeSphere(12, 6));
@@ -540,6 +541,24 @@ public:
     glUniform2fv(location("uUvScale"), 1, glm::value_ptr(perturbation.uvScale));
     glUniform1f(location("uUvRotation"), perturbation.uvRotation);
     glUniform2fv(location("uUvPivot"), 1, glm::value_ptr(perturbation.uvPivot));
+    glUniform1i(location("uFieldEnabled"), state.field.enabled);
+    glUniform3fv(location("uFieldSourceA"), 1, glm::value_ptr(state.field.sourceA));
+    glUniform3fv(location("uFieldSourceB"), 1, glm::value_ptr(state.field.sourceB));
+    glUniform1f(location("uFieldWavelength"), state.field.wavelength);
+    glUniform1f(location("uFieldPhaseOffset"), state.field.phaseOffset);
+    glUniform1f(location("uFieldAmplitudeA"), state.field.amplitudeA);
+    glUniform1f(location("uFieldAmplitudeB"), state.field.amplitudeB);
+    glUniform1f(location("uFieldFalloff"), state.field.falloff);
+    glUniform1f(location("uFieldBandSharpness"), state.field.bandSharpness);
+    glUniform1i(location("uFieldVisualization"), state.field.visualization);
+    glUniform1f(location("uFieldVertexDisplacement"), state.field.vertexDisplacement);
+    glUniform1i(location("uFieldSignedDisplacement"), state.field.signedDisplacement);
+    glUniform1i(location("uFieldDiscardEnabled"), state.field.discardBelowEnabled);
+    glUniform1f(location("uFieldDiscardThreshold"), state.field.discardThreshold);
+    glUniform1f(location("uFieldSurfaceColorInfluence"), state.field.surfaceColorInfluence);
+    glUniform1f(location("uFieldEmissionInfluence"), state.field.emissionInfluence);
+    glUniform3fv(location("uFieldLowColor"), 1, glm::value_ptr(state.field.lowColor));
+    glUniform3fv(location("uFieldHighColor"), 1, glm::value_ptr(state.field.highColor));
     GLint minificationFilter = state.texture.nearestFiltering ? GL_NEAREST : GL_LINEAR;
     if (state.texture.mipmapping) {
       if (state.texture.nearestFiltering) minificationFilter = GL_NEAREST_MIPMAP_NEAREST;
@@ -587,11 +606,13 @@ public:
     else
       bindSurfaceTexture(checkerTexture_, true, true);
     glBindVertexArray(vao_);
+    glUniform1i(location("uFieldGeometryAffects"), true);
     auto drawMesh = [this, &passTransform](const MeshRange& mesh, const glm::mat4& modelMatrix,
-        const glm::vec3& tint) {
+        const glm::vec3& tint, const bool fieldGeometryAffects = true) {
       matrix("uModel", passTransform * modelMatrix);
       const glm::vec4 tintWithAlpha(tint, 1.0f);
       glUniform4fv(location("uObjectTint"), 1, glm::value_ptr(tintWithAlpha));
+      glUniform1i(location("uFieldGeometryAffects"), fieldGeometryAffects);
       glDrawArrays(GL_TRIANGLES, mesh.first, mesh.count);
     };
     const glm::mat4 identity(1.0f);
@@ -661,15 +682,16 @@ public:
       case TestScene::FieldInterference: {
         drawMesh(plane_, glm::translate(glm::scale(identity, glm::vec3(0.92f, 1.0f, 0.48f)),
           glm::vec3(0.0f, -1.15f, 0.0f)), glm::vec3(1.0f));
-        drawMesh(torus_, glm::translate(identity, glm::vec3(0.0f, 0.05f, 0.0f)) *
-          glm::scale(identity, glm::vec3(0.82f)), glm::vec3(1.0f));
-        drawMesh(smoothSphere_, glm::translate(identity, glm::vec3(0.0f, -0.15f, -2.0f)) *
-          glm::scale(identity, glm::vec3(0.62f)), glm::vec3(1.0f));
+        drawMesh(torus_, glm::translate(identity, glm::vec3(-1.35f, -0.05f, 0.0f)) *
+          glm::scale(identity, glm::vec3(0.58f)), glm::vec3(1.0f));
+        drawMesh(denseTorus_, glm::translate(identity, glm::vec3(1.35f, -0.05f, 0.0f)) *
+          glm::scale(identity, glm::vec3(0.58f)), glm::vec3(1.0f));
         bindSurfaceTexture(whiteTexture_, false, false);
         const auto drawSource = [this](const glm::vec3& position, const glm::vec3& tint) {
           matrix("uModel", glm::translate(glm::mat4(1.0f), position) *
             glm::scale(glm::mat4(1.0f), glm::vec3(0.11f)));
           glUniform4fv(location("uObjectTint"), 1, glm::value_ptr(glm::vec4(tint, 1.0f)));
+          glUniform1i(location("uFieldGeometryAffects"), false);
           glDrawArrays(GL_TRIANGLES, smoothSphere_.first, smoothSphere_.count);
         };
         drawSource(state.field.sourceA, glm::vec3(0.18f, 0.82f, 1.0f));
@@ -805,10 +827,10 @@ public:
         case TestScene::FieldInterference:
           countMesh(plane_, glm::translate(glm::scale(identity, glm::vec3(0.92f, 1.0f, 0.48f)),
             glm::vec3(0.0f, -1.15f, 0.0f)));
-          countMesh(torus_, glm::translate(identity, glm::vec3(0.0f, 0.05f, 0.0f)) *
-            glm::scale(identity, glm::vec3(0.82f)));
-          countMesh(smoothSphere_, glm::translate(identity, glm::vec3(0.0f, -0.15f, -2.0f)) *
-            glm::scale(identity, glm::vec3(0.62f)));
+          countMesh(torus_, glm::translate(identity, glm::vec3(-1.35f, -0.05f, 0.0f)) *
+            glm::scale(identity, glm::vec3(0.58f)));
+          countMesh(denseTorus_, glm::translate(identity, glm::vec3(1.35f, -0.05f, 0.0f)) *
+            glm::scale(identity, glm::vec3(0.58f)));
           break;
         case TestScene::ImportedModel:
           countMesh(imported_, identity);
@@ -1079,7 +1101,7 @@ private:
   GLint maxSamples_ = 1;
   GLfloat maxAnisotropy_ = 1.0f;
   std::vector<Vertex> baseVertices_;
-  MeshRange torus_, plane_, quad_, lowSphere_, smoothSphere_, imported_;
+  MeshRange torus_, denseTorus_, plane_, quad_, lowSphere_, smoothSphere_, imported_;
   std::vector<GLuint> importedTextureIds_;
   std::vector<ImportedMaterialGpu> importedMaterials_;
   std::vector<ImportedSubmeshGpu> importedSubmeshes_;

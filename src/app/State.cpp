@@ -96,6 +96,9 @@ void applyRecommendedSetup(TestScene scene, RendererState& state, CameraOrbit& c
       break;
     case TestScene::FieldInterference:
       state.field.enabled = true;
+      state.field.vertexDisplacement = 0.22f;
+      state.field.surfaceColorInfluence = 0.30f;
+      state.field.emissionInfluence = 0.45f;
       state.lighting.model = 0;
       state.texture.nearestFiltering = false;
       state.output.width = 640;
@@ -384,7 +387,13 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
   json << "    \"band_sharpness\": " << state.field.bandSharpness << ",\n";
   json << "    \"visualization\": \"" << fieldViews[std::clamp(state.field.visualization, 0, 5)] << "\",\n";
   json << "    \"low_color_rgb\": [" << state.field.lowColor.r << ", " << state.field.lowColor.g << ", " << state.field.lowColor.b << "],\n";
-  json << "    \"high_color_rgb\": [" << state.field.highColor.r << ", " << state.field.highColor.g << ", " << state.field.highColor.b << "]\n";
+  json << "    \"high_color_rgb\": [" << state.field.highColor.r << ", " << state.field.highColor.g << ", " << state.field.highColor.b << "],\n";
+  json << "    \"consumers\": {\"vertex_normal_displacement_units\": " << state.field.vertexDisplacement
+       << ", \"signed_displacement\": " << boolean(state.field.signedDisplacement)
+       << ", \"discard_below\": {\"enabled\": " << boolean(state.field.discardBelowEnabled)
+       << ", \"threshold\": " << state.field.discardThreshold << "}"
+       << ", \"surface_color_influence\": " << state.field.surfaceColorInfluence
+       << ", \"emission_influence\": " << state.field.emissionInfluence << "}\n";
   json << "  },\n";
   json << "  \"depth\": {\n";
   json << "    \"test_enabled\": " << boolean(state.depth.testing) << ",\n";

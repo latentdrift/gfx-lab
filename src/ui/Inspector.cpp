@@ -600,6 +600,28 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       animationKeyControl(pass, AnimationProperty::FieldHighColor, timeline,
         ImGui::ColorEdit3("Preview high color", &state.field.highColor.x));
       description("Interference intensity evaluates |E_A + E_B| squared. Preview colors do not alter the scalar field consumed by compositing.");
+      ImGui::SeparatorText("CONSUMERS");
+      animationKeyControl(pass, AnimationProperty::FieldVertexDisplacement, timeline,
+        ImGui::DragFloat("Vertex normal displacement", &state.field.vertexDisplacement,
+          0.005f, -2.0f, 2.0f, "%.3f units"));
+      animationKeyControl(pass, AnimationProperty::FieldSignedDisplacement, timeline,
+        ImGui::Checkbox("Signed displacement (-1..1)", &state.field.signedDisplacement));
+      description("Samples the field once per mesh vertex, then moves that vertex along its transformed normal. Mesh density therefore changes the result.");
+      description("The Field interference scene places a 16x8 torus beside a 64x32 torus so the sampling difference is directly visible.");
+      animationKeyControl(pass, AnimationProperty::FieldDiscardEnabled, timeline,
+        ImGui::Checkbox("Discard below field threshold", &state.field.discardBelowEnabled));
+      ImGui::BeginDisabled(!state.field.discardBelowEnabled);
+      animationKeyControl(pass, AnimationProperty::FieldDiscardThreshold, timeline,
+        ImGui::SliderFloat("Discard threshold", &state.field.discardThreshold, 0.0f, 1.0f, "%.3f"));
+      ImGui::EndDisabled();
+      description("Interpolates the per-vertex signal across each triangle and discards fragments below the threshold. This opens actual holes in depth and color.");
+      animationKeyControl(pass, AnimationProperty::FieldSurfaceColorInfluence, timeline,
+        ImGui::SliderFloat("Surface color influence", &state.field.surfaceColorInfluence,
+          0.0f, 1.0f, "%.2f"));
+      animationKeyControl(pass, AnimationProperty::FieldEmissionInfluence, timeline,
+        ImGui::SliderFloat("Emission influence", &state.field.emissionInfluence,
+          0.0f, 8.0f, "%.2fx", ImGuiSliderFlags_Logarithmic));
+      description("Surface color replaces shaded material color; emission adds field color after lighting. They are independent consumers of the same scalar signal.");
       ImGui::EndDisabled();
       break;
     }

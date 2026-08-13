@@ -30,6 +30,12 @@ struct RendererState {
     int visualization = 3;
     glm::vec3 lowColor{0.005f, 0.01f, 0.025f};
     glm::vec3 highColor{1.0f, 0.78f, 0.42f};
+    float vertexDisplacement = 0.0f;
+    bool signedDisplacement = false;
+    bool discardBelowEnabled = false;
+    float discardThreshold = 0.5f;
+    float surfaceColorInfluence = 0.0f;
+    float emissionInfluence = 0.0f;
   } field;
   struct Depth { bool testing = true; bool writing = true; int precision = 24; int function = 0; int visualization = 0; bool orderingTable = false; int orderingBuckets = 32; } depth;
   struct Stencil { bool enabled = false; bool invert = false; int reference = 1; } stencil;

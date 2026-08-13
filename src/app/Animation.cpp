@@ -30,7 +30,7 @@ using B = AnimationBehavior;
   {ID, LABEL, GROUP, COMPONENTS, KIND, B::NotAnimatable, MINIMUM, MAXIMUM}
 constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationProperty::Count)> propertyInfo = {{
   STEP("pass_enabled", "Pass enabled", "Pass", K::Boolean, 0, 1),
-  STEP("pass_output", "Output buffer", "Pass", K::Enumeration, 0, 3),
+  STEP("pass_output", "Output buffer", "Pass", K::Enumeration, 0, 4),
   STEP("texture_source", "Texture source", "Texture", K::Enumeration, 0, 3),
   STEP("texture_color_interpretation", "Texture color interpretation", "Texture", K::Boolean, 0, 1),
   CONT("model_translation", "Model translation", "Geometry perturbation", 3, K::Vec3, -4, 4),
@@ -49,8 +49,8 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   CONT("composite_bias", "Composite bias", "Composite", 1, K::Float, -1, 1),
   CONT("composite_opacity", "Composite opacity", "Composite", 1, K::Float, 0, 1),
   STEP("composite_operation", "Composite operation", "Composite", K::Enumeration, 0, 18),
-  STEP("composite_source_a", "Composite source A", "Composite operands", K::Enumeration, 0, 4),
-  STEP("composite_source_b", "Composite source B", "Composite operands", K::Enumeration, 0, 4),
+  STEP("composite_source_a", "Composite source A", "Composite operands", K::Enumeration, 0, 5),
+  STEP("composite_source_b", "Composite source B", "Composite operands", K::Enumeration, 0, 5),
   STEP("composite_source_a_pass", "Source A render-pass ID", "Composite operands", K::Integer, 1, 65535),
   STEP("composite_source_b_pass", "Source B render-pass ID", "Composite operands", K::Integer, 1, 65535),
   CONT("composite_fixed_color", "Composite fixed color", "Composite operands", 4, K::Color4, 0, 1),
@@ -60,7 +60,7 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   CONT("composite_history_uv_scale", "Previous-frame UV scale", "Composite history", 2, K::Vec2, 0.25f, 4),
   STEP("composite_color_space", "Composite color space", "Composite", K::Enumeration, 0, 1),
   STEP("composite_range", "Composite range", "Composite", K::Enumeration, 0, 2),
-  STEP("composite_mask", "Composite mask", "Composite", K::Enumeration, 0, 3),
+  STEP("composite_mask", "Composite mask", "Composite", K::Enumeration, 0, 4),
   STEP("composite_mask_inverted", "Composite mask inverted", "Composite", K::Boolean, 0, 1),
   CONT("vertex_quantization", "Vertex position precision", "Geometry", 1, K::Float, 0, 0.125f),
   STEP("clipping_enabled", "Clipping plane enabled", "Geometry", K::Boolean, 0, 1),
@@ -116,6 +116,12 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   STEP("field_visualization", "Field visualization", "Field display", K::Enumeration, 0, 5),
   CONT("field_low_color", "Field low color", "Field display", 3, K::Color3, 0, 1),
   CONT("field_high_color", "Field high color", "Field display", 3, K::Color3, 0, 1),
+  CONT("field_vertex_displacement", "Field vertex displacement", "Field consumers", 1, K::Float, -2, 2),
+  STEP("field_signed_displacement", "Signed field displacement", "Field consumers", K::Boolean, 0, 1),
+  STEP("field_discard_enabled", "Field discard enabled", "Field consumers", K::Boolean, 0, 1),
+  CONT("field_discard_threshold", "Field discard threshold", "Field consumers", 1, K::Float, 0, 1),
+  CONT("field_surface_color_influence", "Field surface color influence", "Field consumers", 1, K::Float, 0, 1),
+  CONT("field_emission_influence", "Field emission influence", "Field consumers", 1, K::Float, 0, 8),
   STEP("depth_test_enabled", "Depth test enabled", "Depth", K::Boolean, 0, 1),
   STEP("depth_write_enabled", "Depth writes enabled", "Depth", K::Boolean, 0, 1),
   FIXED("depth_precision", "Depth-buffer precision", "Depth", 1, K::Integer, 16, 24),
@@ -348,6 +354,12 @@ glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty
   case AnimationProperty::FieldVisualization: return glm::vec4(pass.renderer.field.visualization);
   case AnimationProperty::FieldLowColor: return glm::vec4(pass.renderer.field.lowColor, 1.0f);
   case AnimationProperty::FieldHighColor: return glm::vec4(pass.renderer.field.highColor, 1.0f);
+  case AnimationProperty::FieldVertexDisplacement: return glm::vec4(pass.renderer.field.vertexDisplacement);
+  case AnimationProperty::FieldSignedDisplacement: return glm::vec4(pass.renderer.field.signedDisplacement ? 1.0f : 0.0f);
+  case AnimationProperty::FieldDiscardEnabled: return glm::vec4(pass.renderer.field.discardBelowEnabled ? 1.0f : 0.0f);
+  case AnimationProperty::FieldDiscardThreshold: return glm::vec4(pass.renderer.field.discardThreshold);
+  case AnimationProperty::FieldSurfaceColorInfluence: return glm::vec4(pass.renderer.field.surfaceColorInfluence);
+  case AnimationProperty::FieldEmissionInfluence: return glm::vec4(pass.renderer.field.emissionInfluence);
   case AnimationProperty::DepthTestEnabled: return glm::vec4(pass.renderer.depth.testing ? 1.0f : 0.0f);
   case AnimationProperty::DepthWriteEnabled: return glm::vec4(pass.renderer.depth.writing ? 1.0f : 0.0f);
   case AnimationProperty::DepthPrecision: return glm::vec4(pass.renderer.depth.precision);
@@ -492,6 +504,12 @@ void setAnimationPropertyValue(RenderPass& pass, const AnimationProperty propert
   case AnimationProperty::FieldVisualization: pass.renderer.field.visualization = static_cast<int>(std::round(value.x)); break;
   case AnimationProperty::FieldLowColor: pass.renderer.field.lowColor = glm::vec3(value); break;
   case AnimationProperty::FieldHighColor: pass.renderer.field.highColor = glm::vec3(value); break;
+  case AnimationProperty::FieldVertexDisplacement: pass.renderer.field.vertexDisplacement = value.x; break;
+  case AnimationProperty::FieldSignedDisplacement: pass.renderer.field.signedDisplacement = value.x >= 0.5f; break;
+  case AnimationProperty::FieldDiscardEnabled: pass.renderer.field.discardBelowEnabled = value.x >= 0.5f; break;
+  case AnimationProperty::FieldDiscardThreshold: pass.renderer.field.discardThreshold = value.x; break;
+  case AnimationProperty::FieldSurfaceColorInfluence: pass.renderer.field.surfaceColorInfluence = value.x; break;
+  case AnimationProperty::FieldEmissionInfluence: pass.renderer.field.emissionInfluence = value.x; break;
   case AnimationProperty::DepthTestEnabled: pass.renderer.depth.testing = value.x >= 0.5f; break;
   case AnimationProperty::DepthWriteEnabled: pass.renderer.depth.writing = value.x >= 0.5f; break;
   case AnimationProperty::DepthPrecision: pass.renderer.depth.precision = static_cast<int>(std::round(value.x)); break;
