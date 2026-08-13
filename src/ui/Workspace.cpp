@@ -178,7 +178,7 @@ void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& t
   for (std::size_t index = 0; index < stack.passes().size(); ++index) {
     RenderPass& pass = stack.passes()[index];
     ImGui::PushID(static_cast<int>(index));
-    if (ImGui::Selectable(pass.name.c_str(), stack.selectedIndex() == index, 0, ImVec2(-1.0f, 22.0f))) {
+    if (ImGui::Selectable(pass.name.c_str(), stack.selectedIndex() == index, 0, ImVec2(0.0f, 22.0f))) {
       stack.select(index);
       globalScope = false;
     }
@@ -216,7 +216,7 @@ void drawPipelineTabs(Category& category, const HardwareProfile profile) {
     for (const Category candidate : categories) {
       if (!categoryAvailableForHardwareProfile(profile, candidate)) continue;
       ImGui::TableNextColumn();
-      if (ImGui::Selectable(categoryName(candidate), category == candidate, 0, ImVec2(-1.0f, 22.0f)))
+      if (ImGui::Selectable(categoryName(candidate), category == candidate, 0, ImVec2(0.0f, 22.0f)))
         category = candidate;
     }
     ImGui::EndTable();
