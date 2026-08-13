@@ -32,6 +32,10 @@ void EditorHistory::observe(const EditorSnapshot& current, const bool continuous
   if (observedFingerprint != currentFingerprint_) {
     if (!transactionStart_.has_value()) transactionStart_ = committed_;
     currentFingerprint_ = observedFingerprint;
+  } else if (!transactionStart_.has_value()) {
+    // Selection and playback position are intentionally not history entries, but the next edit should restore
+    // the document with the pass that was selected when that edit began.
+    committed_ = current;
   }
   if (transactionStart_.has_value() && !continuousInteraction) finishTransaction(current);
 }

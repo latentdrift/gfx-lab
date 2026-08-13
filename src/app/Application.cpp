@@ -267,6 +267,17 @@ int runApplication() {
   RenderStack renderStack;
   renderStack.passes()[0].renderer = current;
   renderStack.passes()[1].renderer = reference;
+  EditorHistory editorHistory(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile,
+    animationTimeline));
+  const auto restoreHistory = [&](const bool redo) {
+    const EditorSnapshot present = captureEditorSnapshot(renderStack, camera, scene, hardwareProfile,
+      animationTimeline);
+    EditorSnapshot restored;
+    const bool changed = redo ? editorHistory.redo(present, restored) : editorHistory.undo(present, restored);
+    if (!changed) return;
+    restoreEditorSnapshot(restored, renderStack, camera, scene, hardwareProfile, animationTimeline);
+    if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
+  };
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
@@ -279,6 +290,11 @@ int runApplication() {
     ImGui::NewFrame();
 
     ImGuiIO& io = ImGui::GetIO();
+    const bool commandModifier = io.KeyCtrl || io.KeySuper;
+    if (!io.WantTextInput && commandModifier && ImGui::IsKeyPressed(ImGuiKey_Z, false))
+      restoreHistory(io.KeyShift);
+    else if (!io.WantTextInput && commandModifier && ImGui::IsKeyPressed(ImGuiKey_Y, false))
+      restoreHistory(true);
     if (viewportHovered) {
       if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
         camera.yaw -= io.MouseDelta.x * 0.008f;
@@ -301,7 +317,17 @@ int runApplication() {
 
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("GRAPHICS LAB");
-    ImGui::SameLine(150);
+    ImGui::SameLine(125);
+    ImGui::BeginDisabled(!editorHistory.canUndo());
+    if (ImGui::Button("Undo")) restoreHistory(false);
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Undo  Ctrl+Z");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!editorHistory.canRedo());
+    if (ImGui::Button("Redo")) restoreHistory(true);
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Redo  Ctrl+Shift+Z or Ctrl+Y");
+    ImGui::SameLine();
     ImGui::TextDisabled("Target");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(150.0f);
@@ -490,6 +516,10 @@ int runApplication() {
       compare = CompareMode::Split;
     }
     for (RenderPass& pass : renderStack.passes()) normalizeForHardwareProfile(hardwareProfile, pass.renderer);
+    const bool viewportInteraction = viewportHovered && (ImGui::IsMouseDown(ImGuiMouseButton_Left) ||
+      ImGui::IsMouseDown(ImGuiMouseButton_Middle) || ImGui::IsMouseDown(ImGuiMouseButton_Right));
+    editorHistory.observe(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile, animationTimeline),
+      ImGui::IsAnyItemActive() || viewportInteraction);
 
     ImGui::Render();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
