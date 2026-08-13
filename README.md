@@ -23,6 +23,7 @@ src/
   app/
     Application.cpp           GLFW/ImGui lifecycle and workspace orchestration
     Animation.cpp             keyframe capture, interpolation, and stack evaluation
+    EditorHistory.cpp         document snapshots and coalesced undo/redo transactions
     HardwareProfile.cpp       target capabilities and state normalization
     RenderStack.cpp           pass definitions, compositing state, and stack export
     State.cpp                 explicit renderer state, scene setups, JSON export
@@ -45,6 +46,10 @@ src/
 - Left drag in the viewport: orbit
 - Middle or right drag: pan
 - Mouse wheel: zoom
+- Undo: Ctrl+Z
+- Redo: Ctrl+Shift+Z or Ctrl+Y
+
+Undo and redo cover the authored render stack, all renderer and composite settings, pass order and names, animation tracks, camera, scene, hardware target, and timeline configuration. Continuous sliders and viewport-camera drags collapse into one history entry. Playback time, pass selection, comparison view, open windows, and temporary evaluated animation frames are workspace state rather than authored operations, so they do not flood document history.
 
 The left panel is a bottom-to-top **render-pass stack**. Select a pass to edit its full renderer state, or press **Duplicate pass** to make a correlated copy and perturb its geometry, camera, UVs, or output buffer. Later passes combine sequentially with the accumulated image using explicit per-channel operations: absolute or signed difference, one-sided subtraction, multiply, screen, exclusion, minimum, maximum, `A x (1 - B)`, centered sum, or relative difference. Each step exposes opacity, gain, bias, encoded-RGB versus linear-light arithmetic, clamp/preserve/wrap range behavior, and optional luminance/depth/edge masks.
 

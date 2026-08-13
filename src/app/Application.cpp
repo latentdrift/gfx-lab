@@ -121,7 +121,15 @@ int runApplication() {
     const EditorSnapshot historyInitial = captureEditorSnapshot(historyStack, historyCamera, historyScene,
       historyProfile, historyTimeline);
     EditorHistory historyValidation(historyInitial);
+    historyStack.select(0);
+    historyStack.duplicateSelected();
     historyStack.selected().renderer.lighting.ambient = 0.4f;
+    historyStack.selected().perturbation.uvOffset = {0.25f, -0.125f};
+    setPassKeyframe(historyStack.selected(), 1.0f);
+    historyCamera.yaw = 1.25f;
+    historyScene = TestScene::Lighting;
+    historyProfile = HardwareProfile::Nintendo64;
+    historyTimeline.durationSeconds = 9.0f;
     historyValidation.observe(captureEditorSnapshot(historyStack, historyCamera, historyScene, historyProfile,
       historyTimeline), true);
     historyStack.selected().renderer.lighting.ambient = 0.7f;
@@ -134,11 +142,21 @@ int runApplication() {
     EditorSnapshot historyRestored;
     if (!historyValidation.undo(historyChanged, historyRestored) ||
         std::abs(historyRestored.renderStack.selected().renderer.lighting.ambient - 0.22f) > 0.0001f ||
+        historyRestored.renderStack.passes().size() != 2 || historyRestored.scene != TestScene::Torus ||
+        historyRestored.hardwareProfile != HardwareProfile::Unrestricted ||
+        std::abs(historyRestored.camera.yaw - CameraOrbit{}.yaw) > 0.0001f ||
+        std::abs(historyRestored.timeline.durationSeconds - 4.0f) > 0.0001f ||
         historyValidation.canUndo() || !historyValidation.canRedo())
       fail("editor history undo or interaction coalescing failed validation");
     if (!historyValidation.redo(historyRestored, historyRestored) ||
         std::abs(historyRestored.renderStack.selected().renderer.lighting.ambient - 0.7f) > 0.0001f ||
-        std::abs(historyRestored.renderStack.selected().perturbation.cameraYaw - 0.2f) > 0.0001f)
+        std::abs(historyRestored.renderStack.selected().perturbation.cameraYaw - 0.2f) > 0.0001f ||
+        historyRestored.renderStack.passes().size() != 3 ||
+        historyRestored.renderStack.selected().animation.keyframes.size() != 1 ||
+        historyRestored.scene != TestScene::Lighting ||
+        historyRestored.hardwareProfile != HardwareProfile::Nintendo64 ||
+        std::abs(historyRestored.camera.yaw - 1.25f) > 0.0001f ||
+        std::abs(historyRestored.timeline.durationSeconds - 9.0f) > 0.0001f)
       fail("editor history redo failed validation");
     RenderStack compositeValidation;
     compositeValidation.select(1);
