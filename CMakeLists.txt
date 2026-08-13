@@ -10,6 +10,7 @@ find_package(glm REQUIRED)
 find_package(imgui REQUIRED)
 find_package(assimp REQUIRED)
 find_package(nfd REQUIRED)
+find_package(ZLIB REQUIRED)
 
 add_executable(graphics-lab
   src/main.cpp
@@ -38,6 +39,7 @@ target_link_libraries(graphics-lab PRIVATE
   imgui::imgui
   assimp::assimp
   nfd::nfd
+  ZLIB::ZLIB
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

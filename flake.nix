@@ -33,6 +33,7 @@
               imgui
               assimp
               nativefiledialog-extended
+              zlib
               libGL
               libice
               libsm
@@ -61,6 +62,7 @@
               imgui
               assimp
               nativefiledialog-extended
+              zlib
               libGL
             ];
           };
