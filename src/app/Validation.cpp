@@ -11,6 +11,7 @@
 #include "assets/ModelAsset.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
+#include "renderer/TextureReadback.hpp"
 
 #include <GL/glew.h>
 
@@ -355,11 +356,26 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     compositeValidation.passes()[2].composite.sourceA = CompositeSource::RenderPassField;
     compositeValidation.passes()[2].composite.sourceAPassId = compositeValidation.passes()[0].id;
     compositeValidation.passes()[2].output = PassOutput::FieldSignal;
+    compositeValidation.select(2);
+    if (!compositeValidation.addOperation(StackOperationKind::Measure) ||
+        compositeValidation.selected().composite.sourceAPassId != compositeValidation.passes()[2].id)
+      fail("signal measurement consumer setup failed validation");
+    const int measurementOperationId = compositeValidation.selected().id;
+    compositeValidation.selected().measurementThreshold = 0.01f;
+    const unsigned int measuredStackOutput = renderer.composite(compositeValidation);
+    const unsigned int measuredSignal = renderer.stackOperationResult(compositeValidation.selectedIndex());
+    const SignalMeasurement measurement = measureTextureSignal(measuredSignal, 0.01f, true);
+    if (measuredStackOutput == 0 || measuredSignal == 0 || measurement.sampleCount != 4096 ||
+        measurement.peakMagnitude < measurement.meanMagnitude || measurement.coverage < 0.0f ||
+        measurement.coverage > 1.0f)
+      fail("signal measurement consumer failed validation");
     const std::string stackConfig = renderStackConfigJson(compositeValidation, camera, scene,
       HardwareProfile::Unrestricted, &timelineValidation, importedFixture.asset.get());
     if (stackConfig.find("graphics-lab.render-stack.v8") == std::string::npos ||
         stackConfig.find("typed_operations_v1") == std::string::npos ||
         stackConfig.find("\"operation_kind\"") == std::string::npos ||
+        stackConfig.find("\"operation_kind\": \"measure\"") == std::string::npos ||
+        stackConfig.find("\"measurement\"") == std::string::npos ||
         stackConfig.find("\"field_resources\"") == std::string::npos ||
         stackConfig.find("render_pass_field") == std::string::npos ||
         stackConfig.find("pass_field") == std::string::npos ||
@@ -393,6 +409,29 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         stackConfig.find("\"imported_model\"") == std::string::npos ||
         stackConfig.find("\"effective_renderer_at_time_zero\"") == std::string::npos)
       fail("render-pass stack missing from config export");
+    const std::filesystem::path measurementRoundTripPath =
+      "graphics-lab-measurement-consumer-validation.json";
+    std::string measurementIoError;
+    const std::string measurementRoundTripJson = renderStackConfigJson(compositeValidation, camera, scene,
+      HardwareProfile::Unrestricted, &timelineValidation);
+    if (!saveStackDocumentFile(measurementRoundTripPath.string(), measurementRoundTripJson,
+        measurementIoError))
+      fail("measurement consumer save validation failed: " + measurementIoError);
+    const StackDocumentLoadResult measurementRoundTrip =
+      loadStackDocumentFile(measurementRoundTripPath.string());
+    std::error_code measurementRemoveError;
+    std::filesystem::remove(measurementRoundTripPath, measurementRemoveError);
+    if (!measurementRoundTrip)
+      fail("measurement consumer save/load round trip could not load: " + measurementRoundTrip.error);
+    const auto restoredMeasurement = std::find_if(
+      measurementRoundTrip.document->renderStack.passes().begin(),
+      measurementRoundTrip.document->renderStack.passes().end(),
+      [measurementOperationId](const RenderPass& pass) { return pass.id == measurementOperationId; });
+    if (restoredMeasurement == measurementRoundTrip.document->renderStack.passes().end() ||
+        restoredMeasurement->kind != StackOperationKind::Measure ||
+        std::abs(restoredMeasurement->measurementThreshold - 0.01f) > 0.0001f ||
+        restoredMeasurement->composite.sourceAPassId != compositeValidation.passes()[2].id)
+      fail("measurement consumer save/load round trip failed validation");
     const StackDocumentLoadResult exampleDocument = loadStackDocumentFile("examples/rod-cone-xor-sdf.json");
     if (!exampleDocument || exampleDocument.document->scene != TestScene::SdfIsoSurface ||
         exampleDocument.document->renderStack.passes().size() != 2 ||

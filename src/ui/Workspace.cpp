@@ -269,6 +269,7 @@ SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStac
       : pass.kind == StackOperationKind::Interpret ? "Spectrum16  ->  Color"
       : pass.kind == StackOperationKind::Composite ? "A + B  ->  Color"
       : pass.kind == StackOperationKind::StereoAnalysis ? "Left depth + Right depth  ->  analysis"
+      : pass.kind == StackOperationKind::Measure ? "Named signal  ->  statistics"
       : "Color  ->  accumulator";
     ImGui::TextDisabled("%s", stackOperationKindLabel(pass.kind));
     if (pass.kind == StackOperationKind::Render || pass.kind == StackOperationKind::LegacyRenderComposite) {
@@ -306,6 +307,10 @@ SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStac
     }
     if (ImGui::Selectable("Analyze binocular views")) {
       stack.addOperation(StackOperationKind::StereoAnalysis);
+      selection = {EditorSelectionKind::Operation, stack.selected().id};
+    }
+    if (ImGui::Selectable("Measure a signal")) {
+      stack.addOperation(StackOperationKind::Measure);
       selection = {EditorSelectionKind::Operation, stack.selected().id};
     }
     ImGui::EndPopup();

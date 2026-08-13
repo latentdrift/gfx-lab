@@ -273,6 +273,7 @@ StackDocumentLoadResult loadStackDocumentFile(const std::string& path) {
       else if (operationKind == "interpret") pass.kind = StackOperationKind::Interpret;
       else if (operationKind == "composite") pass.kind = StackOperationKind::Composite;
       else if (operationKind == "stereo_analysis") pass.kind = StackOperationKind::StereoAnalysis;
+      else if (operationKind == "measure") pass.kind = StackOperationKind::Measure;
       else if (operationKind == "legacy_render_composite")
         pass.kind = StackOperationKind::LegacyRenderComposite;
       else
@@ -300,6 +301,12 @@ StackDocumentLoadResult loadStackDocumentFile(const std::string& path) {
           pass.stereoMaximumDisparityPixels), 1.0f);
         pass.stereoOcclusionTolerance = std::max(analysis.value("occlusion_depth_tolerance",
           pass.stereoOcclusionTolerance), 0.00001f);
+      }
+      if (sourcePass.contains("measurement") && sourcePass.at("measurement").is_object()) {
+        const Json& measurement = sourcePass.at("measurement");
+        pass.measurementThreshold = std::max(measurement.value("threshold",
+          pass.measurementThreshold), 0.0f);
+        pass.measurementAbsolute = measurement.value("absolute_magnitude", pass.measurementAbsolute);
       }
       if (sourcePass.contains("animation") && sourcePass.at("animation").is_object()) {
         const Json& animation = sourcePass.at("animation");

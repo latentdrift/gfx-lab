@@ -24,6 +24,7 @@
 #include "assets/ModelAsset.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
+#include "renderer/TextureReadback.hpp"
 #include "ui/AnimationEditor.hpp"
 #include "ui/ContextInspector.hpp"
 #include "ui/Inspector.hpp"
@@ -194,6 +195,9 @@ int runApplication() {
   bool recordingFailed = false;
   std::string documentMessage;
   bool documentOperationFailed = false;
+  SignalMeasurement cachedMeasurement;
+  int cachedMeasurementOperationId = 0;
+  double lastMeasurementTime = -1.0;
   EditorHistory editorHistory(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile,
     animationTimeline, importedModel));
   const auto restoreHistory = [&](const bool redo) {
@@ -446,6 +450,19 @@ int runApplication() {
     const GLuint renderedComposite = renderer.composite(evaluatedStack);
     GLuint selectedTexture = renderer.stackOperationResult(renderStack.selectedIndex());
     if (selectedTexture == 0) selectedTexture = renderedComposite;
+    SignalMeasurement selectedMeasurement;
+    const SignalMeasurement* selectedMeasurementPointer = nullptr;
+    if (renderStack.selected().kind == StackOperationKind::Measure && selectedTexture != 0) {
+      const bool differentConsumer = cachedMeasurementOperationId != renderStack.selected().id;
+      if (differentConsumer || frameTime - lastMeasurementTime >= 0.10) {
+        cachedMeasurement = measureTextureSignal(selectedTexture,
+          renderStack.selected().measurementThreshold, renderStack.selected().measurementAbsolute);
+        cachedMeasurementOperationId = renderStack.selected().id;
+        lastMeasurementTime = frameTime;
+      }
+      selectedMeasurement = cachedMeasurement;
+      selectedMeasurementPointer = &selectedMeasurement;
+    }
     GLuint baseTexture = 0;
     GLuint leftEyeTexture = 0;
     GLuint rightEyeTexture = 0;
@@ -506,7 +523,7 @@ int runApplication() {
     const GLuint importedTexturePreview = renderer.texturePreview(textureMappingPass.importedTexture.get());
     drawContextInspector(workspaceWindows.inspector, renderStack, animationTimeline, editorSelection,
       hardwareProfile, importedModel.get(), scene, camera, inspectorTime, importedTexturePreview,
-      category, pipelineFocusRequested);
+      category, pipelineFocusRequested, selectedMeasurementPointer);
     pipelineFocusRequested = false;
 
     const handbook::Action handbookAction = graphicsHandbook.draw(hardwareProfile);

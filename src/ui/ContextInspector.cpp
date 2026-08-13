@@ -8,6 +8,7 @@
 #include "ui/PassInspector.hpp"
 #include "ui/TextureMappingEditor.hpp"
 #include "ui/Windowing.hpp"
+#include "renderer/TextureReadback.hpp"
 
 #include <imgui.h>
 
@@ -75,7 +76,8 @@ void drawTextureSettings(RenderStack& stack, AnimationTimeline& timeline, const 
 void drawContextInspector(bool& open, RenderStack& stack, AnimationTimeline& timeline,
     const EditorSelection& selection, const HardwareProfile profile, const ModelAsset* importedModel,
     const TestScene scene, CameraOrbit& camera, const float timeSeconds,
-    const unsigned int texturePreview, Category& activeCategory, const bool focusRenderSettings) {
+    const unsigned int texturePreview, Category& activeCategory, const bool focusRenderSettings,
+    const SignalMeasurement* measurement) {
   if (!open) return;
   if (!ImGui::Begin("Inspector", &open)) {
     ImGui::End();
@@ -119,6 +121,26 @@ void drawContextInspector(bool& open, RenderStack& stack, AnimationTimeline& tim
   }
   ImGui::EndDisabled();
   ImGui::Separator();
+
+  if (!sceneDefaults && stack.selected().kind == StackOperationKind::Measure) {
+    drawOverview(stack, timeline, false, timeSeconds);
+    ImGui::SeparatorText("LIVE MEASUREMENT");
+    if (measurement == nullptr || measurement->sampleCount == 0) {
+      ImGui::TextDisabled("No readable upstream signal.");
+    } else {
+      ImGui::Text("Mean RGB     %+.4f   %+.4f   %+.4f", measurement->meanChannels.r,
+        measurement->meanChannels.g, measurement->meanChannels.b);
+      ImGui::Text("Mean magnitude                 %.5f", measurement->meanMagnitude);
+      ImGui::Text("RMS energy                     %.5f", measurement->rmsMagnitude);
+      ImGui::Text("Peak magnitude                 %.5f", measurement->peakMagnitude);
+      ImGui::Text("Coverage >= threshold          %.2f%%", measurement->coverage * 100.0f);
+      ImGui::ProgressBar(measurement->coverage, ImVec2(-1.0f, 0.0f));
+      ImGui::TextDisabled("%d spatial samples (64 x 64)", measurement->sampleCount);
+    }
+    ImGui::TextWrapped("This operation consumes data but does not replace the image flowing through the stack. Use it after a Composite to quantify disagreement, or after any other operation to measure its signal.");
+    ImGui::End();
+    return;
+  }
 
   if (ImGui::BeginTabBar("context-inspector-tabs")) {
     if (ImGui::BeginTabItem("Overview")) {

@@ -9,6 +9,7 @@ class RenderStack;
 struct AnimationTimeline;
 struct CameraOrbit;
 struct ModelAsset;
+struct SignalMeasurement;
 }
 
 namespace gfxlab::ui {
@@ -16,6 +17,6 @@ namespace gfxlab::ui {
 void drawContextInspector(bool& open, RenderStack& stack, AnimationTimeline& timeline,
   const EditorSelection& selection, HardwareProfile profile, const ModelAsset* importedModel,
   TestScene scene, CameraOrbit& camera, float timeSeconds, unsigned int texturePreview,
-  Category& activeCategory, bool focusRenderSettings);
+  Category& activeCategory, bool focusRenderSettings, const SignalMeasurement* measurement);
 
 } // namespace gfxlab::ui

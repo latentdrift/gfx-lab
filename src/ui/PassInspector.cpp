@@ -271,6 +271,29 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
     return;
   }
 
+  if (pass.kind == StackOperationKind::Measure) {
+    ImGui::SeparatorText("SIGNAL INPUT");
+    const RenderPass* selectedSource = nullptr;
+    for (const RenderPass& candidate : stack.passes())
+      if (candidate.id == pass.composite.sourceAPassId) selectedSource = &candidate;
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::BeginCombo("Upstream operation", selectedSource != nullptr
+        ? selectedSource->name.c_str() : "Select an earlier operation")) {
+      for (std::size_t index = 0; index < stack.selectedIndex(); ++index) {
+        const RenderPass& candidate = stack.passes()[index];
+        if (ImGui::Selectable(candidate.name.c_str(), candidate.id == pass.composite.sourceAPassId)) {
+          pass.composite.sourceA = CompositeSource::RenderPass;
+          pass.composite.sourceAPassId = candidate.id;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::DragFloat("Active threshold", &pass.measurementThreshold, 0.001f, 0.0f, 16.0f, "%.4f");
+    ImGui::Checkbox("Measure absolute magnitude", &pass.measurementAbsolute);
+    description("Measure samples the selected upstream result without changing the accumulated image. Coverage is the fraction of sampled pixels at or above the threshold.");
+    return;
+  }
+
   if (pass.kind == StackOperationKind::StereoAnalysis) {
     ImGui::SeparatorText("BINOCULAR INPUTS");
     const auto renderSourceCombo = [&](const char* label, int& sourceId) {

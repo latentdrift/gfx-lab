@@ -1267,6 +1267,13 @@ public:
         }
         return passTexture;
       };
+      if (pass.kind == StackOperationKind::Measure) {
+        // A measurement is a terminal consumer: it observes a named signal without replacing the
+        // image flowing through the accumulator. Keep the source available for inspection.
+        operationTextures_[passIndex] = sourceTexture(pass.composite.sourceA,
+          pass.composite.sourceAPassId);
+        continue;
+      }
       if (pass.kind == StackOperationKind::StereoAnalysis) {
         const std::size_t leftIndex = passIndexForId(pass.composite.sourceAPassId);
         const std::size_t rightIndex = passIndexForId(pass.composite.sourceBPassId);

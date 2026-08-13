@@ -143,6 +143,8 @@ void applyPassDefinition(RenderPass& materialized, const RenderPass& definition)
   materialized.stereoAnalysis = definition.stereoAnalysis;
   materialized.stereoMaximumDisparityPixels = definition.stereoMaximumDisparityPixels;
   materialized.stereoOcclusionTolerance = definition.stereoOcclusionTolerance;
+  materialized.measurementThreshold = definition.measurementThreshold;
+  materialized.measurementAbsolute = definition.measurementAbsolute;
   materialized.animation = definition.animation;
   materialized.overrides = definition.overrides;
   materialized.importedTextureOverride = definition.importedTextureOverride;
@@ -190,6 +192,7 @@ bool RenderStack::duplicateSelected() {
 
 bool RenderStack::addOperation(const StackOperationKind kind) {
   if (passes_.size() >= maximumPasses) return false;
+  const int previouslySelectedId = selected().id;
   RenderPass operation;
   operation.id = nextPassId_++;
   operation.kind = kind;
@@ -208,6 +211,9 @@ bool RenderStack::addOperation(const StackOperationKind kind) {
     operation.composite.sourceA = CompositeSource::RenderPass;
     operation.composite.sourceB = CompositeSource::RenderPass;
     operation.composite.gain = 1.0f;
+  } else if (kind == StackOperationKind::Measure) {
+    operation.composite.sourceA = CompositeSource::RenderPass;
+    operation.composite.gain = 1.0f;
   }
   const auto firstRender = std::find_if(passes_.begin(), passes_.end(), [](const RenderPass& candidate) {
     return candidate.kind == StackOperationKind::Render ||
@@ -224,6 +230,8 @@ bool RenderStack::addOperation(const StackOperationKind kind) {
       if (secondRender != passes_.end()) operation.composite.sourceBPassId = secondRender->id;
     }
   }
+  if (kind == StackOperationKind::Measure)
+    operation.composite.sourceAPassId = previouslySelectedId;
   passes_.insert(passes_.begin() + static_cast<std::ptrdiff_t>(selected_ + 1), std::move(operation));
   ++selected_;
   return true;
@@ -306,6 +314,7 @@ const char* stackOperationKindLabel(const StackOperationKind kind) {
     case StackOperationKind::Interpret: return "Interpret";
     case StackOperationKind::Composite: return "Composite";
     case StackOperationKind::StereoAnalysis: return "Stereo analysis";
+    case StackOperationKind::Measure: return "Measure";
     case StackOperationKind::LegacyRenderComposite: return "Render + composite (legacy)";
   }
   return "Operation";
@@ -317,6 +326,7 @@ const char* stackOperationKindId(const StackOperationKind kind) {
     case StackOperationKind::Interpret: return "interpret";
     case StackOperationKind::Composite: return "composite";
     case StackOperationKind::StereoAnalysis: return "stereo_analysis";
+    case StackOperationKind::Measure: return "measure";
     case StackOperationKind::LegacyRenderComposite: return "legacy_render_composite";
   }
   return "render";
@@ -542,6 +552,8 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
          << stereoAnalysisIds[static_cast<int>(pass.stereoAnalysis)]
          << "\", \"maximum_disparity_pixels\": " << pass.stereoMaximumDisparityPixels
          << ", \"occlusion_depth_tolerance\": " << pass.stereoOcclusionTolerance << "},\n";
+    json << "      \"measurement\": {\"threshold\": " << pass.measurementThreshold
+         << ", \"absolute_magnitude\": " << pass.measurementAbsolute << "},\n";
     json << "      \"animation\": {\"enabled\": " << pass.animation.enabled << ", \"property_tracks\": [";
     for (std::size_t trackIndex = 0; trackIndex < pass.animation.tracks.size(); ++trackIndex) {
       const PropertyAnimationTrack& track = pass.animation.tracks[trackIndex];
