@@ -13,6 +13,7 @@ add_executable(graphics-lab
   src/main.cpp
   src/app/Application.cpp
   src/app/HardwareProfile.cpp
+  src/app/RenderStack.cpp
   src/app/State.cpp
   src/handbook/Handbook.cpp
   src/renderer/Renderer.cpp

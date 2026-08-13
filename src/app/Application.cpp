@@ -13,6 +13,7 @@
 
 #include "app/State.hpp"
 #include "app/HardwareProfile.hpp"
+#include "app/RenderStack.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
 #include "ui/Inspector.hpp"
@@ -120,6 +121,11 @@ int runApplication() {
   handbook::Handbook graphicsHandbook;
 
   if (std::getenv("GRAPHICS_LAB_VALIDATE_HANDBOOK")) {
+    RenderStack validationStack;
+    if (validationStack.passes().size() != 2 || !validationStack.duplicateSelected() ||
+        validationStack.passes().size() != 3 || !validationStack.moveSelected(-1) ||
+        !validationStack.removeSelected() || validationStack.passes().size() != 2)
+      fail("render-pass stack operations failed validation");
     constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,
       handbook::Example::AffineMapping, handbook::Example::TextureMinification, handbook::Example::NormalMapping,
       handbook::Example::LightingInterpolation, handbook::Example::DepthPrecision, handbook::Example::Transparency,
