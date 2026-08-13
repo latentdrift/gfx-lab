@@ -216,19 +216,21 @@ public:
     glEnableVertexAttribArray(5);
     glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, tangent)));
     glGenVertexArrays(1, &fullscreenVao_);
-    glGenFramebuffers(1, &relationFbo_);
-    glGenTextures(1, &relationTexture_);
-    glBindTexture(GL_TEXTURE_2D, relationTexture_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, relationWidth_, relationHeight_, 0, GL_RGBA,
-      GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glBindFramebuffer(GL_FRAMEBUFFER, relationFbo_);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, relationTexture_, 0);
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-      failRenderer("could not create render-algebra target");
+    glGenFramebuffers(static_cast<GLsizei>(relationFbos_.size()), relationFbos_.data());
+    glGenTextures(static_cast<GLsizei>(relationTextures_.size()), relationTextures_.data());
+    for (std::size_t index = 0; index < relationTextures_.size(); ++index) {
+      glBindTexture(GL_TEXTURE_2D, relationTextures_[index]);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, relationWidth_, relationHeight_, 0, GL_RGBA,
+        GL_FLOAT, nullptr);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      glBindFramebuffer(GL_FRAMEBUFFER, relationFbos_[index]);
+      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, relationTextures_[index], 0);
+      if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        failRenderer("could not create render-algebra target");
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glGetIntegerv(GL_MAX_SAMPLES, &maxSamples_);
     if (GLEW_EXT_texture_filter_anisotropic)
@@ -252,8 +254,7 @@ public:
   }
 
   ~Impl() {
-    targetA_.destroy();
-    targetB_.destroy();
+    for (RenderTarget& target : passTargets_) target.destroy();
     glDeleteTextures(1, &checkerTexture_);
     glDeleteTextures(1, &indexedTexture_);
     glDeleteTextures(1, &clutTexture_);
@@ -264,8 +265,8 @@ public:
     glDeleteBuffers(1, &vbo_);
     glDeleteVertexArrays(1, &vao_);
     glDeleteVertexArrays(1, &fullscreenVao_);
-    glDeleteFramebuffers(1, &relationFbo_);
-    glDeleteTextures(1, &relationTexture_);
+    glDeleteFramebuffers(static_cast<GLsizei>(relationFbos_.size()), relationFbos_.data());
+    glDeleteTextures(static_cast<GLsizei>(relationTextures_.size()), relationTextures_.data());
     glDeleteProgram(sceneProgram_);
     glDeleteProgram(outputProgram_);
     glDeleteProgram(relationProgram_);
@@ -273,8 +274,16 @@ public:
     glDeleteProgram(overdrawProgram_);
   }
 
-  GLuint render(const RendererState& state, const CameraOrbit& camera, TestScene scene, bool referenceTarget) {
-    RenderTarget& target = referenceTarget ? targetB_ : targetA_;
+  GLuint render(const RendererState& state, const CameraOrbit& camera, TestScene scene, const std::size_t targetIndex,
+      const PassPerturbation& perturbation = {}, const PassOutput output = PassOutput::Color) {
+    if (targetIndex >= passTargets_.size()) return 0;
+    RenderTarget& target = passTargets_[targetIndex];
+    CameraOrbit passCamera = camera;
+    passCamera.yaw += perturbation.cameraYaw;
+    passCamera.pitch = std::clamp(passCamera.pitch + perturbation.cameraPitch, -1.45f, 1.45f);
+    passCamera.distance = std::clamp(passCamera.distance + perturbation.cameraDistance, 1.4f, 14.0f);
+    const glm::mat4 passTransform = glm::translate(glm::mat4(1.0f), perturbation.modelTranslation) *
+      glm::scale(glm::mat4(1.0f), glm::vec3(std::max(0.01f, perturbation.modelScale)));
     const float azimuth = glm::radians(state.lighting.azimuth);
     const float elevation = glm::radians(state.lighting.elevation);
     const glm::vec3 lightDirection(std::cos(elevation) * std::cos(azimuth), std::sin(elevation),
@@ -301,8 +310,10 @@ public:
       glUniformMatrix4fv(glGetUniformLocation(shadowProgram_, "uLightSpace"), 1, GL_FALSE, glm::value_ptr(lightSpace));
       glUniform1f(glGetUniformLocation(shadowProgram_, "uQuantization"), state.geometry.vertexQuantization);
       glBindVertexArray(vao_);
-      auto drawShadow = [this](const MeshRange& mesh, const glm::mat4& modelMatrix) {
-        glUniformMatrix4fv(glGetUniformLocation(shadowProgram_, "uModel"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+      auto drawShadow = [this, &passTransform](const MeshRange& mesh, const glm::mat4& modelMatrix) {
+        const glm::mat4 transformed = passTransform * modelMatrix;
+        glUniformMatrix4fv(glGetUniformLocation(shadowProgram_, "uModel"), 1, GL_FALSE,
+          glm::value_ptr(transformed));
         glDrawArrays(GL_TRIANGLES, mesh.first, mesh.count);
       };
       const glm::mat4 identity(1.0f);
@@ -371,12 +382,13 @@ public:
 
     glUseProgram(sceneProgram_);
     const glm::mat4 model = glm::rotate(glm::mat4(1.0f), glm::radians(-14.0f), glm::vec3(1, 0, 0));
-    const glm::mat4 view = camera.view();
+    const glm::mat4 view = passCamera.view();
     const float aspect = static_cast<float>(target.width) / static_cast<float>(target.height);
     const float halfHeight = state.camera.orthographicSize * 0.5f;
     const glm::mat4 projection = state.camera.orthographic
       ? glm::ortho(-halfHeight * aspect, halfHeight * aspect, -halfHeight, halfHeight, state.camera.nearPlane, 100.0f)
-      : glm::perspective(glm::radians(state.camera.fieldOfView), aspect, state.camera.nearPlane, 100.0f);
+      : glm::perspective(glm::radians(std::clamp(state.camera.fieldOfView + perturbation.fieldOfView,
+          5.0f, 150.0f)), aspect, state.camera.nearPlane, 100.0f);
     matrix("uModel", model);
     matrix("uView", view);
     matrix("uProjection", projection);
@@ -389,7 +401,9 @@ public:
     glUniform1i(location("uAffineMapping"), state.rasterization.affineMapping);
     glUniform1i(location("uSmoothShading"), state.surface.smoothShading);
     glUniform1i(location("uWireframe"), state.surface.wireframe);
-    glUniform1i(location("uVisualization"), state.surface.visualization);
+    const int passVisualization = output == PassOutput::Normals ? 2
+      : output == PassOutput::VertexColor ? 3 : state.surface.visualization;
+    glUniform1i(location("uVisualization"), passVisualization);
     glUniform1i(location("uTransparencyMode"), state.surface.transparency);
     glUniform1f(location("uAlphaCutoff"), state.surface.alphaCutoff);
     glUniform1i(location("uPremultiplyAlpha"), state.surface.transparency == 3);
@@ -402,6 +416,7 @@ public:
     glUniform1f(location("uDepthCueEnd"), state.lighting.depthCueEnd);
     glUniform3fv(location("uFarColor"), 1, glm::value_ptr(state.lighting.farColor));
     glUniform1i(location("uN64TextureGeneration"), state.n64.enabled && state.n64.textureGeneration);
+    glUniform1f(location("uNormalInflation"), perturbation.normalInflation);
     glUniform1f(location("uShininess"), state.lighting.shininess);
     glUniform1i(location("uLinearLight"), state.color.linearLight);
     glUniform3fv(location("uLightDirection"), 1, glm::value_ptr(lightDirection));
@@ -425,7 +440,9 @@ public:
     glUniform2i(location("uN64Shift"), state.n64.shiftS, state.n64.shiftT);
     glUniform1i(location("uN64AlphaCompare"), state.n64.alphaCompare);
     glUniform1f(location("uN64AlphaThreshold"), state.n64.alphaThreshold);
-    glUniform3fv(location("uCameraPosition"), 1, glm::value_ptr(camera.eye()));
+    glUniform3fv(location("uCameraPosition"), 1, glm::value_ptr(passCamera.eye()));
+    glUniform2fv(location("uUvOffset"), 1, glm::value_ptr(perturbation.uvOffset));
+    glUniform2fv(location("uUvScale"), 1, glm::value_ptr(perturbation.uvScale));
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, checkerTexture_);
     GLint minificationFilter = state.texture.nearestFiltering ? GL_NEAREST : GL_LINEAR;
@@ -460,8 +477,9 @@ public:
     glBindTexture(GL_TEXTURE_2D, shadowTexture_);
     glUniform1i(location("uShadowMap"), 2);
     glBindVertexArray(vao_);
-    auto drawMesh = [this](const MeshRange& mesh, const glm::mat4& modelMatrix, const glm::vec3& tint) {
-      matrix("uModel", modelMatrix);
+    auto drawMesh = [this, &passTransform](const MeshRange& mesh, const glm::mat4& modelMatrix,
+        const glm::vec3& tint) {
+      matrix("uModel", passTransform * modelMatrix);
       glUniform3fv(location("uObjectTint"), 1, glm::value_ptr(tint));
       glDrawArrays(GL_TRIANGLES, mesh.first, mesh.count);
     };
@@ -490,7 +508,7 @@ public:
         if (orderingTableActive) {
           const int bucketCount = std::clamp(state.depth.orderingBuckets, 4, 256);
           auto bucket = [&](int objectIndex) {
-            const glm::vec4 viewCenter = view * transforms[objectIndex] * glm::vec4(0, 0, 0, 1);
+            const glm::vec4 viewCenter = view * passTransform * transforms[objectIndex] * glm::vec4(0, 0, 0, 1);
             const float normalizedDepth = glm::clamp(-viewCenter.z / 16.0f, 0.0f, 1.0f);
             return static_cast<int>(normalizedDepth * static_cast<float>(bucketCount - 1));
           };
@@ -563,8 +581,10 @@ public:
       glUniformMatrix4fv(glGetUniformLocation(overdrawProgram_, "uProjection"), 1, GL_FALSE, glm::value_ptr(projection));
       glUniform1f(glGetUniformLocation(overdrawProgram_, "uQuantization"), state.geometry.vertexQuantization);
       glBindVertexArray(vao_);
-      auto countMesh = [this](const MeshRange& mesh, const glm::mat4& modelMatrix) {
-        glUniformMatrix4fv(glGetUniformLocation(overdrawProgram_, "uModel"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+      auto countMesh = [this, &passTransform](const MeshRange& mesh, const glm::mat4& modelMatrix) {
+        const glm::mat4 transformed = passTransform * modelMatrix;
+        glUniformMatrix4fv(glGetUniformLocation(overdrawProgram_, "uModel"), 1, GL_FALSE,
+          glm::value_ptr(transformed));
         glDrawArrays(GL_TRIANGLES, mesh.first, mesh.count);
       };
       const glm::mat4 identity(1.0f);
@@ -615,7 +635,8 @@ public:
     glUniform1i(glGetUniformLocation(outputProgram_, "uBitsPerChannel"), state.color.bitsPerChannel);
     glUniform1i(glGetUniformLocation(outputProgram_, "uDithering"), state.color.dithering);
     glUniform1i(glGetUniformLocation(outputProgram_, "uLinearLight"), state.color.linearLight);
-    glUniform1i(glGetUniformLocation(outputProgram_, "uDepthVisualization"), state.depth.visualization);
+    glUniform1i(glGetUniformLocation(outputProgram_, "uDepthVisualization"),
+      output == PassOutput::Depth ? 2 : state.depth.visualization);
     glUniform1f(glGetUniformLocation(outputProgram_, "uNearPlane"), state.camera.nearPlane);
     glUniform1f(glGetUniformLocation(outputProgram_, "uFarPlane"), 100.0f);
     glUniform1i(glGetUniformLocation(outputProgram_, "uOrthographic"), state.camera.orthographic);
@@ -643,26 +664,55 @@ public:
     return target.outputTexture;
   }
 
-  GLuint renderRelation(RelationOperator operation, float gain, float bias) {
-    glBindFramebuffer(GL_FRAMEBUFFER, relationFbo_);
+  GLuint compositeTextures(const GLuint imageA, const GLuint imageB, const CompositeStep& step,
+      const std::size_t outputIndex) {
+    const std::size_t pingPong = outputIndex % relationFbos_.size();
+    glBindFramebuffer(GL_FRAMEBUFFER, relationFbos_[pingPong]);
     glViewport(0, 0, relationWidth_, relationHeight_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
     glUseProgram(relationProgram_);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, targetA_.outputTexture);
+    glBindTexture(GL_TEXTURE_2D, imageA);
     glUniform1i(glGetUniformLocation(relationProgram_, "uImageA"), 0);
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, targetB_.outputTexture);
+    glBindTexture(GL_TEXTURE_2D, imageB);
     glUniform1i(glGetUniformLocation(relationProgram_, "uImageB"), 1);
-    glUniform1i(glGetUniformLocation(relationProgram_, "uOperator"), static_cast<int>(operation));
-    glUniform1f(glGetUniformLocation(relationProgram_, "uGain"), gain);
-    glUniform1f(glGetUniformLocation(relationProgram_, "uBias"), bias);
+    glUniform1i(glGetUniformLocation(relationProgram_, "uOperator"), static_cast<int>(step.operation));
+    glUniform1f(glGetUniformLocation(relationProgram_, "uGain"), step.gain);
+    glUniform1f(glGetUniformLocation(relationProgram_, "uBias"), step.bias);
+    glUniform1f(glGetUniformLocation(relationProgram_, "uOpacity"), step.opacity);
+    glUniform1i(glGetUniformLocation(relationProgram_, "uColorSpace"), static_cast<int>(step.colorSpace));
+    glUniform1i(glGetUniformLocation(relationProgram_, "uRangeMode"), static_cast<int>(step.range));
     glBindVertexArray(fullscreenVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    return relationTexture_;
+    return relationTextures_[pingPong];
+  }
+
+  GLuint renderRelation(const RelationOperator operation, const float gain, const float bias) {
+    CompositeStep step;
+    step.operation = operation;
+    step.gain = gain;
+    step.bias = bias;
+    return compositeTextures(passTargets_[0].outputTexture, passTargets_[1].outputTexture, step, 0);
+  }
+
+  GLuint composite(const RenderStack& stack) {
+    GLuint accumulated = 0;
+    std::size_t compositeIndex = 0;
+    for (std::size_t passIndex = 0; passIndex < stack.passes().size(); ++passIndex) {
+      const RenderPass& pass = stack.passes()[passIndex];
+      if (!pass.enabled) continue;
+      const GLuint passTexture = passTargets_[passIndex].outputTexture;
+      if (accumulated == 0) {
+        accumulated = passTexture;
+        continue;
+      }
+      accumulated = compositeTextures(accumulated, passTexture, pass.composite, compositeIndex++);
+    }
+    return accumulated;
   }
 
 private:
@@ -675,8 +725,9 @@ private:
   MeshRange torus_, plane_, quad_, lowSphere_, smoothSphere_;
   GLuint shadowFbo_ = 0, shadowTexture_ = 0;
   int shadowResolution_ = 0;
-  RenderTarget targetA_, targetB_;
-  GLuint relationFbo_ = 0, relationTexture_ = 0;
+  std::array<RenderTarget, RenderStack::maximumPasses> passTargets_;
+  std::array<GLuint, 2> relationFbos_{};
+  std::array<GLuint, 2> relationTextures_{};
   static constexpr int relationWidth_ = 960;
   static constexpr int relationHeight_ = 720;
 
@@ -820,5 +871,12 @@ unsigned int Renderer::render(const RendererState& state, const CameraOrbit& cam
 unsigned int Renderer::renderRelation(RelationOperator operation, float gain, float bias) {
   return impl_->renderRelation(operation, gain, bias);
 }
+
+unsigned int Renderer::renderPass(const RenderPass& pass, const CameraOrbit& camera, const TestScene scene,
+    const std::size_t targetIndex) {
+  return impl_->render(pass.renderer, camera, scene, targetIndex, pass.perturbation, pass.output);
+}
+
+unsigned int Renderer::composite(const RenderStack& stack) { return impl_->composite(stack); }
 
 } // namespace gfxlab

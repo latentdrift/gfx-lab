@@ -126,6 +126,16 @@ int runApplication() {
         validationStack.passes().size() != 3 || !validationStack.moveSelected(-1) ||
         !validationStack.removeSelected() || validationStack.passes().size() != 2)
       fail("render-pass stack operations failed validation");
+    RenderStack compositeValidation;
+    compositeValidation.select(1);
+    compositeValidation.duplicateSelected();
+    compositeValidation.passes()[1].perturbation.cameraYaw = 0.01f;
+    compositeValidation.passes()[2].perturbation.uvOffset = {1.0f / 256.0f, 0.0f};
+    compositeValidation.passes()[2].composite.operation = RelationOperator::Exclusion;
+    for (std::size_t passIndex = 0; passIndex < compositeValidation.passes().size(); ++passIndex)
+      renderer.renderPass(compositeValidation.passes()[passIndex], camera, scene, passIndex);
+    if (renderer.composite(compositeValidation) == 0)
+      fail("sequential render-pass compositing failed validation");
     constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,
       handbook::Example::AffineMapping, handbook::Example::TextureMinification, handbook::Example::NormalMapping,
       handbook::Example::LightingInterpolation, handbook::Example::DepthPrecision, handbook::Example::Transparency,

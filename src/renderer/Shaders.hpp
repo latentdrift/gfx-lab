@@ -24,6 +24,7 @@ uniform bool uDepthCueEnabled;
 uniform float uDepthCueStart;
 uniform float uDepthCueEnd;
 uniform bool uN64TextureGeneration;
+uniform float uNormalInflation;
 
 out vec3 vWorldPosition;
 out vec3 vNormal;
@@ -37,7 +38,7 @@ out vec4 vTangent;
 out vec4 vLightPosition;
 
 void main() {
-  vec3 position = aPosition;
+  vec3 position = aPosition + aNormal * uNormalInflation;
   if (uQuantization > 0.0)
     position = round(position / uQuantization) * uQuantization;
   vec4 world = uModel * vec4(position, 1.0);
@@ -119,6 +120,8 @@ uniform ivec2 uN64Shift;
 uniform int uN64AlphaCompare;
 uniform float uN64AlphaThreshold;
 uniform sampler2D uN64DetailTexture;
+uniform vec2 uUvOffset;
+uniform vec2 uUvScale;
 out vec4 fragColor;
 
 vec4 sampleSurfaceTexture(vec2 uv) {
@@ -239,7 +242,7 @@ float shadowAmount() {
 }
 
 void main() {
-  vec2 uv = uAffineMapping ? vUvAffine : vUvPerspective;
+  vec2 uv = (uAffineMapping ? vUvAffine : vUvPerspective) * uUvScale + uUvOffset;
   vec3 normal = uSmoothShading
     ? normalize(vNormal)
     : normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
@@ -434,11 +437,20 @@ uniform sampler2D uImageB;
 uniform int uOperator;
 uniform float uGain;
 uniform float uBias;
+uniform float uOpacity;
+uniform int uColorSpace;
+uniform int uRangeMode;
 out vec4 fragColor;
 
+vec3 signedPow(vec3 value, float exponent) {
+  return sign(value) * pow(abs(value), vec3(exponent));
+}
+
 void main() {
-  vec3 a = texture(uImageA, vUv).rgb;
-  vec3 b = texture(uImageB, vUv).rgb;
+  vec3 storedA = texture(uImageA, vUv).rgb;
+  vec3 storedB = texture(uImageB, vUv).rgb;
+  vec3 a = uColorSpace == 1 ? signedPow(storedA, 2.2) : storedA;
+  vec3 b = uColorSpace == 1 ? signedPow(storedB, 2.2) : storedB;
   vec3 relation;
   if (uOperator == 0) relation = abs(a - b);
   else if (uOperator == 1) relation = a - b;
@@ -452,7 +464,12 @@ void main() {
   else if (uOperator == 9) relation = a * (1.0 - b);
   else if (uOperator == 10) relation = a + b - 1.0;
   else relation = a / max(b, vec3(1.0 / 255.0)) - 1.0;
-  fragColor = vec4(clamp(relation * uGain + uBias, 0.0, 1.0), 1.0);
+  relation = relation * uGain + uBias;
+  if (uRangeMode == 0) relation = clamp(relation, 0.0, 1.0);
+  else if (uRangeMode == 2) relation = fract(relation);
+  vec3 composed = mix(a, relation, uOpacity);
+  if (uColorSpace == 1) composed = signedPow(composed, 1.0 / 2.2);
+  fragColor = vec4(composed, 1.0);
 }
 )GLSL";
 

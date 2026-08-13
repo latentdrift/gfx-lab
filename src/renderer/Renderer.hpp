@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/State.hpp"
+#include "app/RenderStack.hpp"
 
 #include <memory>
 
@@ -17,6 +18,9 @@ public:
   unsigned int render(const RendererState& state, const CameraOrbit& camera, TestScene scene,
     bool referenceTarget);
   unsigned int renderRelation(RelationOperator operation, float gain, float bias);
+  unsigned int renderPass(const RenderPass& pass, const CameraOrbit& camera, TestScene scene,
+    std::size_t targetIndex);
+  unsigned int composite(const RenderStack& stack);
 
 private:
   class Impl;
