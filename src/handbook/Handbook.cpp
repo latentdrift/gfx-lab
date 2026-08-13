@@ -19,7 +19,7 @@ namespace {
 enum class Diagram {
   Pipeline, Attributes, Projection, Triangle, Mipmaps, Tbn, Lighting, Depth, Blend,
   Stencil, Color, Shadow, Output, Overdraw, ShaderProgram, ShaderData, RenderGraph,
-  Performance, Animation, RayTracing
+  Comparison, Performance, Animation, RayTracing
 };
 
 struct Chapter {
@@ -299,6 +299,12 @@ constexpr std::array articles = {
     "VI filtering is not bilinear texture sampling and should be evaluated after framebuffer precision, dithering, and coverage behavior.",
     "Specify framebuffer resolution/format, RDP coverage AA, VI reconstruction, divot filtering, and final display scaling separately.", Diagram::Output,
     Example::N64VideoInterface, "VI reconstruction and divot filters disabled", "Approximate VI reconstruction plus horizontal divot filter"},
+  Article{"Output", "Render algebra between completed images",
+    "Render algebra evaluates the same aligned scene through two renderer states A and B, then computes a per-pixel, usually per-channel relationship F(A, B). Absolute difference preserves disagreement magnitude; signed difference also preserves which renderer produced the larger value.",
+    "A separate fullscreen pass after both selected renderer pipelines have produced images",
+    "Agreement, opposition, and partial channel disagreement become the subject of the image. Clamped extrema can appear black, white, or intensely saturated without representing physical darkness or emitted light.",
+    "Camera, geometry, resolution, and sample alignment must match if the goal is pipeline comparison. Encoded-RGB versus linear-light arithmetic changes the result; gain reveals small residuals, bias displays signed values, and clamping deliberately destroys out-of-range magnitude.",
+    "Call this comparative rendering, image-space arithmetic, render algebra, or difference compositing. State the operator and whether it runs before or after quantization, dithering, framebuffer blending, and display reconstruction. Do not confuse it with an RDP material combiner or framebuffer alpha blending.", Diagram::Comparison},
   Article{"Engine architecture", "Asset, scene, material, and renderer responsibilities",
     "Assets define authored data. The scene defines objects, transforms, cameras, and lights. Materials define surface inputs and shading. The renderer schedules passes and configures GPU state.",
     "Whole engine", "A coherent visual style emerges from constraints across all four responsibility areas.",
@@ -411,6 +417,7 @@ constexpr std::array quickReads = {
   QuickRead{"Color quantization and dithering", "Fewer allowed colors create bands; dithering rearranges the rounding errors into a controlled spatial pattern."},
   QuickRead{"Internal resolution and upscaling", "Render the whole scene into a smaller image first, then enlarge that finished image for the window."},
   QuickRead{"N64 Video Interface filtering", "After rendering is finished, the VI reconstructs and scales the framebuffer signal; this is separate from filtering a material texture."},
+  QuickRead{"Render algebra between completed images", "Render A and B separately, then make a third image whose pixels describe how those two completed renderings agree or disagree."},
   QuickRead{"Asset, scene, material, and renderer responsibilities", "Assets provide data, the scene arranges it, materials describe surfaces, and the renderer schedules the work that produces a frame."},
   QuickRead{"Forward rendering and render passes", "A pass is one scheduled piece of rendering with declared inputs and outputs; a frame is usually made from several passes."},
   QuickRead{"Forward, deferred, and forward+ rendering", "These architectures mainly differ in when surface lighting happens and how visible surfaces find the lights that affect them."},
@@ -646,6 +653,15 @@ void drawDiagram(Diagram diagram) {
     arrow(draw, ImVec2(origin.x + 320, origin.y + 53), ImVec2(origin.x + 365, origin.y + 74), line);
     arrow(draw, ImVec2(origin.x + 320, origin.y + 132), ImVec2(origin.x + 365, origin.y + 98), line);
     arrow(draw, ImVec2(origin.x + 495, origin.y + 83), ImVec2(origin.x + 535, origin.y + 83), line);
+  } else if (diagram == Diagram::Comparison) {
+    box(22, 30, 112, 44, "renderer A"); box(22, 112, 112, 44, "renderer B");
+    box(180, 30, 100, 44, "image A"); box(180, 112, 100, 44, "image B");
+    box(340, 65, 150, 56, "per-pixel F(A, B)"); box(550, 65, 105, 56, "output");
+    arrow(draw, ImVec2(origin.x + 139, origin.y + 52), ImVec2(origin.x + 175, origin.y + 52), line);
+    arrow(draw, ImVec2(origin.x + 139, origin.y + 134), ImVec2(origin.x + 175, origin.y + 134), line);
+    arrow(draw, ImVec2(origin.x + 285, origin.y + 52), ImVec2(origin.x + 335, origin.y + 80), line);
+    arrow(draw, ImVec2(origin.x + 285, origin.y + 134), ImVec2(origin.x + 335, origin.y + 106), line);
+    arrow(draw, ImVec2(origin.x + 495, origin.y + 93), ImVec2(origin.x + 545, origin.y + 93), line);
   } else if (diagram == Diagram::Performance) {
     box(24, 30, 125, 44, "CPU submission"); box(24, 106, 125, 44, "scene culling");
     box(205, 65, 120, 50, "GPU commands"); box(380, 25, 120, 44, "geometry work");
@@ -686,7 +702,7 @@ std::array<const char*, 4> branchesFor(std::string_view title) {
   if (title == "Transparency and compositing") return {"PlayStation semitransparency equations", "Ordering tables and painter submission", "Depth testing and depth writes", nullptr};
   if (title == "Filtering and reconstruction") return {"Indexed textures and CLUT palettes", "Mipmaps, trilinear, and anisotropic filtering", nullptr, nullptr};
   if (title == "N64 TMEM, tiles, and texture formats") return {"N64 three-point filtering and mip modes", "N64 trilinear mipmapping", "N64 RDP color combiner and cycle types", nullptr};
-  if (title == "N64 RDP color combiner and cycle types") return {"N64 surface and Z modes", "N64 trilinear mipmapping", "N64 Video Interface filtering", nullptr};
+  if (title == "N64 RDP color combiner and cycle types") return {"N64 surface and Z modes", "N64 trilinear mipmapping", "N64 Video Interface filtering", "Render algebra between completed images"};
   if (title == "Gouraud, Phong shading, and reflection models") return {"Vertex depth cueing", "BRDFs and physically based materials", nullptr, nullptr};
   if (title == "Attributes, uniforms, varyings, and resources") return {"Material inputs and texture semantics", "Perspective-correct interpolation", "Compute and optional graphics stages", nullptr};
   if (title == "Material versus shader") return {"BRDFs and physically based materials", "Material inputs and texture semantics", "Forward, deferred, and forward+ rendering", nullptr};
@@ -694,6 +710,7 @@ std::array<const char*, 4> branchesFor(std::string_view title) {
   if (title == "Forward, deferred, and forward+ rendering") return {"Render graphs and pass dependencies", "GPU bottlenecks: geometry, fill rate, and bandwidth", "Rasterization versus ray tracing", nullptr};
   if (title == "Asset, scene, material, and renderer responsibilities") return {"Material versus shader", "Render graphs and pass dependencies", "CPU submission and draw calls", nullptr};
   if (title == "Render graphs and pass dependencies") return {"Hardware capability profiles", "Forward, deferred, and forward+ rendering", nullptr, nullptr};
+  if (title == "Render algebra between completed images") return {"N64 RDP color combiner and cycle types", "Transparency and compositing", "Linear light and encoded RGB", "Color quantization and dithering"};
   if (title == "Skeletal animation and skinning") return {"Vertex shaders", "Morph targets and procedural deformation", nullptr, nullptr};
   if (title == "Rasterization versus ray tracing") return {"Acceleration structures and path tracing", "The realtime rasterization pipeline", nullptr, nullptr};
   return {nullptr, nullptr, nullptr, nullptr};

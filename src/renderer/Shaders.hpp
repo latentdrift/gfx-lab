@@ -426,17 +426,33 @@ void main() {
 }
 )GLSL";
 
-inline constexpr const char* differenceFragmentShader = R"GLSL(
+inline constexpr const char* relationFragmentShader = R"GLSL(
 #version 410 core
 in vec2 vUv;
 uniform sampler2D uImageA;
 uniform sampler2D uImageB;
-uniform float uExposure;
+uniform int uOperator;
+uniform float uGain;
+uniform float uBias;
 out vec4 fragColor;
 
 void main() {
-  vec3 difference = abs(texture(uImageA, vUv).rgb - texture(uImageB, vUv).rgb);
-  fragColor = vec4(clamp(difference * uExposure, 0.0, 1.0), 1.0);
+  vec3 a = texture(uImageA, vUv).rgb;
+  vec3 b = texture(uImageB, vUv).rgb;
+  vec3 relation;
+  if (uOperator == 0) relation = abs(a - b);
+  else if (uOperator == 1) relation = a - b;
+  else if (uOperator == 2) relation = max(a - b, vec3(0.0));
+  else if (uOperator == 3) relation = max(b - a, vec3(0.0));
+  else if (uOperator == 4) relation = a * b;
+  else if (uOperator == 5) relation = 1.0 - (1.0 - a) * (1.0 - b);
+  else if (uOperator == 6) relation = a + b - 2.0 * a * b;
+  else if (uOperator == 7) relation = min(a, b);
+  else if (uOperator == 8) relation = max(a, b);
+  else if (uOperator == 9) relation = a * (1.0 - b);
+  else if (uOperator == 10) relation = a + b - 1.0;
+  else relation = a / max(b, vec3(1.0 / 255.0)) - 1.0;
+  fragColor = vec4(clamp(relation * uGain + uBias, 0.0, 1.0), 1.0);
 }
 )GLSL";
 

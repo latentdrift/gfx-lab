@@ -42,7 +42,7 @@ src/
 - Middle or right drag: pan
 - Mouse wheel: zoom
 
-The current renderer state is **A**. Use **Copy A to B** to preserve it, change A, then choose **B** for an instant toggle, **Split A/B** for a spatial comparison, or **Difference** for an exposure-adjustable absolute RGB difference image. Black difference pixels are identical.
+The current renderer state is **A**. Use **Copy A to B** to preserve it, change A, then choose **B** for an instant toggle or **Split A/B** for a spatial comparison. **Render algebra** treats the two completed images as inputs to an explicit per-channel operation: absolute or signed difference, one-sided subtraction, multiply, screen, exclusion, minimum, maximum, `A x (1 - B)`, centered sum, or relative difference. Gain and bias are applied before the visible `[0, 1]` clamp, making subtle residuals, signed direction, and mathematical extrema directly inspectable.
 
 The **Target** selector defaults to **Unrestricted**. **PlayStation (PS1)** and **Nintendo 64** normalize A and B to target-representable state, remove unavailable categories and controls, narrow shared controls to supported choices, and display important forced values or labelled emulation substitutes as profile facts. Switching back to Unrestricted unlocks the controls but does not restore values discarded during normalization. Reset buttons are also normalized by the active target.
 

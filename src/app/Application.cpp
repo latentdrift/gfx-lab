@@ -42,6 +42,43 @@ bool isNintendo64Example(handbook::Example example) {
   return example >= handbook::Example::N64ThreePoint && example <= handbook::Example::N64VideoInterface;
 }
 
+constexpr std::array<const char*, 12> relationLabels = {
+  "Absolute difference", "Signed A - B", "Positive A - B", "Positive B - A", "Multiply", "Screen",
+  "Exclusion", "Minimum", "Maximum", "A x (1 - B)", "Centered sum", "Relative A / B"
+};
+
+constexpr std::array<const char*, 12> relationEquations = {
+  "|A - B|", "A - B", "max(A - B, 0)", "max(B - A, 0)", "A x B", "1 - (1 - A)(1 - B)",
+  "A + B - 2AB", "min(A, B)", "max(A, B)", "A(1 - B)", "A + B - 1", "A / max(B, 1/255) - 1"
+};
+
+constexpr std::array<const char*, 12> relationMeanings = {
+  "Black means agreement; each RGB channel measures disagreement magnitude.",
+  "Middle gray means agreement; excursions encode which rendering has the larger channel value.",
+  "Shows only channel energy present in A beyond B.",
+  "Shows only channel energy present in B beyond A.",
+  "Keeps color supported by both renderings and darkens disagreement.",
+  "Combines bright contributions from either rendering.",
+  "Dark where equal at black or white; bright where the renderings oppose each other.",
+  "Keeps only the lower channel value shared by the two renderings.",
+  "Keeps the higher channel value supplied by either rendering.",
+  "Shows A where B is absent; black where B fully occupies the channel.",
+  "With 0.5 bias, middle gray means the two channel values sum to one.",
+  "With 0.5 bias, middle gray means A equals B; ratios near black in B clip aggressively."
+};
+
+void resetRelationTransform(RelationOperator operation, float& gain, float& bias) {
+  switch (operation) {
+  case RelationOperator::AbsoluteDifference: gain = 4.0f; bias = 0.0f; break;
+  case RelationOperator::SignedDifference: gain = 2.0f; bias = 0.5f; break;
+  case RelationOperator::PositiveAMinusB:
+  case RelationOperator::PositiveBMinusA: gain = 4.0f; bias = 0.0f; break;
+  case RelationOperator::CenteredSum: gain = 1.0f; bias = 0.5f; break;
+  case RelationOperator::RelativeDifference: gain = 0.5f; bias = 0.5f; break;
+  default: gain = 1.0f; bias = 0.0f; break;
+  }
+}
+
 } // namespace
 
 namespace gfxlab {
@@ -75,7 +112,9 @@ int runApplication() {
   TestScene scene = TestScene::Torus;
   CompareMode compare = CompareMode::A;
   HardwareProfile hardwareProfile = HardwareProfile::Unrestricted;
-  float differenceExposure = 4.0f;
+  RelationOperator relationOperator = RelationOperator::AbsoluteDifference;
+  float relationGain = 4.0f;
+  float relationBias = 0.0f;
   bool viewportHovered = false;
   double configCopiedAt = -10.0;
   handbook::Handbook graphicsHandbook;
@@ -97,7 +136,15 @@ int runApplication() {
         renderer.render(current, camera, scene, alternative);
       }
     }
-    renderer.renderDifference(4.0f);
+    for (int operation = static_cast<int>(RelationOperator::AbsoluteDifference);
+         operation <= static_cast<int>(RelationOperator::RelativeDifference); ++operation)
+      renderer.renderRelation(static_cast<RelationOperator>(operation), 2.0f, 0.5f);
+    const std::string relationConfig = relationConfigJson(current, reference, camera, scene,
+      HardwareProfile::Unrestricted, RelationOperator::AbsoluteDifference, 4.0f, 0.0f);
+    if (relationConfig.find("graphics-lab.render-algebra.v1") == std::string::npos ||
+        relationConfig.find("\"renderer_a\"") == std::string::npos ||
+        relationConfig.find("\"renderer_b\"") == std::string::npos)
+      fail("render-algebra state missing from config export");
     applyRecommendedSetup(TestScene::Transparency, current, camera);
     scene = TestScene::Transparency;
     for (int transparencyMode = 6; transparencyMode <= 9; ++transparencyMode) {
@@ -238,8 +285,15 @@ int runApplication() {
     ImGui::SameLine();
     if (ImGui::Button("Copy A to B")) reference = current;
     ImGui::SameLine();
-    if (ImGui::Button("Copy config JSON")) {
-      const std::string exportedConfig = configJson(current, camera, scene, hardwareProfile);
+    if (ImGui::Button("Swap A/B")) std::swap(current, reference);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Exchange the complete A and B renderer states. Signed operators reverse direction.");
+    ImGui::SameLine();
+    const char* copyLabel = compare == CompareMode::Relation ? "Copy A/B JSON" : "Copy config JSON";
+    if (ImGui::Button(copyLabel)) {
+      const std::string exportedConfig = compare == CompareMode::Relation
+        ? relationConfigJson(current, reference, camera, scene, hardwareProfile,
+            relationOperator, relationGain, relationBias)
+        : configJson(current, camera, scene, hardwareProfile);
       ImGui::SetClipboardText(exportedConfig.c_str());
       configCopiedAt = glfwGetTime();
     }
@@ -257,16 +311,30 @@ int runApplication() {
     ImGui::SameLine();
     if (ImGui::RadioButton("Split A/B", compare == CompareMode::Split)) compare = CompareMode::Split;
     ImGui::SameLine();
-    if (ImGui::RadioButton("Difference", compare == CompareMode::Difference)) compare = CompareMode::Difference;
-    if (compare == CompareMode::Difference) {
+    if (ImGui::RadioButton("Render algebra", compare == CompareMode::Relation)) compare = CompareMode::Relation;
+    if (compare == CompareMode::Relation) {
       ImGui::SameLine();
-      ImGui::SetNextItemWidth(70.0f);
-      ImGui::SliderFloat("##difference-exposure", &differenceExposure, 1.0f, 16.0f, "%.0fx");
-      if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Difference exposure. Multiplies abs(A - B) so subtle pixel changes remain visible.");
+      ImGui::SetNextItemWidth(165.0f);
+      int operatorIndex = static_cast<int>(relationOperator);
+      if (ImGui::Combo("##relation-operator", &operatorIndex, relationLabels.data(), relationLabels.size())) {
+        relationOperator = static_cast<RelationOperator>(operatorIndex);
+        resetRelationTransform(relationOperator, relationGain, relationBias);
+      }
     }
     ImGui::SameLine(ImGui::GetWindowWidth() - 260);
     ImGui::TextDisabled("LMB orbit   MMB/RMB pan   Wheel zoom");
+    if (compare == CompareMode::Relation) {
+      const int relationIndex = static_cast<int>(relationOperator);
+      ImGui::TextDisabled("Per-channel: %s", relationEquations[relationIndex]);
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(110.0f);
+      ImGui::SliderFloat("Gain", &relationGain, 0.1f, 16.0f, "%.2fx", ImGuiSliderFlags_Logarithmic);
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(110.0f);
+      ImGui::SliderFloat("Bias", &relationBias, -1.0f, 1.0f, "%.2f");
+      ImGui::SameLine();
+      ImGui::TextDisabled("Then clamp to [0, 1]. %s", relationMeanings[relationIndex]);
+    }
     ImGui::Separator();
 
     const float contentHeight = ImGui::GetContentRegionAvail().y;
@@ -315,10 +383,11 @@ int runApplication() {
       draw->AddText(ImVec2(middle + 10, origin.y + 8), IM_COL32(240,240,240,220), "B  REFERENCE");
     } else {
       const GLuint texture = compare == CompareMode::A ? textureA
-        : compare == CompareMode::Difference ? renderer.renderDifference(differenceExposure) : textureB;
+        : compare == CompareMode::Relation ? renderer.renderRelation(relationOperator, relationGain, relationBias)
+                                           : textureB;
       draw->AddImage(static_cast<ImTextureID>(texture), origin, end, ImVec2(0, 1), ImVec2(1, 0));
       const char* label = compare == CompareMode::A ? "A  CURRENT"
-        : compare == CompareMode::B ? "B  REFERENCE" : "ABSOLUTE RGB DIFFERENCE  |  BLACK = IDENTICAL";
+        : compare == CompareMode::B ? "B  REFERENCE" : relationLabels[static_cast<int>(relationOperator)];
       draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240,240,240,220), label);
     }
     ImGui::SetCursorScreenPos(origin);

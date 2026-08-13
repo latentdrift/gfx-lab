@@ -438,4 +438,40 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
   return json.str();
 }
 
+std::string relationConfigJson(const RendererState& a, const RendererState& b, const CameraOrbit& camera,
+    TestScene scene, HardwareProfile profile, RelationOperator operation, float gain, float bias) {
+  constexpr const char* operationIds[] = {
+    "absolute_difference", "signed_a_minus_b", "positive_a_minus_b", "positive_b_minus_a", "multiply", "screen",
+    "exclusion", "minimum", "maximum", "a_times_one_minus_b", "centered_sum", "relative_a_over_b"
+  };
+  constexpr const char* equations[] = {
+    "abs(a - b)", "a - b", "max(a - b, 0)", "max(b - a, 0)", "a * b", "1 - (1 - a) * (1 - b)",
+    "a + b - 2 * a * b", "min(a, b)", "max(a, b)", "a * (1 - b)", "a + b - 1",
+    "a / max(b, 1/255) - 1"
+  };
+  const int index = std::clamp(static_cast<int>(operation), 0, 11);
+  const auto nested = [](std::string value) {
+    if (!value.empty() && value.back() == '\n') value.pop_back();
+    std::string result;
+    result.reserve(value.size() + 128);
+    for (const char character : value) {
+      result.push_back(character);
+      if (character == '\n') result += "  ";
+    }
+    return result;
+  };
+  std::ostringstream json;
+  json << std::fixed << std::setprecision(5);
+  json << "{\n";
+  json << "  \"schema\": \"graphics-lab.render-algebra.v1\",\n";
+  json << "  \"test_scene\": \"" << testSceneName(scene) << "\",\n";
+  json << "  \"relation\": {\"operation\": \"" << operationIds[index] << "\", \"equation_per_rgb_channel\": \""
+       << equations[index] << "\", \"gain\": " << gain << ", \"bias\": " << bias
+       << ", \"output_clamp\": [0.00000, 1.00000]},\n";
+  json << "  \"renderer_a\": " << nested(configJson(a, camera, scene, profile)) << ",\n";
+  json << "  \"renderer_b\": " << nested(configJson(b, camera, scene, profile)) << "\n";
+  json << "}\n";
+  return json.str();
+}
+
 } // namespace gfxlab

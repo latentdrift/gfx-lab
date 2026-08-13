@@ -53,7 +53,21 @@ struct RendererState {
 };
 
 enum class Category { Geometry, Camera, Rasterization, Surface, Texture, Lighting, Depth, Stencil, Color, Post, Output };
-enum class CompareMode { A, B, Split, Difference };
+enum class CompareMode { A, B, Split, Relation };
+enum class RelationOperator {
+  AbsoluteDifference,
+  SignedDifference,
+  PositiveAMinusB,
+  PositiveBMinusA,
+  Multiply,
+  Screen,
+  Exclusion,
+  Minimum,
+  Maximum,
+  ANotB,
+  CenteredSum,
+  RelativeDifference,
+};
 enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask };
 
 struct CameraOrbit {
@@ -72,5 +86,7 @@ void applyHandbookExample(handbook::Example example, bool alternative, RendererS
   CameraOrbit& camera, TestScene& scene, Category& category);
 std::string configJson(const RendererState& state, const CameraOrbit& camera, TestScene scene,
   HardwareProfile profile);
+std::string relationConfigJson(const RendererState& a, const RendererState& b, const CameraOrbit& camera,
+  TestScene scene, HardwareProfile profile, RelationOperator operation, float gain, float bias);
 
 } // namespace gfxlab
