@@ -21,7 +21,11 @@
 namespace gfxlab::ui {
 namespace {
 
-constexpr const char* workspaceId = "Graphics Lab Workspace v8";
+// Bump the workspace ID whenever the supplied dock topology gains a window.
+// Dear ImGui otherwise restores the previous topology and leaves the unknown
+// tool as a detached platform window, which is especially fragile across DPI
+// scales and mixed-monitor coordinate spaces.
+constexpr const char* workspaceId = "Graphics Lab Workspace v9";
 
 void buildDefaultLayout(const ImGuiID dockspace) {
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
