@@ -27,6 +27,7 @@
 #include "ui/Inspector.hpp"
 #include "ui/PassDifferenceAudit.hpp"
 #include "ui/PassInspector.hpp"
+#include "ui/PipelineTools.hpp"
 #include "ui/TextureInspector.hpp"
 #include "ui/Workspace.hpp"
 #include "ui/Windowing.hpp"
@@ -143,6 +144,7 @@ int runApplication() {
   RendererState reference = current;
   CameraOrbit camera;
   Category category = Category::Geometry;
+  bool pipelineFocusRequested = true;
   TestScene scene = TestScene::Torus;
   CompareMode compare = CompareMode::A;
   HardwareProfile hardwareProfile = HardwareProfile::Unrestricted;
@@ -372,26 +374,9 @@ int runApplication() {
       ImGui::End();
     }
 
-    if (workspaceWindows.inspector) {
-      if (ImGui::Begin("Pipeline Inspector", &workspaceWindows.inspector)) {
-        keepCurrentWindowVisible();
-        ImGui::TextDisabled("%s", inspectorGlobalScope ? "GLOBAL BASE" : renderStack.selected().name.c_str());
-        drawPipelineTabs(category, hardwareProfile);
-        ImGui::Separator();
-        const RenderPass displayedBefore = inspectorGlobalScope
-          ? evaluateRenderPass(renderStack.global(), inspectorTime)
-          : materializeRenderPass(renderStack, renderStack.selectedIndex(), inspectorTime);
-        RenderStack inspectorStack = renderStack;
-        inspectorStack.selected() = displayedBefore;
-        drawInspector(category, inspectorStack.selected(), hardwareProfile, animationTimeline,
-          importedModel.get(), scene);
-        if (inspectorGlobalScope)
-          applyEditedPass(renderStack.global(), displayedBefore, inspectorStack.selected());
-        else
-          applyEditedLocalPass(renderStack, displayedBefore, inspectorStack.selected(), inspectorTime);
-      }
-      ImGui::End();
-    }
+    drawPipelineTools(workspaceWindows.pipelineTools, renderStack, animationTimeline, hardwareProfile,
+      importedModel.get(), scene, inspectorGlobalScope, inspectorTime, category, pipelineFocusRequested);
+    pipelineFocusRequested = false;
 
     const handbook::Action handbookAction = graphicsHandbook.draw(hardwareProfile);
     drawPassDifferenceAudit(workspaceWindows.passDifferences, renderStack);
@@ -402,6 +387,7 @@ int runApplication() {
     if (handbookAction.type == handbook::ActionType::ApplyToA) {
       applyHandbookExample(handbookAction.example, false, renderStack.global().renderer, camera, scene, category);
       inspectorGlobalScope = true;
+      pipelineFocusRequested = true;
     } else if (handbookAction.type == handbook::ActionType::ApplyToB) {
       if (renderStack.selectedIndex() == 0) {
         renderStack.select(0);
@@ -412,6 +398,7 @@ int runApplication() {
       applyHandbookExample(handbookAction.example, true, comparison.renderer, camera, scene, category);
       replaceRenderPassOverrides(renderStack.selected(), renderStack.global(), comparison);
       inspectorGlobalScope = false;
+      pipelineFocusRequested = true;
     } else if (handbookAction.type == handbook::ActionType::LoadComparison) {
       renderStack = RenderStack{};
       applyHandbookExample(handbookAction.example, false, renderStack.global().renderer, camera, scene, category);
@@ -427,6 +414,7 @@ int runApplication() {
       camera = comparisonCamera;
       scene = comparisonScene;
       category = comparisonCategory;
+      pipelineFocusRequested = true;
       compare = CompareMode::Split;
       inspectorGlobalScope = false;
     }

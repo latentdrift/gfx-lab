@@ -20,7 +20,7 @@
 namespace gfxlab::ui {
 namespace {
 
-constexpr const char* workspaceId = "Graphics Lab Workspace v3";
+constexpr const char* workspaceId = "Graphics Lab Workspace v4";
 
 void buildDefaultLayout(const ImGuiID dockspace) {
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -43,7 +43,8 @@ void buildDefaultLayout(const ImGuiID dockspace) {
   ImGuiID rightBottom = 0;
   ImGuiID rightTop = right;
   ImGui::DockBuilderSplitNode(rightTop, ImGuiDir_Down, 0.34f, &rightBottom, &rightTop);
-  ImGui::DockBuilderDockWindow("Pipeline Inspector", rightTop);
+  for (const Category category : pipelineCategories)
+    ImGui::DockBuilderDockWindow(pipelineToolWindowName(category), rightTop);
   ImGui::DockBuilderDockWindow("Pass difference audit", rightTop);
   ImGui::DockBuilderDockWindow("Pass Properties", rightBottom);
   ImGui::DockBuilderFinish(dockspace);
@@ -53,7 +54,14 @@ void windowMenu(WorkspaceWindows& windows) {
   ImGui::MenuItem("Scene", nullptr, &windows.scene);
   ImGui::MenuItem("Render Passes", nullptr, &windows.renderPasses);
   ImGui::MenuItem("Viewport", nullptr, &windows.viewport);
-  ImGui::MenuItem("Pipeline Inspector", nullptr, &windows.inspector);
+  if (ImGui::BeginMenu("Pipeline Tools")) {
+    if (ImGui::MenuItem("Show All")) windows.pipelineTools.open.fill(true);
+    if (ImGui::MenuItem("Hide All")) windows.pipelineTools.open.fill(false);
+    ImGui::Separator();
+    for (std::size_t index = 0; index < pipelineCategories.size(); ++index)
+      ImGui::MenuItem(categoryName(pipelineCategories[index]), nullptr, &windows.pipelineTools.open[index]);
+    ImGui::EndMenu();
+  }
   ImGui::MenuItem("Pass Properties", nullptr, &windows.passProperties);
   ImGui::MenuItem("Animation Timeline", nullptr, &windows.animation);
   ImGui::MenuItem("Pass Differences", nullptr, &windows.passDifferences);
@@ -224,21 +232,6 @@ void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& t
   if (ImGui::Button("Delete")) stack.removeSelected();
   ImGui::EndDisabled();
   ImGui::End();
-}
-
-void drawPipelineTabs(Category& category, const HardwareProfile profile) {
-  constexpr std::array<Category, 11> categories = {Category::Geometry, Category::Camera, Category::Rasterization,
-    Category::Surface, Category::Texture, Category::Lighting, Category::Depth, Category::Stencil, Category::Color,
-    Category::Post, Category::Output};
-  if (ImGui::BeginTable("Pipeline categories", 3, ImGuiTableFlags_SizingStretchSame)) {
-    for (const Category candidate : categories) {
-      if (!categoryAvailableForHardwareProfile(profile, candidate)) continue;
-      ImGui::TableNextColumn();
-      if (ImGui::Selectable(categoryName(candidate), category == candidate, 0, ImVec2(0.0f, 22.0f)))
-        category = candidate;
-    }
-    ImGui::EndTable();
-  }
 }
 
 ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& compare,

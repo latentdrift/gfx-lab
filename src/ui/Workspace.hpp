@@ -4,6 +4,7 @@
 #include "app/HardwareProfile.hpp"
 #include "app/RenderStack.hpp"
 #include "app/State.hpp"
+#include "ui/PipelineTools.hpp"
 
 #include <array>
 
@@ -17,7 +18,7 @@ struct WorkspaceWindows {
   bool scene = true;
   bool renderPasses = true;
   bool viewport = true;
-  bool inspector = true;
+  PipelineToolWindows pipelineTools;
   bool passProperties = true;
   bool animation = false;
   bool passDifferences = false;
@@ -57,7 +58,6 @@ SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile&
   const ModelAsset* importedModel);
 void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& timeline,
   bool& globalScope);
-void drawPipelineTabs(Category& category, HardwareProfile profile);
 ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& compare,
   const RenderStack& stack, RenderPass& displayedPass, const CameraOrbit& camera,
   AnimationTimeline& timeline, bool globalScope);
