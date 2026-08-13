@@ -1184,14 +1184,22 @@ public:
   }
 
   GLuint composite(const RenderStack& stack) {
+    operationTextures_.fill(0);
     GLuint accumulated = 0;
-    std::size_t compositeIndex = 0;
     for (std::size_t passIndex = 0; passIndex < stack.passes().size(); ++passIndex) {
       const RenderPass& pass = stack.passes()[passIndex];
       if (!pass.enabled) continue;
-      const GLuint passTexture = passTargets_[passIndex].outputTexture;
-      if (accumulated == 0) {
+      const bool rendersScene = pass.kind == StackOperationKind::Render ||
+        pass.kind == StackOperationKind::LegacyRenderComposite;
+      const GLuint passTexture = rendersScene ? passTargets_[passIndex].outputTexture : accumulated;
+      if (pass.kind == StackOperationKind::Render) {
+        operationTextures_[passIndex] = passTexture;
+        if (accumulated == 0) accumulated = passTexture;
+        continue;
+      }
+      if (pass.kind == StackOperationKind::LegacyRenderComposite && accumulated == 0) {
         accumulated = passTexture;
+        operationTextures_[passIndex] = passTexture;
         continue;
       }
       const auto passIndexForId = [&](const int sourcePassId) {
@@ -1203,8 +1211,12 @@ public:
       const auto sourceTexture = [&](const CompositeSource source, const int sourcePassId) {
         switch (source) {
         case CompositeSource::Accumulator: return accumulated;
-        case CompositeSource::CurrentPass: return passTexture;
-        case CompositeSource::RenderPass: return passTargets_[passIndexForId(sourcePassId)].outputTexture;
+        case CompositeSource::CurrentPass: return rendersScene ? passTexture : accumulated;
+        case CompositeSource::RenderPass: {
+          const std::size_t sourceIndex = passIndexForId(sourcePassId);
+          return operationTextures_[sourceIndex] != 0 ? operationTextures_[sourceIndex]
+            : passTargets_[sourceIndex].outputTexture;
+        }
         case CompositeSource::FixedColor: return passTexture;
         case CompositeSource::PreviousFrame: return historyTexture_;
         case CompositeSource::RenderPassField:
@@ -1214,27 +1226,38 @@ public:
         }
         return passTexture;
       };
-      const GLuint imageA = sourceTexture(pass.composite.sourceA, pass.composite.sourceAPassId);
-      const GLuint imageB = sourceTexture(pass.composite.sourceB, pass.composite.sourceBPassId);
+      CompositeStep step = pass.composite;
+      if (pass.kind == StackOperationKind::Interpret) {
+        step.sourceB = step.sourceA;
+        step.sourceBPassId = step.sourceAPassId;
+        step.interpretationB = step.interpretationA;
+        step.operation = RelationOperator::Maximum;
+        step.opacity = 1.0f;
+      }
+      const GLuint imageA = sourceTexture(step.sourceA, step.sourceAPassId);
+      const GLuint imageB = sourceTexture(step.sourceB, step.sourceBPassId);
       const auto sourceSpectrum = [&](const CompositeSource source, const int sourcePassId) {
         return source == CompositeSource::RenderPassSpectrum
           ? passTargets_[passIndexForId(sourcePassId)].spectralTextures : std::array<GLuint, 4>{};
       };
-      const std::array<GLuint, 4> spectrumA = sourceSpectrum(pass.composite.sourceA,
-        pass.composite.sourceAPassId);
-      const std::array<GLuint, 4> spectrumB = sourceSpectrum(pass.composite.sourceB,
-        pass.composite.sourceBPassId);
+      const std::array<GLuint, 4> spectrumA = sourceSpectrum(step.sourceA, step.sourceAPassId);
+      const std::array<GLuint, 4> spectrumB = sourceSpectrum(step.sourceB, step.sourceBPassId);
       std::size_t maskPassIndex = passIndex;
-      if (pass.composite.sourceB == CompositeSource::RenderPass ||
-          pass.composite.sourceB == CompositeSource::RenderPassField ||
-          pass.composite.sourceB == CompositeSource::RenderPassSpectrum)
-        maskPassIndex = passIndexForId(pass.composite.sourceBPassId);
+      if (step.sourceB == CompositeSource::RenderPass ||
+          step.sourceB == CompositeSource::RenderPassField ||
+          step.sourceB == CompositeSource::RenderPassSpectrum)
+        maskPassIndex = passIndexForId(step.sourceBPassId);
       accumulated = compositeTextures(imageA, imageB, passTargets_[maskPassIndex].depthTexture,
-        passTargets_[maskPassIndex].fieldTexture, spectrumA, spectrumB, pass.renderer, pass.composite, stack.display(),
-        compositeIndex++);
+        passTargets_[maskPassIndex].fieldTexture, spectrumA, spectrumB, pass.renderer, step,
+        stack.display(), passIndex);
+      operationTextures_[passIndex] = accumulated;
     }
     if (accumulated != 0) copyToFrameHistory(accumulated);
     return accumulated;
+  }
+
+  [[nodiscard]] GLuint stackOperationResult(const std::size_t operationIndex) const {
+    return operationIndex < operationTextures_.size() ? operationTextures_[operationIndex] : 0;
   }
 
   void resetFrameHistory() {
@@ -1364,8 +1387,9 @@ private:
   GLuint shadowFbo_ = 0, shadowTexture_ = 0;
   int shadowResolution_ = 0;
   std::array<RenderTarget, RenderStack::maximumPasses> passTargets_;
-  std::array<GLuint, 2> relationFbos_{};
-  std::array<GLuint, 2> relationTextures_{};
+  std::array<GLuint, RenderStack::maximumPasses> relationFbos_{};
+  std::array<GLuint, RenderStack::maximumPasses> relationTextures_{};
+  std::array<GLuint, RenderStack::maximumPasses> operationTextures_{};
   GLuint historyFbo_ = 0, historyTexture_ = 0;
   std::array<GLuint, 3> displayFbos_{};
   std::array<GLuint, 3> displayTextures_{};
@@ -1520,6 +1544,9 @@ unsigned int Renderer::renderPass(const RenderPass& pass, const CameraOrbit& cam
 }
 
 unsigned int Renderer::composite(const RenderStack& stack) { return impl_->composite(stack); }
+unsigned int Renderer::stackOperationResult(const std::size_t operationIndex) const {
+  return impl_->stackOperationResult(operationIndex);
+}
 unsigned int Renderer::texturePreview(const TextureAsset* texture) { return impl_->texturePreview(texture); }
 unsigned int Renderer::reconstructDisplay(const unsigned int sourceTexture,
     const DisplayReconstructionState& state, const std::size_t targetIndex) {

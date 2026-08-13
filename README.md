@@ -40,7 +40,7 @@ src/
     EditorHistory.cpp         document snapshots and coalesced undo/redo transactions
     HardwareProfile.cpp       target capabilities and state normalization
     PassEditing.cpp           global/local inspector reconciliation
-    RenderStack.cpp           pass definitions, compositing state, and stack export
+    RenderStack.cpp           typed signal operations, compositing state, and stack export
     StackDocument.cpp         validated JSON document loading and file persistence
     State.cpp                 explicit renderer state, scene setups, JSON export
     Validation.cpp            opt-in renderer, document, import, and UI validation suite
@@ -54,7 +54,7 @@ src/
     AnimationControls.cpp     inspector diamonds and property-key editing
     Inspector.cpp             pipeline-category controls and visual styling
     AnimationEditor.cpp       transport, dope sheet, tracks, and selected-key editing
-    PassInspector.cpp         pass perturbation and composite controls
+    PassInspector.cpp         contextual Render, Interpret, and Composite controls
     PassDifferenceAudit.cpp  authored selected/reference pass comparison and restore
     Workspace.cpp             desktop menu, docking layout, and primary tool windows
   handbook/
@@ -99,11 +99,11 @@ rerendering the scene. These are explicit RGB-derived observer approximations, n
 
 [`spectral-metamer-observer.json`](examples/spectral-metamer-observer.json) uses the dedicated Spectral
 metamers scene. Its two objects have different sixteen-band reflectance spectra but matching LMS responses
-under the reference daylight/human condition. The second pass reads the first pass's spectral attachment twice
+under the reference daylight/human condition. Its Composite operation reads the Render operation's spectral attachment twice
 and displays human-versus-shifted-observer disagreement. Disable that pass to see the reference match; use the
 Spectral tool to switch to tungsten or tri-band illumination and watch the metameric match fail.
 
-Graphics Lab uses a persistent dockable workspace rather than one fixed application page. **Scene**, **Render Passes**, **Pass Properties**, **Viewport**, every rendering-pipeline category, **Texture Mapping**, **Display Reconstruction**, **Animation Timeline**, and **Pass Differences** are independent tool windows. The pipeline, mapping, and final-display tools begin as tabs in one dock node; tear out or rearrange the tools needed for an experiment and manage them under **Window**. **Window → Restore Default Layout** rebuilds the supplied compact workspace. ImGui saves subsequent window and docking changes between runs.
+Graphics Lab uses a persistent dockable workspace rather than one fixed application page. **Scene**, **Signal Stack**, **Operation Inspector**, **Viewport**, every rendering-pipeline category, **Texture Mapping**, **Display Reconstruction**, **Animation Timeline**, and **Pass Differences** are independent tool windows. The contextual inspector and pipeline tools begin as tabs in one right-hand dock node; tear out or rearrange the tools needed for an experiment and manage them under **Window**. **Window → Workspace Layout** supplies Compose, Render, Animate, and Inspect arrangements of the same document and tools; it never changes renderer state. ImGui saves subsequent window and docking changes between runs.
 
 Use **View → UI Scale** to resize text, controls, spacing, tabs, and interaction targets together from 75% to
 200%. `Ctrl+-` and `Ctrl+=` step between the supplied sizes; `Ctrl+0` returns to 100%. Every font size is loaded
@@ -123,9 +123,9 @@ This first material boundary intentionally imports only base color and alpha. No
 
 Undo and redo cover the authored render stack, all renderer and composite settings, pass order and names, animation tracks, camera, scene, hardware target, and timeline configuration. Continuous sliders and viewport-camera drags collapse into one history entry. Playback time, pass selection, comparison view, open windows, and temporary evaluated animation frames are workspace state rather than authored operations, so they do not flood document history.
 
-The document has one **global base** and a bottom-to-top **render-pass stack**. Global geometry, camera, sampling, lighting, color, output, model perturbation, and texture choices feed every pass. A pass stores only deliberate local differences plus its inherently local enabled/output/composite state. Use **Pass Properties** to switch editing scope, author pass perturbations, and manage inheritance. Every open pipeline tool follows that shared scope. Editing a local value creates an override; returning it to the global value restores inheritance. **Clear pass overrides** removes every static local deviation without deleting that pass's animation tracks.
+The document has explicit **Scene defaults** followed by a top-to-bottom **Signal Stack**. A **Render** operation applies inherited renderer state plus sparse local overrides and produces named Color, Depth, Field, and Spectrum16 resources. An **Interpret** operation converts one spectral resource through a selected observer without rerendering the scene. A **Composite** operation combines two named signals with explicit arithmetic. The inspector shows only controls owned by the selected operation; pipeline-category tabs edit Scene defaults or a selected Render operation. Editing a local render value creates an override, and returning it to the scene-default value restores inheritance.
 
-Press **Duplicate pass** to copy one compact set of deviations, then change only what should disagree. Later passes combine sequentially with explicit A and B operands. Either operand can read the accumulated result, the current raw pass, any other raw render pass, a fixed color, or the previous completed frame. Named pass operands use stable identities, so reordering the stack does not silently redirect them. Per-channel operations include difference, multiply, screen, exclusion, minimum/maximum, additive and subtractive hardware color math, half-add, quarter-add, signed color offset, and quantized bitwise XOR. Previous-frame inputs expose decay and UV transformation for controlled feedback; reset their persistent buffer with **View → Reset Frame History**. Each step also exposes opacity, gain, bias, encoded-RGB versus linear-light arithmetic, clamp/preserve/wrap range behavior, and optional luminance/depth/edge masks.
+Use **Add operation** to add a Render, spectrum Interpret, or two-input Composite stage. Duplicate a Render to preserve most of a look and change only what should disagree. Named operands use stable identities, so reordering the stack does not silently redirect them. Per-channel operations include difference, multiply, screen, exclusion, minimum/maximum, additive and subtractive hardware color math, half-add, quarter-add, signed color offset, and quantized bitwise XOR. Previous-frame inputs expose decay and UV transformation for controlled feedback; reset their persistent buffer with **View → Reset Frame History**. Each Composite also exposes opacity, gain, bias, encoded-RGB versus linear-light arithmetic, clamp/preserve/wrap range behavior, and optional luminance/depth/edge masks. Files authored before typed operations still load as explicit **Render + composite (legacy)** rows and preserve their original result.
 
 **Display Reconstruction** is deliberately downstream of the render stack. It can leave the final image as direct RGB or approximate composite-NTSC chroma bandwidth and luma/chroma crosstalk, then model scanlines, an aperture grille, and display bloom. These controls affect presentation only: raw pass textures and all A/B arithmetic remain unchanged and inspectable.
 

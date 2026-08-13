@@ -44,8 +44,17 @@ void drawPipelineTools(PipelineToolWindows& windows, RenderStack& stack, Animati
     if (!open) continue;
     if (ImGui::Begin(pipelineToolWindowName(category), &open)) {
       keepCurrentWindowVisible();
-      ImGui::TextDisabled("%s", globalScope ? "GLOBAL BASE" : stack.selected().name.c_str());
+      const bool selectedRenders = stack.selected().kind == StackOperationKind::Render ||
+        stack.selected().kind == StackOperationKind::LegacyRenderComposite;
+      ImGui::TextDisabled("%s", globalScope ? "SCENE DEFAULTS" : stack.selected().name.c_str());
       ImGui::Separator();
+      if (!globalScope && !selectedRenders) {
+        ImGui::TextWrapped("%s operations do not own renderer settings.",
+          stackOperationKindLabel(stack.selected().kind));
+        ImGui::TextDisabled("Select Scene defaults or a Render operation to edit this pipeline category.");
+        ImGui::End();
+        continue;
+      }
       const RenderPass displayedBefore = globalScope
         ? evaluateRenderPass(stack.global(), timeSeconds)
         : materializeRenderPass(stack, stack.selectedIndex(), timeSeconds);

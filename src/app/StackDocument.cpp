@@ -268,6 +268,14 @@ StackDocumentLoadResult loadStackDocumentFile(const std::string& path) {
         return {std::nullopt, "Stack document contains duplicate render-pass ID " + std::to_string(pass.id)};
       pass.name = sourcePass.value("name", "Pass " + std::to_string(passes.size() + 1));
       pass.enabled = sourcePass.value("enabled", true);
+      const std::string operationKind = sourcePass.value("operation_kind", "");
+      if (operationKind == "render") pass.kind = StackOperationKind::Render;
+      else if (operationKind == "interpret") pass.kind = StackOperationKind::Interpret;
+      else if (operationKind == "composite") pass.kind = StackOperationKind::Composite;
+      else if (operationKind == "legacy_render_composite")
+        pass.kind = StackOperationKind::LegacyRenderComposite;
+      else
+        pass.kind = passes.empty() ? StackOperationKind::Render : StackOperationKind::LegacyRenderComposite;
       pass.output = enumFromId(sourcePass.value("output_buffer", "color"), outputIds, PassOutput::Color);
       if (sourcePass.contains("overrides") && sourcePass.at("overrides").is_array()) {
         for (const Json& sourceOverride : sourcePass.at("overrides")) {

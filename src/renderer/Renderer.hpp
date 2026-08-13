@@ -24,6 +24,7 @@ public:
   unsigned int renderPass(const RenderPass& pass, const CameraOrbit& camera, TestScene scene,
     std::size_t targetIndex);
   unsigned int composite(const RenderStack& stack);
+  [[nodiscard]] unsigned int stackOperationResult(std::size_t operationIndex) const;
   unsigned int reconstructDisplay(unsigned int sourceTexture, const DisplayReconstructionState& state,
     std::size_t targetIndex);
   void resetFrameHistory();

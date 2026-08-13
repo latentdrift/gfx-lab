@@ -14,6 +14,8 @@ struct ModelAsset;
 
 namespace gfxlab::ui {
 
+enum class WorkspaceLayout { Compose, Render, Animate, Inspect };
+
 struct WorkspaceWindows {
   bool scene = true;
   bool renderPasses = true;
@@ -26,6 +28,7 @@ struct WorkspaceWindows {
   bool textureMapping = true;
   bool displayReconstruction = true;
   bool resetLayout = false;
+  WorkspaceLayout requestedLayout = WorkspaceLayout::Compose;
 };
 
 struct WorkspaceActions {

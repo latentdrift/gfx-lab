@@ -430,11 +430,23 @@ int runApplication() {
     for (RenderPass& pass : evaluatedStack.passes())
       normalizeForHardwareProfile(hardwareProfile, pass.renderer);
     std::array<GLuint, RenderStack::maximumPasses> passTextures{};
-    for (std::size_t passIndex = 0; passIndex < evaluatedStack.passes().size(); ++passIndex)
-      passTextures[passIndex] = renderer.renderPass(evaluatedStack.passes()[passIndex], camera, scene, passIndex);
-    const GLuint selectedTexture = passTextures[renderStack.selectedIndex()];
-    const GLuint baseTexture = passTextures.front();
+    for (std::size_t passIndex = 0; passIndex < evaluatedStack.passes().size(); ++passIndex) {
+      const StackOperationKind kind = evaluatedStack.passes()[passIndex].kind;
+      if (kind == StackOperationKind::Render || kind == StackOperationKind::LegacyRenderComposite)
+        passTextures[passIndex] = renderer.renderPass(evaluatedStack.passes()[passIndex], camera, scene, passIndex);
+    }
     const GLuint renderedComposite = renderer.composite(evaluatedStack);
+    GLuint selectedTexture = renderer.stackOperationResult(renderStack.selectedIndex());
+    if (selectedTexture == 0) selectedTexture = renderedComposite;
+    GLuint baseTexture = 0;
+    for (std::size_t index = 0; index < evaluatedStack.passes().size(); ++index) {
+      if (evaluatedStack.passes()[index].kind == StackOperationKind::Render ||
+          evaluatedStack.passes()[index].kind == StackOperationKind::LegacyRenderComposite) {
+        baseTexture = passTextures[index];
+        break;
+      }
+    }
+    if (baseTexture == 0) baseTexture = selectedTexture;
     const GLuint compositeTexture = renderedComposite != 0 ? renderedComposite : selectedTexture;
     const GLuint displayedSelected = renderer.reconstructDisplay(selectedTexture, renderStack.display(), 0);
     const GLuint displayedBase = renderer.reconstructDisplay(baseTexture, renderStack.display(), 1);
@@ -468,22 +480,30 @@ int runApplication() {
 
     const float inspectorTime = evaluateAnimation ? animationTimeline.timeSeconds : 0.0f;
     if (workspaceWindows.passProperties) {
-      if (ImGui::Begin("Pass Properties", &workspaceWindows.passProperties)) {
+      if (ImGui::Begin("Operation Inspector", &workspaceWindows.passProperties)) {
         keepCurrentWindowVisible();
-        ImGui::TextDisabled("EDITING SCOPE");
-        if (ImGui::RadioButton("Global base", inspectorGlobalScope)) inspectorGlobalScope = true;
+        ImGui::TextDisabled("%s", inspectorGlobalScope ? "SCENE DEFAULTS" :
+          stackOperationKindLabel(renderStack.selected().kind));
         ImGui::SameLine();
-        if (ImGui::RadioButton("Selected pass", !inspectorGlobalScope)) inspectorGlobalScope = false;
+        ImGui::TextDisabled("/ %s", inspectorGlobalScope ? "inherited renderer" : renderStack.selected().name.c_str());
         if (inspectorGlobalScope) {
-          if (ImGui::Button("Reset global renderer")) renderStack.global().renderer = RendererState{};
+          if (ImGui::Button("Reset scene defaults")) renderStack.global().renderer = RendererState{};
         } else {
-          if (ImGui::Button("Clear pass overrides")) {
+          const bool selectedRenders = renderStack.selected().kind == StackOperationKind::Render ||
+            renderStack.selected().kind == StackOperationKind::LegacyRenderComposite;
+          ImGui::BeginDisabled(!selectedRenders);
+          if (ImGui::Button("Clear render overrides")) {
             renderStack.selected().overrides.clear();
             renderStack.selected().importedTextureOverride = false;
             renderStack.selected().importedTexture.reset();
           }
+          ImGui::EndDisabled();
         }
         ImGui::SameLine();
+        const bool canResetSceneSetup = inspectorGlobalScope ||
+          renderStack.selected().kind == StackOperationKind::Render ||
+          renderStack.selected().kind == StackOperationKind::LegacyRenderComposite;
+        ImGui::BeginDisabled(!canResetSceneSetup);
         if (ImGui::Button("Reset scene setup")) {
           if (inspectorGlobalScope) {
             applyRecommendedSetup(scene, renderStack.global().renderer, camera);
@@ -493,6 +513,7 @@ int runApplication() {
             replaceRenderPassOverrides(renderStack.selected(), renderStack.global(), recommended);
           }
         }
+        ImGui::EndDisabled();
         ImGui::Separator();
         const RenderPass displayedBefore = inspectorGlobalScope
           ? evaluateRenderPass(renderStack.global(), inspectorTime)

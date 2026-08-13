@@ -25,9 +25,9 @@ namespace {
 // Dear ImGui otherwise restores the previous topology and leaves the unknown
 // tool as a detached platform window, which is especially fragile across DPI
 // scales and mixed-monitor coordinate spaces.
-constexpr const char* workspaceId = "Graphics Lab Workspace v9";
+constexpr const char* workspaceId = "Graphics Lab Workspace v10";
 
-void buildDefaultLayout(const ImGuiID dockspace) {
+void buildDefaultLayout(const ImGuiID dockspace, const WorkspaceLayout layout) {
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
   ImGui::DockBuilderRemoveNode(dockspace);
   ImGui::DockBuilderAddNode(dockspace, ImGuiDockNodeFlags_DockSpace);
@@ -36,34 +36,62 @@ void buildDefaultLayout(const ImGuiID dockspace) {
   ImGuiID center = dockspace;
   ImGuiID left = 0;
   ImGuiID right = 0;
-  ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.19f, &left, &center);
-  ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.25f, &right, &center);
+  const float leftRatio = layout == WorkspaceLayout::Inspect ? 0.17f : 0.19f;
+  const float rightRatio = layout == WorkspaceLayout::Render ? 0.29f : 0.25f;
+  ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, leftRatio, &left, &center);
+  ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, rightRatio, &right, &center);
 
   ImGuiID leftBottom = 0;
   ImGuiID leftTop = left;
   ImGui::DockBuilderSplitNode(leftTop, ImGuiDir_Down, 0.48f, &leftBottom, &leftTop);
   ImGui::DockBuilderDockWindow("Scene", leftTop);
-  ImGui::DockBuilderDockWindow("Render Passes", leftBottom);
+  ImGui::DockBuilderDockWindow("Signal Stack", leftBottom);
   ImGuiID centerBottom = 0;
   ImGuiID centerTop = center;
-  ImGui::DockBuilderSplitNode(centerTop, ImGuiDir_Down, 0.30f, &centerBottom, &centerTop);
+  const float timelineRatio = layout == WorkspaceLayout::Animate ? 0.46f : 0.30f;
+  ImGui::DockBuilderSplitNode(centerTop, ImGuiDir_Down, timelineRatio, &centerBottom, &centerTop);
   ImGui::DockBuilderDockWindow("Viewport", centerTop);
   ImGui::DockBuilderDockWindow("Animation Timeline", centerBottom);
-  ImGuiID rightBottom = 0;
   ImGuiID rightTop = right;
-  ImGui::DockBuilderSplitNode(rightTop, ImGuiDir_Down, 0.34f, &rightBottom, &rightTop);
   for (const Category category : pipelineCategories)
     ImGui::DockBuilderDockWindow(pipelineToolWindowName(category), rightTop);
   ImGui::DockBuilderDockWindow("Display Reconstruction", rightTop);
   ImGui::DockBuilderDockWindow("Texture Mapping", rightTop);
   ImGui::DockBuilderDockWindow("Pass difference audit", rightTop);
-  ImGui::DockBuilderDockWindow("Pass Properties", rightBottom);
+  ImGui::DockBuilderDockWindow("Operation Inspector", rightTop);
+  if (layout == WorkspaceLayout::Inspect) {
+    ImGui::DockBuilderDockWindow("Texture Inspector", rightTop);
+    ImGui::DockBuilderDockWindow("Pass difference audit", rightTop);
+  }
   ImGui::DockBuilderFinish(dockspace);
 }
 
 void windowMenu(WorkspaceWindows& windows) {
+  if (ImGui::BeginMenu("Workspace Layout")) {
+    if (ImGui::MenuItem("Compose")) {
+      windows.requestedLayout = WorkspaceLayout::Compose;
+      windows.resetLayout = true;
+    }
+    if (ImGui::MenuItem("Render")) {
+      windows.requestedLayout = WorkspaceLayout::Render;
+      windows.resetLayout = true;
+    }
+    if (ImGui::MenuItem("Animate")) {
+      windows.requestedLayout = WorkspaceLayout::Animate;
+      windows.animation = true;
+      windows.resetLayout = true;
+    }
+    if (ImGui::MenuItem("Inspect")) {
+      windows.requestedLayout = WorkspaceLayout::Inspect;
+      windows.textureInspector = true;
+      windows.passDifferences = true;
+      windows.resetLayout = true;
+    }
+    ImGui::EndMenu();
+  }
+  ImGui::Separator();
   ImGui::MenuItem("Scene", nullptr, &windows.scene);
-  ImGui::MenuItem("Render Passes", nullptr, &windows.renderPasses);
+  ImGui::MenuItem("Signal Stack", nullptr, &windows.renderPasses);
   ImGui::MenuItem("Viewport", nullptr, &windows.viewport);
   if (ImGui::BeginMenu("Pipeline Tools")) {
     if (ImGui::MenuItem("Show All")) windows.pipelineTools.open.fill(true);
@@ -73,14 +101,17 @@ void windowMenu(WorkspaceWindows& windows) {
       ImGui::MenuItem(categoryName(pipelineCategories[index]), nullptr, &windows.pipelineTools.open[index]);
     ImGui::EndMenu();
   }
-  ImGui::MenuItem("Pass Properties", nullptr, &windows.passProperties);
+  ImGui::MenuItem("Operation Inspector", nullptr, &windows.passProperties);
   ImGui::MenuItem("Animation Timeline", nullptr, &windows.animation);
   ImGui::MenuItem("Pass Differences", nullptr, &windows.passDifferences);
   ImGui::MenuItem("Texture Inspector", nullptr, &windows.textureInspector);
   ImGui::MenuItem("Texture Mapping", nullptr, &windows.textureMapping);
   ImGui::MenuItem("Display Reconstruction", nullptr, &windows.displayReconstruction);
   ImGui::Separator();
-  if (ImGui::MenuItem("Restore Default Layout")) windows.resetLayout = true;
+  if (ImGui::MenuItem("Restore Compose Layout")) {
+    windows.requestedLayout = WorkspaceLayout::Compose;
+    windows.resetLayout = true;
+  }
 }
 
 } // namespace
@@ -148,7 +179,7 @@ WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, c
   const bool layoutMissing = ImGui::DockBuilderGetNode(dockspace) == nullptr;
   ImGui::DockSpaceOverViewport(dockspace, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
   if (windows.resetLayout || layoutMissing) {
-    buildDefaultLayout(dockspace);
+    buildDefaultLayout(dockspace, windows.requestedLayout);
     windows.resetLayout = false;
   }
   return actions;
@@ -236,32 +267,66 @@ SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile&
 void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& timeline,
     bool& globalScope) {
   if (!open) return;
-  if (!ImGui::Begin("Render Passes", &open)) {
+  if (!ImGui::Begin("Signal Stack", &open)) {
     ImGui::End();
     return;
   }
   keepCurrentWindowVisible();
-  ImGui::TextDisabled("BOTTOM TO TOP");
+  ImGui::TextDisabled("SCENE DEFAULTS");
+  if (ImGui::Selectable("Scene defaults", globalScope, 0, ImVec2(0.0f, 24.0f))) globalScope = true;
+  ImGui::TextDisabled("Inherited by every Render operation unless locally overridden.");
+  ImGui::Separator();
+  ImGui::TextDisabled("OPERATIONS — TOP TO BOTTOM");
   for (std::size_t index = 0; index < stack.passes().size(); ++index) {
     RenderPass& pass = stack.passes()[index];
     ImGui::PushID(static_cast<int>(index));
-    if (ImGui::Selectable(pass.name.c_str(), stack.selectedIndex() == index, 0, ImVec2(0.0f, 22.0f))) {
+    const bool selected = !globalScope && stack.selectedIndex() == index;
+    if (ImGui::Selectable(pass.name.c_str(), selected, 0, ImVec2(0.0f, 22.0f))) {
       stack.select(index);
       globalScope = false;
     }
-    ImGui::TextDisabled("%zu local override%s   %zu track%s", pass.overrides.size(),
-      pass.overrides.size() == 1 ? "" : "s", pass.animation.tracks.size(),
-      pass.animation.tracks.size() == 1 ? "" : "s");
+    const float rowTop = ImGui::GetItemRectMin().y;
+    const char* signalSummary = pass.kind == StackOperationKind::Render
+      ? "Color · Depth · Field · Spectrum16"
+      : pass.kind == StackOperationKind::Interpret ? "Spectrum16  ->  Color"
+      : pass.kind == StackOperationKind::Composite ? "A + B  ->  Color"
+      : "Color  ->  accumulator";
+    ImGui::TextDisabled("%s", stackOperationKindLabel(pass.kind));
+    if (pass.kind == StackOperationKind::Render || pass.kind == StackOperationKind::LegacyRenderComposite) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("· %zu override%s · %zu track%s", pass.overrides.size(),
+        pass.overrides.size() == 1 ? "" : "s", pass.animation.tracks.size(),
+        pass.animation.tracks.size() == 1 ? "" : "s");
+    }
+    ImGui::TextDisabled("%s", signalSummary);
     const float right = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
-    ImGui::SameLine();
-    ImGui::SetCursorScreenPos(ImVec2(right - 48.0f, ImGui::GetItemRectMin().y - 2.0f));
+    const ImVec2 restoreCursor = ImGui::GetCursorScreenPos();
+    ImGui::SetCursorScreenPos(ImVec2(right - 48.0f, rowTop + 2.0f));
     const bool changed = ImGui::Checkbox("##enabled", &pass.enabled);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pass enabled");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Operation enabled");
     animationKeyControl(pass, AnimationProperty::PassEnabled, timeline, changed);
+    ImGui::SetCursorScreenPos(restoreCursor);
     if (index + 1 < stack.passes().size()) ImGui::Separator();
     ImGui::PopID();
   }
-  if (ImGui::Button("Duplicate", ImVec2(-1, 0))) {
+  if (ImGui::Button("Add operation", ImVec2(-1, 0))) ImGui::OpenPopup("add-operation");
+  if (ImGui::BeginPopup("add-operation")) {
+    ImGui::TextDisabled("PRODUCE OR TRANSFORM A SIGNAL");
+    if (ImGui::Selectable("Render scene")) {
+      stack.addOperation(StackOperationKind::Render);
+      globalScope = false;
+    }
+    if (ImGui::Selectable("Interpret spectrum")) {
+      stack.addOperation(StackOperationKind::Interpret);
+      globalScope = false;
+    }
+    if (ImGui::Selectable("Composite two signals")) {
+      stack.addOperation(StackOperationKind::Composite);
+      globalScope = false;
+    }
+    ImGui::EndPopup();
+  }
+  if (ImGui::Button("Duplicate selected", ImVec2(-1, 0))) {
     stack.duplicateSelected();
     globalScope = false;
   }
@@ -301,13 +366,16 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   ImGui::SameLine();
   if (ImGui::RadioButton("Orbit", tool == Tool::Orbit)) tool = Tool::Orbit;
   ImGui::SameLine();
-  ImGui::BeginDisabled(compare != CompareMode::A);
+  const bool selectedRenders = displayedPass.kind == StackOperationKind::Render ||
+    displayedPass.kind == StackOperationKind::LegacyRenderComposite;
+  ImGui::BeginDisabled(compare != CompareMode::A || (!globalScope && !selectedRenders));
   if (ImGui::RadioButton("Translate", tool == Tool::Translate)) tool = Tool::Translate;
   ImGui::SameLine();
   if (ImGui::RadioButton("Scale", tool == Tool::Scale)) tool = Tool::Scale;
   ImGui::EndDisabled();
   ImGui::SameLine();
-  ImGui::TextDisabled("%s transform", globalScope ? "Global base" : "Selected pass");
+  ImGui::TextDisabled("%s transform", globalScope ? "Scene defaults" :
+    selectedRenders ? "Selected render" : "No geometry on selected operation");
   ImGui::Separator();
 
   const ImVec2 available = ImGui::GetContentRegionAvail();

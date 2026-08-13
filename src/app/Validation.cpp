@@ -56,6 +56,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       "examples/spectral-metamer-observer.json");
     if (!spectralDocument || spectralDocument.document->scene != TestScene::SpectralMetamers ||
         spectralDocument.document->renderStack.passes().size() != 2 ||
+        spectralDocument.document->renderStack.passes()[0].kind != StackOperationKind::Render ||
+        spectralDocument.document->renderStack.passes()[1].kind != StackOperationKind::Composite ||
         spectralDocument.document->renderStack.passes()[1].composite.sourceA !=
           CompositeSource::RenderPassSpectrum)
       fail("spectral metamer example failed document validation");
@@ -88,10 +90,14 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     if (glGetError() != GL_NO_ERROR) fail("scene-material or override texture rendering failed validation");
     renderer.clearImportedModel();
     RenderStack validationStack;
-    if (validationStack.passes().size() != 2 || !validationStack.duplicateSelected() ||
-        validationStack.passes().size() != 3 || !validationStack.moveSelected(-1) ||
-        !validationStack.removeSelected() || validationStack.passes().size() != 2)
+    if (validationStack.passes().size() != 3 || !validationStack.duplicateSelected() ||
+        validationStack.passes().size() != 4 || !validationStack.moveSelected(-1) ||
+        !validationStack.removeSelected() || validationStack.passes().size() != 3)
       fail("render-pass stack operations failed validation");
+    if (!validationStack.addOperation(StackOperationKind::Interpret) ||
+        validationStack.selected().kind != StackOperationKind::Interpret ||
+        validationStack.selected().composite.sourceA != CompositeSource::RenderPassSpectrum)
+      fail("typed signal operation creation failed validation");
     RenderStack identityValidation;
     identityValidation.select(0);
     if (!identityValidation.duplicateSelected()) fail("render-pass identity setup failed validation");
@@ -259,7 +265,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     if (!historyValidation.undo(historyChanged, historyRestored) ||
         std::abs(materializeRenderPass(historyRestored.renderStack,
           historyRestored.renderStack.selectedIndex()).renderer.lighting.ambient - 0.22f) > 0.0001f ||
-        historyRestored.renderStack.passes().size() != 2 || historyRestored.scene != TestScene::Torus ||
+        historyRestored.renderStack.passes().size() != 3 || historyRestored.scene != TestScene::Torus ||
         historyRestored.hardwareProfile != HardwareProfile::Unrestricted ||
         historyRestored.importedModel != nullptr ||
         std::abs(historyRestored.renderStack.global().renderer.camera.nearPlane - 0.05f) > 0.0001f ||
@@ -272,7 +278,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
           historyRestored.renderStack.selectedIndex()).renderer.lighting.ambient - 0.7f) > 0.0001f ||
         std::abs(materializeRenderPass(historyRestored.renderStack,
           historyRestored.renderStack.selectedIndex()).perturbation.cameraYaw - 0.2f) > 0.0001f ||
-        historyRestored.renderStack.passes().size() != 3 ||
+        historyRestored.renderStack.passes().size() != 4 ||
         historyRestored.renderStack.selected().animation.tracks.size() != 1 ||
         materializeRenderPass(historyRestored.renderStack,
           historyRestored.renderStack.selectedIndex()).textureSource != TextureSource::ImportedOverride ||
@@ -352,6 +358,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     const std::string stackConfig = renderStackConfigJson(compositeValidation, camera, scene,
       HardwareProfile::Unrestricted, &timelineValidation, importedFixture.asset.get());
     if (stackConfig.find("graphics-lab.render-stack.v8") == std::string::npos ||
+        stackConfig.find("typed_operations_v1") == std::string::npos ||
+        stackConfig.find("\"operation_kind\"") == std::string::npos ||
         stackConfig.find("\"field_resources\"") == std::string::npos ||
         stackConfig.find("render_pass_field") == std::string::npos ||
         stackConfig.find("pass_field") == std::string::npos ||

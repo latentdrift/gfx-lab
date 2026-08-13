@@ -17,6 +17,10 @@ struct TextureAsset;
 
 enum class CompositeColorSpace { EncodedRgb, LinearLight };
 enum class CompositeRange { Clamp, Preserve, Wrap };
+// A stack operation describes what a row does, independently of its position.
+// LegacyRenderComposite exists solely so v8 documents retain their original
+// "render this row, then composite it" evaluation semantics.
+enum class StackOperationKind { Render, Interpret, Composite, LegacyRenderComposite };
 enum class CompositeInterpretation {
   RawRgb, LResponse, MResponse, SResponse, ConeLuminance, RodResponse,
   RedGreenOpponent, BlueYellowOpponent, SpectralHuman, SpectralAlternate, SpectralRod
@@ -109,6 +113,7 @@ struct RenderPass {
   int id = 0;
   std::string name;
   bool enabled = true;
+  StackOperationKind kind = StackOperationKind::Render;
   RendererState renderer;
   PassPerturbation perturbation;
   PassOutput output = PassOutput::Color;
@@ -139,6 +144,7 @@ public:
 
   void select(std::size_t index);
   bool duplicateSelected();
+  bool addOperation(StackOperationKind kind);
   bool removeSelected();
   bool moveSelected(int direction);
   void replacePasses(std::vector<RenderPass> passes);
@@ -162,6 +168,8 @@ void replaceRenderPassOverrides(RenderPass& pass, const RenderPass& global, cons
   float timeSeconds = 0.0f);
 
 [[nodiscard]] const char* relationOperatorLabel(RelationOperator operation);
+[[nodiscard]] const char* stackOperationKindLabel(StackOperationKind kind);
+[[nodiscard]] const char* stackOperationKindId(StackOperationKind kind);
 [[nodiscard]] const char* relationOperatorId(RelationOperator operation);
 [[nodiscard]] const char* relationOperatorEquation(RelationOperator operation);
 [[nodiscard]] const char* relationOperatorMeaning(RelationOperator operation);

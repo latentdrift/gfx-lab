@@ -12,7 +12,7 @@
   },
   "passes": [
     {
-      "id": 1, "name": "Daylight spectral scene", "enabled": true, "output_buffer": "color", "overrides": [],
+      "id": 1, "name": "Daylight spectral scene", "enabled": true, "operation_kind": "render", "output_buffer": "color", "overrides": [],
       "composite_into_previous": {
         "operation": "absolute_difference",
         "source_a": {"type": "accumulated_result", "pass_id": 1},
@@ -25,7 +25,7 @@
       "animation": {"enabled": true, "property_tracks": []}
     },
     {
-      "id": 2, "name": "Human vs shifted observer", "enabled": true, "output_buffer": "color", "overrides": [],
+      "id": 2, "name": "Human vs shifted observer", "enabled": true, "operation_kind": "composite", "output_buffer": "color", "overrides": [],
       "composite_into_previous": {
         "operation": "absolute_difference",
         "source_a": {"type": "render_pass_spectrum", "pass_id": 1},

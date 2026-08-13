@@ -47,11 +47,22 @@ RenderStack::RenderStack() {
   global_.name = "Global base";
   RenderPass a;
   a.id = 1;
-  a.name = "Pass A";
+  a.name = "Scene render A";
+  a.kind = StackOperationKind::Render;
   RenderPass b = a;
   b.id = 2;
-  b.name = "Pass B";
-  passes_ = {std::move(a), std::move(b)};
+  b.name = "Scene render B";
+  RenderPass composite;
+  composite.id = 3;
+  composite.name = "Compare A and B";
+  composite.kind = StackOperationKind::Composite;
+  composite.composite.sourceA = CompositeSource::RenderPass;
+  composite.composite.sourceAPassId = 1;
+  composite.composite.sourceB = CompositeSource::RenderPass;
+  composite.composite.sourceBPassId = 2;
+  passes_ = {std::move(a), std::move(b), std::move(composite)};
+  nextPassNumber_ = 4;
+  nextPassId_ = 4;
 }
 
 bool animationPropertyIsPassLocal(const AnimationProperty property) {
@@ -122,6 +133,7 @@ void applyPassDefinition(RenderPass& materialized, const RenderPass& definition)
   materialized.id = definition.id;
   materialized.name = definition.name;
   materialized.enabled = definition.enabled;
+  materialized.kind = definition.kind;
   materialized.output = definition.output;
   materialized.composite = definition.composite;
   materialized.animation = definition.animation;
@@ -162,8 +174,39 @@ bool RenderStack::duplicateSelected() {
   if (passes_.size() >= maximumPasses) return false;
   RenderPass duplicate = selected();
   duplicate.id = nextPassId_++;
-  duplicate.name = "Pass " + std::to_string(nextPassNumber_++);
+  duplicate.name = selected().name + " copy";
+  ++nextPassNumber_;
   passes_.insert(passes_.begin() + static_cast<std::ptrdiff_t>(selected_ + 1), std::move(duplicate));
+  ++selected_;
+  return true;
+}
+
+bool RenderStack::addOperation(const StackOperationKind kind) {
+  if (passes_.size() >= maximumPasses) return false;
+  RenderPass operation;
+  operation.id = nextPassId_++;
+  operation.kind = kind;
+  operation.name = std::string(stackOperationKindLabel(kind)) + " " + std::to_string(nextPassNumber_++);
+  if (kind == StackOperationKind::Interpret) {
+    operation.composite.sourceA = CompositeSource::RenderPassSpectrum;
+    operation.composite.sourceB = CompositeSource::RenderPassSpectrum;
+    operation.composite.interpretationA = CompositeInterpretation::SpectralHuman;
+    operation.composite.interpretationB = CompositeInterpretation::SpectralHuman;
+    operation.composite.operation = RelationOperator::Maximum;
+    operation.composite.gain = 1.0f;
+  } else if (kind == StackOperationKind::Composite) {
+    operation.composite.sourceA = CompositeSource::Accumulator;
+    operation.composite.sourceB = CompositeSource::RenderPass;
+  }
+  const auto firstRender = std::find_if(passes_.begin(), passes_.end(), [](const RenderPass& candidate) {
+    return candidate.kind == StackOperationKind::Render ||
+      candidate.kind == StackOperationKind::LegacyRenderComposite;
+  });
+  if (firstRender != passes_.end()) {
+    operation.composite.sourceAPassId = firstRender->id;
+    operation.composite.sourceBPassId = firstRender->id;
+  }
+  passes_.insert(passes_.begin() + static_cast<std::ptrdiff_t>(selected_ + 1), std::move(operation));
   ++selected_;
   return true;
 }
@@ -236,7 +279,28 @@ std::size_t relationIndex(const RelationOperator operation) {
   return static_cast<std::size_t>(std::clamp(static_cast<int>(operation), 0,
     static_cast<int>(labels.size()) - 1));
 }
+
 } // namespace
+
+const char* stackOperationKindLabel(const StackOperationKind kind) {
+  switch (kind) {
+    case StackOperationKind::Render: return "Render";
+    case StackOperationKind::Interpret: return "Interpret";
+    case StackOperationKind::Composite: return "Composite";
+    case StackOperationKind::LegacyRenderComposite: return "Render + composite (legacy)";
+  }
+  return "Operation";
+}
+
+const char* stackOperationKindId(const StackOperationKind kind) {
+  switch (kind) {
+    case StackOperationKind::Render: return "render";
+    case StackOperationKind::Interpret: return "interpret";
+    case StackOperationKind::Composite: return "composite";
+    case StackOperationKind::LegacyRenderComposite: return "legacy_render_composite";
+  }
+  return "render";
+}
 
 const char* relationOperatorLabel(const RelationOperator operation) { return labels[relationIndex(operation)]; }
 const char* relationOperatorId(const RelationOperator operation) { return ids[relationIndex(operation)]; }
@@ -291,11 +355,12 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   json << std::boolalpha << std::fixed << std::setprecision(5);
   json << "{\n";
   json << "  \"schema\": \"graphics-lab.render-stack.v8\",\n";
-  json << "  \"field_resources\": \"each pass produces an R16F scalar field buffer from reconstructed world position; named field sources and field masks consume it independently of pass color\",\n";
+  json << "  \"stack_model\": \"typed_operations_v1\",\n";
+  json << "  \"field_resources\": \"Render operations produce an R16F scalar field buffer from reconstructed world position; field inputs consume it independently of color\",\n";
   json << "  \"spectral_resources\": \"spectral scenes produce sixteen 400-700 nm radiance bands in four RGBA16F attachments; named spectrum operands integrate them through the selected observer before compositing\",\n";
-  json << "  \"evaluation\": \"bottom_to_top_sequential_compositing\",\n";
+  json << "  \"evaluation\": \"top_to_bottom_typed_signal_operations\",\n";
   json << "  \"property_precedence\": \"global base, global track, local override, local track\",\n";
-  json << "  \"seed_rule\": \"the first enabled pass becomes the accumulator; every later enabled pass applies its composite step\",\n";
+  json << "  \"seed_rule\": \"the first enabled Render seeds the accumulator; later Render operations produce named resources, while Interpret and Composite operations transform signals\",\n";
   json << "  \"hardware_target\": \"" << hardwareProfileId(profile) << "\",\n";
   json << "  \"test_scene\": \"" << testSceneName(scene) << "\",\n";
   const DisplayReconstructionState& display = stack.display();
@@ -389,7 +454,8 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
     const CompositeStep& c = pass.composite;
     json << "    {\n";
     json << "      \"id\": " << pass.id << ", \"name\": \"" << escape(pass.name)
-         << "\", \"enabled\": " << pass.enabled << ",\n";
+         << "\", \"enabled\": " << pass.enabled << ", \"operation_kind\": \""
+         << stackOperationKindId(pass.kind) << "\",\n";
     json << "      \"output_buffer\": \"" << outputIds[static_cast<int>(pass.output)] << "\",\n";
     json << "      \"texture_source\": \"" << textureSourceIds[static_cast<int>(effective.textureSource)] << "\"";
     if (effective.importedTexture != nullptr) {

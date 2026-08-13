@@ -31,7 +31,7 @@ const char* compactSourceLabel(const CompositeSource source) {
   switch (source) {
     case CompositeSource::Accumulator: return "Accumulated result";
     case CompositeSource::CurrentPass: return "Current pass";
-    case CompositeSource::RenderPass: return "Named render pass";
+    case CompositeSource::RenderPass: return "Named stack output";
     case CompositeSource::FixedColor: return "Fixed RGBA color";
     case CompositeSource::PreviousFrame: return "Previous frame";
     case CompositeSource::RenderPassField: return "Named pass field";
@@ -48,7 +48,8 @@ struct SourceNodeResult {
 };
 
 SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& source,
-    int& sourcePassId, CompositeInterpretation& interpretation, RenderStack& stack) {
+    int& sourcePassId, CompositeInterpretation& interpretation, RenderStack& stack,
+    const bool allowCurrentPass = true) {
   SourceNodeResult result;
   ImGui::PushID(id);
   const float width = ImGui::GetContentRegionAvail().x;
@@ -57,10 +58,10 @@ SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& 
   result.anchorScreenY = ImGui::GetItemRectMin().y;
   if (ImGui::BeginPopup("source-palette")) {
     ImGui::TextDisabled("%s SIGNAL", title);
-    constexpr CompositeSource simpleSources[] = {
-      CompositeSource::Accumulator, CompositeSource::CurrentPass,
-      CompositeSource::FixedColor, CompositeSource::PreviousFrame};
+    constexpr CompositeSource simpleSources[] = {CompositeSource::Accumulator,
+      CompositeSource::CurrentPass, CompositeSource::FixedColor, CompositeSource::PreviousFrame};
     for (const CompositeSource candidate : simpleSources) {
+      if (candidate == CompositeSource::CurrentPass && !allowCurrentPass) continue;
       if (ImGui::Selectable(compactSourceLabel(candidate), source == candidate)) {
         source = candidate;
         result.sourceChanged = true;
@@ -78,6 +79,8 @@ SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& 
     }
     ImGui::SeparatorText("FIELD BUFFER");
     for (const RenderPass& candidate : stack.passes()) {
+      if (candidate.kind != StackOperationKind::Render &&
+          candidate.kind != StackOperationKind::LegacyRenderComposite) continue;
       const bool selected = source == CompositeSource::RenderPassField && sourcePassId == candidate.id;
       const std::string fieldLabel = candidate.name + " field";
       if (ImGui::Selectable(fieldLabel.c_str(), selected)) {
@@ -89,6 +92,8 @@ SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& 
     }
     ImGui::SeparatorText("SPECTRAL RADIANCE (16 BANDS)");
     for (const RenderPass& candidate : stack.passes()) {
+      if (candidate.kind != StackOperationKind::Render &&
+          candidate.kind != StackOperationKind::LegacyRenderComposite) continue;
       const bool selected = source == CompositeSource::RenderPassSpectrum && sourcePassId == candidate.id;
       const std::string spectrumLabel = candidate.name + " spectrum";
       if (ImGui::Selectable(spectrumLabel.c_str(), selected)) {
@@ -154,21 +159,27 @@ OperationPaletteResult operationPalette(RelationOperator& operation) {
 
 void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bool globalScope) {
   RenderPass& pass = stack.selected();
-  ImGui::TextDisabled(globalScope ? "GLOBAL BASE" : "SELECTED RENDER PASS");
+  ImGui::TextDisabled("%s", globalScope ? "SCENE DEFAULTS" : stackOperationKindLabel(pass.kind));
   if (!globalScope) {
     std::array<char, 64> name{};
     std::snprintf(name.data(), name.size(), "%s", pass.name.c_str());
     if (ImGui::InputText("Name", name.data(), name.size())) pass.name = name.data();
 
-    const char* outputLabels[] = {"Color", "Linear depth", "Normals", "Vertex colors", "Field signal preview"};
-    int output = static_cast<int>(pass.output);
-    const bool outputChanged = ImGui::Combo("Output buffer", &output, outputLabels, 5);
-    if (outputChanged) pass.output = static_cast<PassOutput>(output);
-    animationKeyControl(pass, AnimationProperty::PassOutput, timeline, outputChanged);
+    if (pass.kind == StackOperationKind::Render || pass.kind == StackOperationKind::LegacyRenderComposite) {
+      const char* outputLabels[] = {"Color", "Linear depth", "Normals", "Vertex colors", "Field signal preview"};
+      int output = static_cast<int>(pass.output);
+      const bool outputChanged = ImGui::Combo("Presented output", &output, outputLabels, 5);
+      if (outputChanged) pass.output = static_cast<PassOutput>(output);
+      animationKeyControl(pass, AnimationProperty::PassOutput, timeline, outputChanged);
+      ImGui::TextDisabled("Produces Color · Depth · Field · Spectrum16 when available");
+    }
   }
 
-  ImGui::Spacing();
-  ImGui::TextDisabled("GEOMETRY PERTURBATION");
+  const bool rendersScene = globalScope || pass.kind == StackOperationKind::Render ||
+    pass.kind == StackOperationKind::LegacyRenderComposite;
+  if (rendersScene) {
+    ImGui::Spacing();
+    ImGui::TextDisabled("GEOMETRY PERTURBATION");
   animationKeyControl(pass, AnimationProperty::ModelTranslation, timeline,
     ImGui::DragFloat3("Model translation", &pass.perturbation.modelTranslation.x, 0.005f, -4.0f, 4.0f, "%.3f"));
   animationKeyControl(pass, AnimationProperty::ModelScale, timeline,
@@ -205,8 +216,60 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
     ImGui::SliderAngle("UV rotation", &pass.perturbation.uvRotation, -180.0f, 180.0f, "%.1f deg"));
   animationKeyControl(pass, AnimationProperty::UvPivot, timeline,
     ImGui::DragFloat2("UV pivot", &pass.perturbation.uvPivot.x, 0.005f, -2.0f, 2.0f, "%.3f"));
+  }
 
   if (globalScope) return;
+
+  if (pass.kind == StackOperationKind::Render) {
+    ImGui::Separator();
+    description("This operation renders the scene into named color, depth, field, and spectral resources. It does not alter the accumulated result unless it is the first enabled producer.");
+    return;
+  }
+
+  if (pass.kind == StackOperationKind::Interpret) {
+    ImGui::SeparatorText("INPUT SIGNAL");
+    const RenderPass* selectedProducer = nullptr;
+    for (const RenderPass& candidate : stack.passes())
+      if (candidate.id == pass.composite.sourceAPassId) selectedProducer = &candidate;
+    ImGui::SetNextItemWidth(-1.0f);
+    bool sourceChanged = false;
+    if (ImGui::BeginCombo("Spectrum16 producer", selectedProducer != nullptr
+        ? selectedProducer->name.c_str() : "Select a Render operation")) {
+      for (const RenderPass& candidate : stack.passes()) {
+        if (candidate.kind != StackOperationKind::Render &&
+            candidate.kind != StackOperationKind::LegacyRenderComposite) continue;
+        if (ImGui::Selectable(candidate.name.c_str(), candidate.id == pass.composite.sourceAPassId)) {
+          pass.composite.sourceA = CompositeSource::RenderPassSpectrum;
+          pass.composite.sourceAPassId = candidate.id;
+          sourceChanged = true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    animationKeyControl(pass, AnimationProperty::CompositeSourceAPass, timeline, sourceChanged);
+    constexpr const char* observerLabels[] = {"Reference human LMS", "Shifted observer", "Rod monochrome"};
+    int observerIndex = pass.composite.interpretationA == CompositeInterpretation::SpectralAlternate ? 1
+      : pass.composite.interpretationA == CompositeInterpretation::SpectralRod ? 2 : 0;
+    const bool observerChanged = ImGui::Combo("Observer", &observerIndex, observerLabels, 3);
+    if (observerChanged) pass.composite.interpretationA = observerIndex == 1
+      ? CompositeInterpretation::SpectralAlternate
+      : observerIndex == 2 ? CompositeInterpretation::SpectralRod : CompositeInterpretation::SpectralHuman;
+    animationKeyControl(pass, AnimationProperty::CompositeInterpretationA, timeline, observerChanged);
+    description("Interpret converts one stored signal into displayable RGB. Spectral observers integrate the same sixteen wavelength bands without rerendering the scene.");
+    ImGui::SeparatorText("INTERPRETATION OUTPUT");
+    DisplayReconstructionState& observer = stack.display();
+    ImGui::SliderFloat("Observer exposure", &observer.observerExposureStops, -6.0f, 6.0f, "%+.1f stops");
+    ImGui::SliderFloat("Rod sensitivity", &observer.rodSensitivity, 0.25f, 16.0f, "%.2fx",
+      ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("Opponent gain", &observer.opponentGain, 0.25f, 16.0f, "%.2fx",
+      ImGuiSliderFlags_Logarithmic);
+    animationKeyControl(pass, AnimationProperty::CompositeGain, timeline,
+      ImGui::SliderFloat("Output gain", &pass.composite.gain, 0.1f, 16.0f, "%.2fx",
+        ImGuiSliderFlags_Logarithmic));
+    animationKeyControl(pass, AnimationProperty::CompositeBias, timeline,
+      ImGui::SliderFloat("Output bias", &pass.composite.bias, -1.0f, 1.0f, "%.3f"));
+    return;
+  }
 
   std::size_t firstEnabled = stack.passes().size();
   for (std::size_t index = 0; index < stack.passes().size(); ++index) {
@@ -221,7 +284,7 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
     description("This pass is disabled, so its composite step is currently skipped. Its settings are retained.");
     return;
   }
-  if (stack.selectedIndex() == firstEnabled) {
+  if (pass.kind == StackOperationKind::LegacyRenderComposite && stack.selectedIndex() == firstEnabled) {
     ImGui::Spacing();
     ImGui::Separator();
     description("The first enabled pass seeds the accumulated image. Composite controls begin on later passes.");
@@ -234,7 +297,8 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
   if (ImGui::BeginTable("composite-inputs", 2, ImGuiTableFlags_SizingStretchSame)) {
     ImGui::TableNextColumn();
     const SourceNodeResult sourceAChanged = sourceNode("source-a", "A", pass.composite.sourceA,
-      pass.composite.sourceAPassId, pass.composite.interpretationA, stack);
+      pass.composite.sourceAPassId, pass.composite.interpretationA, stack,
+      pass.kind == StackOperationKind::LegacyRenderComposite);
     animationKeyControlAt(pass, AnimationProperty::CompositeSourceA, timeline,
       sourceAChanged.sourceChanged, sourceAChanged.anchorScreenY + 3.0f);
     animationKeyControlAt(pass, AnimationProperty::CompositeSourceAPass, timeline,
@@ -243,7 +307,8 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
       sourceAChanged.interpretationChanged);
     ImGui::TableNextColumn();
     const SourceNodeResult sourceBChanged = sourceNode("source-b", "B", pass.composite.sourceB,
-      pass.composite.sourceBPassId, pass.composite.interpretationB, stack);
+      pass.composite.sourceBPassId, pass.composite.interpretationB, stack,
+      pass.kind == StackOperationKind::LegacyRenderComposite);
     animationKeyControlAt(pass, AnimationProperty::CompositeSourceB, timeline,
       sourceBChanged.sourceChanged, sourceBChanged.anchorScreenY + 3.0f);
     animationKeyControlAt(pass, AnimationProperty::CompositeSourceBPass, timeline,
