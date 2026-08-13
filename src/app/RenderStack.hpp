@@ -21,6 +21,18 @@ enum class PassOutput { Color, Depth, Normals, VertexColor };
 enum class CompositeMask { None, PassLuminance, PassDepth, PassEdges };
 enum class CompositeSource { Accumulator, CurrentPass, RenderPass, FixedColor, PreviousFrame };
 enum class TextureSource { SceneMaterial, BuiltInChecker, ImportedOverride, White };
+enum class DisplaySignal { DirectRgb, CompositeNtsc };
+
+struct DisplayReconstructionState {
+  bool enabled = false;
+  DisplaySignal signal = DisplaySignal::DirectRgb;
+  float chromaBleed = 0.55f;
+  float lumaChromaCrosstalk = 0.20f;
+  float scanlineStrength = 0.18f;
+  float phosphorMaskStrength = 0.10f;
+  float bloomStrength = 0.12f;
+  float bloomRadiusPixels = 2.0f;
+};
 
 struct PassPerturbation {
   glm::vec3 modelTranslation{0.0f};
@@ -87,6 +99,8 @@ public:
   [[nodiscard]] const RenderPass& selected() const;
   [[nodiscard]] RenderPass& global() { return global_; }
   [[nodiscard]] const RenderPass& global() const { return global_; }
+  [[nodiscard]] DisplayReconstructionState& display() { return display_; }
+  [[nodiscard]] const DisplayReconstructionState& display() const { return display_; }
 
   void select(std::size_t index);
   bool duplicateSelected();
@@ -95,6 +109,7 @@ public:
 
 private:
   RenderPass global_;
+  DisplayReconstructionState display_;
   std::vector<RenderPass> passes_;
   std::size_t selected_ = 0;
   unsigned int nextPassNumber_ = 3;

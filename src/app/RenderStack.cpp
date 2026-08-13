@@ -238,11 +238,20 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   std::ostringstream json;
   json << std::boolalpha << std::fixed << std::setprecision(5);
   json << "{\n";
-  json << "  \"schema\": \"graphics-lab.render-stack.v4\",\n";
+  json << "  \"schema\": \"graphics-lab.render-stack.v5\",\n";
   json << "  \"evaluation\": \"bottom_to_top_sequential_compositing\",\n";
   json << "  \"property_precedence\": \"global base, global track, local override, local track\",\n";
   json << "  \"seed_rule\": \"the first enabled pass becomes the accumulator; every later enabled pass applies its composite step\",\n";
   json << "  \"test_scene\": \"" << testSceneName(scene) << "\",\n";
+  const DisplayReconstructionState& display = stack.display();
+  json << "  \"display_reconstruction\": {\"enabled\": " << display.enabled
+       << ", \"signal\": \"" << (display.signal == DisplaySignal::DirectRgb ? "direct_rgb" : "composite_ntsc")
+       << "\", \"chroma_bleed\": " << display.chromaBleed
+       << ", \"luma_chroma_crosstalk\": " << display.lumaChromaCrosstalk
+       << ", \"scanline_strength\": " << display.scanlineStrength
+       << ", \"phosphor_mask_strength\": " << display.phosphorMaskStrength
+       << ", \"bloom_strength\": " << display.bloomStrength
+       << ", \"bloom_radius_pixels\": " << display.bloomRadiusPixels << "},\n";
   if (importedModel != nullptr) {
     json << "  \"imported_model\": {\"name\": \"" << escape(importedModel->name)
          << "\", \"source_path\": \"" << escape(importedModel->sourcePath)

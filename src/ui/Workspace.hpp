@@ -23,6 +23,7 @@ struct WorkspaceWindows {
   bool animation = false;
   bool passDifferences = false;
   bool textureInspector = false;
+  bool displayReconstruction = true;
   bool resetLayout = false;
 };
 

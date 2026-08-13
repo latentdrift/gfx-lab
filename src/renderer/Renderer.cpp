@@ -187,6 +187,7 @@ public:
     outputProgram_ = makeProgram(outputVertexShader, outputFragmentShader);
     relationProgram_ = makeProgram(outputVertexShader, relationFragmentShader);
     copyProgram_ = makeProgram(outputVertexShader, copyFragmentShader);
+    displayProgram_ = makeProgram(outputVertexShader, displayReconstructionFragmentShader);
     shadowProgram_ = makeProgram(shadowVertexShader, shadowFragmentShader);
     overdrawProgram_ = makeProgram(overdrawVertexShader, overdrawFragmentShader);
     auto appendMesh = [this](const std::vector<Vertex>& mesh) {
@@ -246,6 +247,21 @@ public:
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
       failRenderer("could not create frame-history target");
     resetFrameHistory();
+    glGenFramebuffers(static_cast<GLsizei>(displayFbos_.size()), displayFbos_.data());
+    glGenTextures(static_cast<GLsizei>(displayTextures_.size()), displayTextures_.data());
+    for (std::size_t index = 0; index < displayTextures_.size(); ++index) {
+      glBindTexture(GL_TEXTURE_2D, displayTextures_[index]);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, relationWidth_, relationHeight_, 0, GL_RGBA,
+        GL_UNSIGNED_BYTE, nullptr);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      glBindFramebuffer(GL_FRAMEBUFFER, displayFbos_[index]);
+      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, displayTextures_[index], 0);
+      if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        failRenderer("could not create display-reconstruction target");
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glGetIntegerv(GL_MAX_SAMPLES, &maxSamples_);
     if (GLEW_EXT_texture_filter_anisotropic)
@@ -292,10 +308,13 @@ public:
     glDeleteTextures(static_cast<GLsizei>(relationTextures_.size()), relationTextures_.data());
     glDeleteFramebuffers(1, &historyFbo_);
     glDeleteTextures(1, &historyTexture_);
+    glDeleteFramebuffers(static_cast<GLsizei>(displayFbos_.size()), displayFbos_.data());
+    glDeleteTextures(static_cast<GLsizei>(displayTextures_.size()), displayTextures_.data());
     glDeleteProgram(sceneProgram_);
     glDeleteProgram(outputProgram_);
     glDeleteProgram(relationProgram_);
     glDeleteProgram(copyProgram_);
+    glDeleteProgram(displayProgram_);
     glDeleteProgram(shadowProgram_);
     glDeleteProgram(overdrawProgram_);
   }
@@ -860,6 +879,32 @@ public:
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 
+  GLuint reconstructDisplay(const GLuint sourceTexture, const DisplayReconstructionState& state,
+      const std::size_t targetIndex) {
+    if (!state.enabled || sourceTexture == 0) return sourceTexture;
+    const std::size_t index = std::min(targetIndex, displayFbos_.size() - 1);
+    glBindFramebuffer(GL_FRAMEBUFFER, displayFbos_[index]);
+    glViewport(0, 0, relationWidth_, relationHeight_);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glUseProgram(displayProgram_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, sourceTexture);
+    glUniform1i(glGetUniformLocation(displayProgram_, "uImage"), 0);
+    glUniform1i(glGetUniformLocation(displayProgram_, "uSignal"), static_cast<int>(state.signal));
+    glUniform1f(glGetUniformLocation(displayProgram_, "uChromaBleed"), state.chromaBleed);
+    glUniform1f(glGetUniformLocation(displayProgram_, "uCrosstalk"), state.lumaChromaCrosstalk);
+    glUniform1f(glGetUniformLocation(displayProgram_, "uScanlineStrength"), state.scanlineStrength);
+    glUniform1f(glGetUniformLocation(displayProgram_, "uMaskStrength"), state.phosphorMaskStrength);
+    glUniform1f(glGetUniformLocation(displayProgram_, "uBloomStrength"), state.bloomStrength);
+    glUniform1f(glGetUniformLocation(displayProgram_, "uBloomRadius"), state.bloomRadiusPixels);
+    glBindVertexArray(fullscreenVao_);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return displayTextures_[index];
+  }
+
 private:
   struct ImportedMaterialGpu {
     glm::vec4 baseColor{1.0f};
@@ -929,7 +974,7 @@ private:
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 
-  GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0, copyProgram_ = 0,
+  GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0, copyProgram_ = 0, displayProgram_ = 0,
     shadowProgram_ = 0, overdrawProgram_ = 0;
   GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, indexedTexture_ = 0,
     clutTexture_ = 0, normalTexture_ = 0, detailTexture_ = 0, whiteTexture_ = 0;
@@ -947,6 +992,8 @@ private:
   std::array<GLuint, 2> relationFbos_{};
   std::array<GLuint, 2> relationTextures_{};
   GLuint historyFbo_ = 0, historyTexture_ = 0;
+  std::array<GLuint, 3> displayFbos_{};
+  std::array<GLuint, 3> displayTextures_{};
   static constexpr int relationWidth_ = 960;
   static constexpr int relationHeight_ = 720;
 
@@ -1098,6 +1145,10 @@ unsigned int Renderer::renderPass(const RenderPass& pass, const CameraOrbit& cam
 }
 
 unsigned int Renderer::composite(const RenderStack& stack) { return impl_->composite(stack); }
+unsigned int Renderer::reconstructDisplay(const unsigned int sourceTexture,
+    const DisplayReconstructionState& state, const std::size_t targetIndex) {
+  return impl_->reconstructDisplay(sourceTexture, state, targetIndex);
+}
 void Renderer::resetFrameHistory() { impl_->resetFrameHistory(); }
 
 void Renderer::setImportedModel(const ModelAsset& asset) { impl_->setImportedModel(asset); }

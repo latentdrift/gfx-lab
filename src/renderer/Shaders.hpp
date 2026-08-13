@@ -532,6 +532,67 @@ out vec4 fragColor;
 void main() { fragColor = texture(uImage, vUv); }
 )GLSL";
 
+inline constexpr const char* displayReconstructionFragmentShader = R"GLSL(
+#version 410 core
+in vec2 vUv;
+uniform sampler2D uImage;
+uniform int uSignal;
+uniform float uChromaBleed;
+uniform float uCrosstalk;
+uniform float uScanlineStrength;
+uniform float uMaskStrength;
+uniform float uBloomStrength;
+uniform float uBloomRadius;
+out vec4 fragColor;
+
+vec3 rgbToYiq(vec3 rgb) {
+  return vec3(dot(rgb, vec3(0.299, 0.587, 0.114)),
+    dot(rgb, vec3(0.596, -0.274, -0.322)),
+    dot(rgb, vec3(0.211, -0.523, 0.312)));
+}
+
+vec3 yiqToRgb(vec3 yiq) {
+  return vec3(yiq.x + 0.956 * yiq.y + 0.621 * yiq.z,
+    yiq.x - 0.272 * yiq.y - 0.647 * yiq.z,
+    yiq.x - 1.106 * yiq.y + 1.703 * yiq.z);
+}
+
+void main() {
+  vec2 texel = 1.0 / vec2(textureSize(uImage, 0));
+  vec3 center = texture(uImage, vUv).rgb;
+  vec3 color = center;
+  if (uSignal == 1) {
+    vec3 centerYiq = rgbToYiq(center);
+    vec3 neighborhood = rgbToYiq(texture(uImage, vUv - vec2(2.0 * texel.x, 0.0)).rgb) * 0.12;
+    neighborhood += rgbToYiq(texture(uImage, vUv - vec2(texel.x, 0.0)).rgb) * 0.23;
+    neighborhood += centerYiq * 0.30;
+    neighborhood += rgbToYiq(texture(uImage, vUv + vec2(texel.x, 0.0)).rgb) * 0.23;
+    neighborhood += rgbToYiq(texture(uImage, vUv + vec2(2.0 * texel.x, 0.0)).rgb) * 0.12;
+    vec3 decoded = vec3(centerYiq.x, mix(centerYiq.yz, neighborhood.yz, uChromaBleed));
+    float carrier = sin(gl_FragCoord.x * 1.57079632679);
+    decoded.x += carrier * neighborhood.y * uCrosstalk * 0.22;
+    decoded.yz += vec2(carrier, -carrier) * (centerYiq.x - neighborhood.x) * uCrosstalk * 0.08;
+    color = yiqToRgb(decoded);
+  }
+
+  vec2 bloomStep = texel * uBloomRadius;
+  vec3 bloom = texture(uImage, vUv + vec2(bloomStep.x, 0.0)).rgb;
+  bloom += texture(uImage, vUv - vec2(bloomStep.x, 0.0)).rgb;
+  bloom += texture(uImage, vUv + vec2(0.0, bloomStep.y)).rgb;
+  bloom += texture(uImage, vUv - vec2(0.0, bloomStep.y)).rgb;
+  bloom *= 0.25;
+  color += max(bloom - vec3(0.35), vec3(0.0)) * uBloomStrength;
+
+  float darkRow = mod(floor(gl_FragCoord.y), 2.0);
+  color *= 1.0 - darkRow * uScanlineStrength;
+  int triad = int(mod(floor(gl_FragCoord.x), 3.0));
+  vec3 grille = triad == 0 ? vec3(1.15, 0.86, 0.86) :
+    triad == 1 ? vec3(0.86, 1.15, 0.86) : vec3(0.86, 0.86, 1.15);
+  color *= mix(vec3(1.0), grille, uMaskStrength);
+  fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+}
+)GLSL";
+
 inline constexpr const char* shadowVertexShader = R"GLSL(
 #version 410 core
 layout(location=0) in vec3 aPosition;

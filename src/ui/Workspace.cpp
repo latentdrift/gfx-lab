@@ -20,7 +20,7 @@
 namespace gfxlab::ui {
 namespace {
 
-constexpr const char* workspaceId = "Graphics Lab Workspace v4";
+constexpr const char* workspaceId = "Graphics Lab Workspace v5";
 
 void buildDefaultLayout(const ImGuiID dockspace) {
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -45,6 +45,7 @@ void buildDefaultLayout(const ImGuiID dockspace) {
   ImGui::DockBuilderSplitNode(rightTop, ImGuiDir_Down, 0.34f, &rightBottom, &rightTop);
   for (const Category category : pipelineCategories)
     ImGui::DockBuilderDockWindow(pipelineToolWindowName(category), rightTop);
+  ImGui::DockBuilderDockWindow("Display Reconstruction", rightTop);
   ImGui::DockBuilderDockWindow("Pass difference audit", rightTop);
   ImGui::DockBuilderDockWindow("Pass Properties", rightBottom);
   ImGui::DockBuilderFinish(dockspace);
@@ -66,6 +67,7 @@ void windowMenu(WorkspaceWindows& windows) {
   ImGui::MenuItem("Animation Timeline", nullptr, &windows.animation);
   ImGui::MenuItem("Pass Differences", nullptr, &windows.passDifferences);
   ImGui::MenuItem("Texture Inspector", nullptr, &windows.textureInspector);
+  ImGui::MenuItem("Display Reconstruction", nullptr, &windows.displayReconstruction);
   ImGui::Separator();
   if (ImGui::MenuItem("Restore Default Layout")) windows.resetLayout = true;
 }

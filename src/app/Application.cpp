@@ -24,6 +24,7 @@
 #include "renderer/Renderer.hpp"
 #include "ui/AnimationControls.hpp"
 #include "ui/AnimationEditor.hpp"
+#include "ui/DisplayInspector.hpp"
 #include "ui/Inspector.hpp"
 #include "ui/PassDifferenceAudit.hpp"
 #include "ui/PassInspector.hpp"
@@ -328,13 +329,16 @@ int runApplication() {
     const GLuint baseTexture = passTextures.front();
     const GLuint renderedComposite = renderer.composite(evaluatedStack);
     const GLuint compositeTexture = renderedComposite != 0 ? renderedComposite : selectedTexture;
+    const GLuint displayedSelected = renderer.reconstructDisplay(selectedTexture, renderStack.display(), 0);
+    const GLuint displayedBase = renderer.reconstructDisplay(baseTexture, renderStack.display(), 1);
+    const GLuint displayedComposite = renderer.reconstructDisplay(compositeTexture, renderStack.display(), 2);
     const float viewportTime = evaluateAnimation ? animationTimeline.timeSeconds : 0.0f;
     const RenderPass viewportBefore = inspectorGlobalScope
       ? evaluateRenderPass(renderStack.global(), viewportTime)
       : materializeRenderPass(renderStack, renderStack.selectedIndex(), viewportTime);
     RenderPass viewportPass = viewportBefore;
     const ViewportWindowResult viewportResult = drawViewportWindow(workspaceWindows.viewport,
-      {selectedTexture, baseTexture, compositeTexture}, compare, renderStack, viewportPass, camera,
+      {displayedSelected, displayedBase, displayedComposite}, compare, renderStack, viewportPass, camera,
       animationTimeline, inspectorGlobalScope);
     viewportHovered = viewportResult.hovered;
     viewportAcceptsCameraInput = viewportResult.acceptsCameraInput;
@@ -386,6 +390,7 @@ int runApplication() {
       ImGui::End();
     }
 
+    drawDisplayInspector(workspaceWindows.displayReconstruction, renderStack);
     drawPipelineTools(workspaceWindows.pipelineTools, renderStack, animationTimeline, hardwareProfile,
       importedModel.get(), scene, inspectorGlobalScope, inspectorTime, category, pipelineFocusRequested);
     pipelineFocusRequested = false;

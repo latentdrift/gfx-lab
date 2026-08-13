@@ -277,9 +277,19 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     compositeValidation.passes()[2].composite.bitDepth = 5;
     if (renderer.composite(compositeValidation) == 0 || renderer.composite(compositeValidation) == 0)
       fail("quantized temporal compositing failed validation");
+    compositeValidation.display().enabled = true;
+    for (int signal = static_cast<int>(DisplaySignal::DirectRgb);
+         signal <= static_cast<int>(DisplaySignal::CompositeNtsc); ++signal) {
+      compositeValidation.display().signal = static_cast<DisplaySignal>(signal);
+      const unsigned int composite = renderer.composite(compositeValidation);
+      if (renderer.reconstructDisplay(composite, compositeValidation.display(),
+          static_cast<std::size_t>(signal)) == 0)
+        fail("display reconstruction failed validation");
+    }
+    if (glGetError() != GL_NO_ERROR) fail("display reconstruction produced an OpenGL error");
     const std::string stackConfig = renderStackConfigJson(compositeValidation, camera, scene,
       HardwareProfile::Unrestricted, nullptr, importedFixture.asset.get());
-    if (stackConfig.find("graphics-lab.render-stack.v4") == std::string::npos ||
+    if (stackConfig.find("graphics-lab.render-stack.v5") == std::string::npos ||
         stackConfig.find("global base, global track, local override, local track") == std::string::npos ||
         stackConfig.find("\"passes\"") == std::string::npos ||
         stackConfig.find("\"global_base\"") == std::string::npos ||
@@ -289,6 +299,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         stackConfig.find("\"source_a\"") == std::string::npos ||
         stackConfig.find("\"fixed_color_rgba\"") == std::string::npos ||
         stackConfig.find("\"previous_frame\"") == std::string::npos ||
+        stackConfig.find("\"display_reconstruction\"") == std::string::npos ||
         stackConfig.find("\"animation\"") == std::string::npos ||
         stackConfig.find("\"property_tracks\"") == std::string::npos ||
         stackConfig.find("\"value_kind\"") == std::string::npos ||
