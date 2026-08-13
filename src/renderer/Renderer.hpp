@@ -8,6 +8,7 @@
 namespace gfxlab {
 
 struct ModelAsset;
+struct TextureAsset;
 
 class Renderer {
 public:
@@ -26,6 +27,7 @@ public:
   unsigned int reconstructDisplay(unsigned int sourceTexture, const DisplayReconstructionState& state,
     std::size_t targetIndex);
   void resetFrameHistory();
+  unsigned int texturePreview(const TextureAsset* texture);
   void setImportedModel(const ModelAsset& asset);
   void clearImportedModel();
 

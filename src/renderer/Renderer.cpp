@@ -491,6 +491,7 @@ public:
     glUniform1f(location("uDepthCueEnd"), state.lighting.depthCueEnd);
     glUniform3fv(location("uFarColor"), 1, glm::value_ptr(state.lighting.farColor));
     glUniform1i(location("uN64TextureGeneration"), state.n64.enabled && state.n64.textureGeneration);
+    glUniform1i(location("uUvMapping"), static_cast<int>(perturbation.uvMapping));
     glUniform1f(location("uNormalInflation"), perturbation.normalInflation);
     glUniform1f(location("uShininess"), state.lighting.shininess);
     glUniform1i(location("uLinearLight"), state.color.linearLight);
@@ -518,6 +519,8 @@ public:
     glUniform3fv(location("uCameraPosition"), 1, glm::value_ptr(passCamera.eye()));
     glUniform2fv(location("uUvOffset"), 1, glm::value_ptr(perturbation.uvOffset));
     glUniform2fv(location("uUvScale"), 1, glm::value_ptr(perturbation.uvScale));
+    glUniform1f(location("uUvRotation"), perturbation.uvRotation);
+    glUniform2fv(location("uUvPivot"), 1, glm::value_ptr(perturbation.uvPivot));
     GLint minificationFilter = state.texture.nearestFiltering ? GL_NEAREST : GL_LINEAR;
     if (state.texture.mipmapping) {
       if (state.texture.nearestFiltering) minificationFilter = GL_NEAREST_MIPMAP_NEAREST;
@@ -881,6 +884,8 @@ public:
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 
+  GLuint texturePreview(const TextureAsset* texture) { return overrideTexture(texture); }
+
   GLuint reconstructDisplay(const GLuint sourceTexture, const DisplayReconstructionState& state,
       const std::size_t targetIndex) {
     if (!state.enabled || sourceTexture == 0) return sourceTexture;
@@ -1147,6 +1152,7 @@ unsigned int Renderer::renderPass(const RenderPass& pass, const CameraOrbit& cam
 }
 
 unsigned int Renderer::composite(const RenderStack& stack) { return impl_->composite(stack); }
+unsigned int Renderer::texturePreview(const TextureAsset* texture) { return impl_->texturePreview(texture); }
 unsigned int Renderer::reconstructDisplay(const unsigned int sourceTexture,
     const DisplayReconstructionState& state, const std::size_t targetIndex) {
   return impl_->reconstructDisplay(sourceTexture, state, targetIndex);

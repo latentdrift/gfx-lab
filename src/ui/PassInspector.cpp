@@ -62,6 +62,10 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
     ImGui::DragFloat2("UV offset", &pass.perturbation.uvOffset.x, 1.0f / 512.0f, -1.0f, 1.0f, "%.5f"));
   animationKeyControl(pass, AnimationProperty::UvScale, timeline,
     ImGui::DragFloat2("UV scale", &pass.perturbation.uvScale.x, 0.001f, 0.25f, 4.0f, "%.4f"));
+  animationKeyControl(pass, AnimationProperty::UvRotation, timeline,
+    ImGui::SliderAngle("UV rotation", &pass.perturbation.uvRotation, -180.0f, 180.0f, "%.1f deg"));
+  animationKeyControl(pass, AnimationProperty::UvPivot, timeline,
+    ImGui::DragFloat2("UV pivot", &pass.perturbation.uvPivot.x, 0.005f, -2.0f, 2.0f, "%.3f"));
 
   if (globalScope) return;
 

@@ -220,6 +220,7 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
     "boolean", "integer", "enumeration"};
   constexpr const char* behaviorIds[] = {"continuous", "step", "not_animatable"};
   constexpr const char* textureSourceIds[] = {"scene_material", "built_in_checker", "imported_override", "white"};
+  constexpr const char* uvMappingIds[] = {"mesh_uv0", "planar_xy", "planar_xz", "planar_yz"};
   const auto escape = [](const std::string& value) {
     std::string result;
     for (const char character : value) {
@@ -242,7 +243,7 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   std::ostringstream json;
   json << std::boolalpha << std::fixed << std::setprecision(5);
   json << "{\n";
-  json << "  \"schema\": \"graphics-lab.render-stack.v6\",\n";
+  json << "  \"schema\": \"graphics-lab.render-stack.v7\",\n";
   json << "  \"evaluation\": \"bottom_to_top_sequential_compositing\",\n";
   json << "  \"property_precedence\": \"global base, global track, local override, local track\",\n";
   json << "  \"seed_rule\": \"the first enabled pass becomes the accumulator; every later enabled pass applies its composite step\",\n";
@@ -355,7 +356,9 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
          << ", " << p.modelTranslation.z << "], \"model_scale\": " << p.modelScale
          << ", \"normal_inflation_units\": " << p.normalInflation << ",\n";
     json << "        \"uv_offset\": [" << p.uvOffset.x << ", " << p.uvOffset.y << "], \"uv_scale\": ["
-         << p.uvScale.x << ", " << p.uvScale.y << "],\n";
+         << p.uvScale.x << ", " << p.uvScale.y << "], \"uv_rotation_radians\": " << p.uvRotation
+         << ", \"uv_pivot\": [" << p.uvPivot.x << ", " << p.uvPivot.y
+         << "], \"coordinate_source\": \"" << uvMappingIds[static_cast<int>(p.uvMapping)] << "\",\n";
     json << "        \"camera_yaw_offset_radians\": " << p.cameraYaw
          << ", \"camera_pitch_offset_radians\": " << p.cameraPitch
          << ", \"camera_distance_offset_units\": " << p.cameraDistance

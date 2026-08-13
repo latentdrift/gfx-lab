@@ -30,6 +30,7 @@
 #include "ui/PassInspector.hpp"
 #include "ui/PipelineTools.hpp"
 #include "ui/TextureInspector.hpp"
+#include "ui/TextureMappingEditor.hpp"
 #include "ui/Workspace.hpp"
 #include "ui/Windowing.hpp"
 
@@ -391,6 +392,12 @@ int runApplication() {
     }
 
     drawDisplayInspector(workspaceWindows.displayReconstruction, renderStack);
+    const RenderPass textureMappingPass = inspectorGlobalScope
+      ? evaluateRenderPass(renderStack.global(), inspectorTime)
+      : materializeRenderPass(renderStack, renderStack.selectedIndex(), inspectorTime);
+    const GLuint importedTexturePreview = renderer.texturePreview(textureMappingPass.importedTexture.get());
+    drawTextureMappingEditor(workspaceWindows.textureMapping, renderStack, animationTimeline,
+      importedModel.get(), scene, inspectorGlobalScope, inspectorTime, importedTexturePreview);
     drawPipelineTools(workspaceWindows.pipelineTools, renderStack, animationTimeline, hardwareProfile,
       importedModel.get(), scene, inspectorGlobalScope, inspectorTime, category, pipelineFocusRequested);
     pipelineFocusRequested = false;

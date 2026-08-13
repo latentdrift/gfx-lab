@@ -44,6 +44,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     const TextureImportResult importedTexture = importTextureAsset("tests/fixtures/import_checker.pgm");
     if (!importedTexture || importedTexture.asset->rgba8.size() != 16 || importedTexture.asset->contentHash == 0)
       fail("standalone texture import failed validation");
+    if (renderer.texturePreview(importedTexture.asset.get()) == 0)
+      fail("standalone texture preview upload failed validation");
     if (importModelAsset("tests/fixtures/not_a_model.txt"))
       fail("model importer accepted an unsupported file type");
     while (glGetError() != GL_NO_ERROR) {}
@@ -76,6 +78,10 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     setRenderPassOverride(validationStack.selected(), AnimationProperty::Ambient, glm::vec4(0.77f));
     setRenderPassOverride(validationStack.selected(), AnimationProperty::UvOffset,
       glm::vec4(0.125f, 0.0f, 0.0f, 0.0f));
+    setRenderPassOverride(validationStack.selected(), AnimationProperty::UvMapping,
+      glm::vec4(static_cast<float>(UvMapping::PlanarXz)));
+    setRenderPassOverride(validationStack.selected(), AnimationProperty::UvRotation,
+      glm::vec4(0.25f));
     validationStack.global().renderer.post.fogStart = 2.0f;
     setPropertyKeyframe(validationStack.global(), AnimationProperty::FogStart, 0.0f);
     validationStack.global().renderer.post.fogStart = 6.0f;
@@ -94,12 +100,14 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     if (std::abs(hierarchicalPass.renderer.lighting.ambient - 0.7f) > 0.0001f ||
         std::abs(hierarchicalPass.perturbation.modelTranslation.x - 0.2f) > 0.0001f ||
         std::abs(hierarchicalPass.perturbation.uvOffset.x - 0.125f) > 0.0001f ||
+        hierarchicalPass.perturbation.uvMapping != UvMapping::PlanarXz ||
+        std::abs(hierarchicalPass.perturbation.uvRotation - 0.25f) > 0.0001f ||
         std::abs(hierarchicalPass.renderer.post.fogStart - 4.0f) > 0.0001f ||
         std::abs(staticallyResolvedPass.renderer.post.fogStart - 6.0f) > 0.0001f ||
-        validationStack.selected().overrides.size() != 2)
+        validationStack.selected().overrides.size() != 4)
       fail("global base, sparse override, or hierarchical animation precedence failed validation");
     validationStack.duplicateSelected();
-    if (validationStack.selected().overrides.size() != 2 ||
+    if (validationStack.selected().overrides.size() != 4 ||
         findPropertyTrack(validationStack.selected(), AnimationProperty::Ambient) == nullptr)
       fail("pass duplication did not preserve only its authored local deviations");
     RenderStack editScopeValidation;
@@ -298,12 +306,14 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     if (glGetError() != GL_NO_ERROR) fail("display reconstruction produced an OpenGL error");
     const std::string stackConfig = renderStackConfigJson(compositeValidation, camera, scene,
       HardwareProfile::Unrestricted, nullptr, importedFixture.asset.get());
-    if (stackConfig.find("graphics-lab.render-stack.v6") == std::string::npos ||
+    if (stackConfig.find("graphics-lab.render-stack.v7") == std::string::npos ||
         stackConfig.find("global base, global track, local override, local track") == std::string::npos ||
         stackConfig.find("\"passes\"") == std::string::npos ||
         stackConfig.find("\"global_base\"") == std::string::npos ||
         stackConfig.find("\"overrides\"") == std::string::npos ||
         stackConfig.find("\"perturbation\"") == std::string::npos ||
+        stackConfig.find("\"coordinate_source\"") == std::string::npos ||
+        stackConfig.find("\"uv_rotation_radians\"") == std::string::npos ||
         stackConfig.find("\"composite_into_previous\"") == std::string::npos ||
         stackConfig.find("\"source_a\"") == std::string::npos ||
         stackConfig.find("\"pass_id\"") == std::string::npos ||

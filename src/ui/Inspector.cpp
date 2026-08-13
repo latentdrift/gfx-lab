@@ -285,7 +285,7 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
         if (scene == TestScene::ImportedModel && importedModel != nullptr) {
           ImGui::TextDisabled("%zu materials   %zu base-color images", importedModel->materials.size(),
             importedModel->textures.size());
-          if (!importedModel->hasTextureCoordinates)
+          if (!importedModel->hasTextureCoordinates && pass.perturbation.uvMapping == UvMapping::MeshUv0)
             ImGui::TextColored(ImVec4(0.95f, 0.58f, 0.34f, 1.0f), "Model has no UV0 coordinates");
           description("Each imported submesh uses the base-color factor and image assigned by its source material.");
         } else {
@@ -342,7 +342,8 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
         ImGui::Text("%s", texture.name.c_str());
         ImGui::TextDisabled("%d x %d RGBA8   alpha %s", texture.width, texture.height,
           texture.hasAlpha ? "present" : "opaque");
-        if (scene == TestScene::ImportedModel && importedModel != nullptr && !importedModel->hasTextureCoordinates)
+        if (scene == TestScene::ImportedModel && importedModel != nullptr && !importedModel->hasTextureCoordinates &&
+            pass.perturbation.uvMapping == UvMapping::MeshUv0)
           ImGui::TextColored(ImVec4(0.95f, 0.58f, 0.34f, 1.0f), "Override cannot vary: model has no UV0");
         ImGui::TextUnformatted("Color interpretation");
         bool colorInterpretationChanged = false;

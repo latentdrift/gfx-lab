@@ -25,6 +25,7 @@ uniform float uDepthCueStart;
 uniform float uDepthCueEnd;
 uniform bool uN64TextureGeneration;
 uniform float uNormalInflation;
+uniform int uUvMapping;
 
 out vec3 vWorldPosition;
 out vec3 vNormal;
@@ -45,7 +46,10 @@ void main() {
   vWorldPosition = world.xyz;
   vNormal = normalize(mat3(transpose(inverse(uModel))) * aNormal);
   vec3 viewNormal = normalize(mat3(uView) * vNormal);
-  vec2 textureCoordinates = uN64TextureGeneration ? viewNormal.xy * 0.5 + 0.5 : aUv;
+  vec2 mappedUv = uUvMapping == 1 ? position.xy + 0.5 :
+    uUvMapping == 2 ? position.xz + 0.5 :
+    uUvMapping == 3 ? position.yz + 0.5 : aUv;
+  vec2 textureCoordinates = uN64TextureGeneration ? viewNormal.xy * 0.5 + 0.5 : mappedUv;
   vUvPerspective = textureCoordinates;
   vUvAffine = textureCoordinates;
   vBarycentric = aBarycentric;
@@ -124,6 +128,8 @@ uniform float uN64AlphaThreshold;
 uniform sampler2D uN64DetailTexture;
 uniform vec2 uUvOffset;
 uniform vec2 uUvScale;
+uniform float uUvRotation;
+uniform vec2 uUvPivot;
 out vec4 fragColor;
 
 vec4 sampleSurfaceTexture(vec2 uv) {
@@ -244,7 +250,10 @@ float shadowAmount() {
 }
 
 void main() {
-  vec2 uv = (uAffineMapping ? vUvAffine : vUvPerspective) * uUvScale + uUvOffset;
+  vec2 uv = (uAffineMapping ? vUvAffine : vUvPerspective);
+  float uvCos = cos(uUvRotation);
+  float uvSin = sin(uUvRotation);
+  uv = mat2(uvCos, uvSin, -uvSin, uvCos) * ((uv - uUvPivot) * uUvScale) + uUvPivot + uUvOffset;
   vec3 normal = uSmoothShading
     ? normalize(vNormal)
     : normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));

@@ -21,6 +21,7 @@ enum class PassOutput { Color, Depth, Normals, VertexColor };
 enum class CompositeMask { None, PassLuminance, PassDepth, PassEdges };
 enum class CompositeSource { Accumulator, CurrentPass, RenderPass, FixedColor, PreviousFrame };
 enum class TextureSource { SceneMaterial, BuiltInChecker, ImportedOverride, White };
+enum class UvMapping { MeshUv0, PlanarXy, PlanarXz, PlanarYz };
 enum class DisplaySignal { DirectRgb, CompositeNtsc };
 
 struct DisplayReconstructionState {
@@ -40,6 +41,9 @@ struct PassPerturbation {
   float normalInflation = 0.0f;
   glm::vec2 uvOffset{0.0f};
   glm::vec2 uvScale{1.0f};
+  float uvRotation = 0.0f;
+  glm::vec2 uvPivot{0.5f};
+  UvMapping uvMapping = UvMapping::MeshUv0;
   float cameraYaw = 0.0f;
   float cameraPitch = 0.0f;
   float cameraDistance = 0.0f;

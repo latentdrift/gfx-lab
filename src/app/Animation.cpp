@@ -38,6 +38,9 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   CONT("normal_inflation", "Normal inflation", "Geometry perturbation", 1, K::Float, -1, 1),
   CONT("uv_offset", "UV offset", "Sampling perturbation", 2, K::Vec2, -4, 4),
   CONT("uv_scale", "UV scale", "Sampling perturbation", 2, K::Vec2, 0.01f, 8),
+  CONT("uv_rotation", "UV rotation", "Sampling perturbation", 1, K::Angle, -6.283f, 6.283f),
+  CONT("uv_pivot", "UV transform pivot", "Sampling perturbation", 2, K::Vec2, -2, 2),
+  STEP("uv_mapping", "Texture-coordinate source", "Sampling perturbation", K::Enumeration, 0, 3),
   CONT("camera_yaw", "Camera yaw offset", "View perturbation", 1, K::Angle, -6.283f, 6.283f),
   CONT("camera_pitch", "Camera pitch offset", "View perturbation", 1, K::Angle, -1.45f, 1.45f),
   CONT("camera_distance", "Camera distance offset", "View perturbation", 1, K::Float, -10, 10),
@@ -211,6 +214,7 @@ const char* animationPropertyDiscreteValueLabel(const AnimationProperty property
   switch (property) {
   case AnimationProperty::PassOutput: { constexpr std::array labels = {"Color", "Linear depth", "Normals", "Vertex colors"}; return label(labels); }
   case AnimationProperty::TextureSource: { constexpr std::array labels = {"Scene material", "Built-in checker", "Imported override", "White texel"}; return label(labels); }
+  case AnimationProperty::UvMapping: { constexpr std::array labels = {"Mesh UV0", "Planar XY", "Planar XZ", "Planar YZ"}; return label(labels); }
   case AnimationProperty::CompositeOperation: return value >= 0 && value <= 18 ? relationOperatorLabel(static_cast<RelationOperator>(value)) : nullptr;
   case AnimationProperty::CompositeSourceA:
   case AnimationProperty::CompositeSourceB: { constexpr std::array labels = {"Accumulated result", "Current pass", "Render pass", "Fixed color", "Previous frame"}; return label(labels); }
@@ -253,6 +257,9 @@ glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty
   case AnimationProperty::NormalInflation: return glm::vec4(pass.perturbation.normalInflation);
   case AnimationProperty::UvOffset: return glm::vec4(pass.perturbation.uvOffset, 0.0f, 0.0f);
   case AnimationProperty::UvScale: return glm::vec4(pass.perturbation.uvScale, 0.0f, 0.0f);
+  case AnimationProperty::UvRotation: return glm::vec4(pass.perturbation.uvRotation);
+  case AnimationProperty::UvPivot: return glm::vec4(pass.perturbation.uvPivot, 0.0f, 0.0f);
+  case AnimationProperty::UvMapping: return glm::vec4(static_cast<float>(pass.perturbation.uvMapping));
   case AnimationProperty::CameraYaw: return glm::vec4(pass.perturbation.cameraYaw);
   case AnimationProperty::CameraPitch: return glm::vec4(pass.perturbation.cameraPitch);
   case AnimationProperty::CameraDistance: return glm::vec4(pass.perturbation.cameraDistance);
@@ -382,6 +389,9 @@ void setAnimationPropertyValue(RenderPass& pass, const AnimationProperty propert
   case AnimationProperty::NormalInflation: pass.perturbation.normalInflation = value.x; break;
   case AnimationProperty::UvOffset: pass.perturbation.uvOffset = glm::vec2(value); break;
   case AnimationProperty::UvScale: pass.perturbation.uvScale = glm::vec2(value); break;
+  case AnimationProperty::UvRotation: pass.perturbation.uvRotation = value.x; break;
+  case AnimationProperty::UvPivot: pass.perturbation.uvPivot = glm::vec2(value); break;
+  case AnimationProperty::UvMapping: pass.perturbation.uvMapping = static_cast<UvMapping>(static_cast<int>(std::round(value.x))); break;
   case AnimationProperty::CameraYaw: pass.perturbation.cameraYaw = value.x; break;
   case AnimationProperty::CameraPitch: pass.perturbation.cameraPitch = value.x; break;
   case AnimationProperty::CameraDistance: pass.perturbation.cameraDistance = value.x; break;
