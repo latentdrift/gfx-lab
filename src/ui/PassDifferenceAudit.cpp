@@ -86,6 +86,8 @@ void drawPassDifferenceAudit(bool& open, RenderStack& stack) {
 
   RenderPass& selected = stack.selected();
   const RenderPass& reference = stack.passes()[referenceIndex];
+  const RenderPass selectedEffective = materializeRenderPass(stack, stack.selectedIndex(), 0.0f);
+  const RenderPass referenceEffective = materializeRenderPass(stack, referenceIndex, 0.0f);
   int differenceCount = 0;
   std::string_view previousGroup;
   if (ImGui::BeginTable("pass-differences", 5,
@@ -100,8 +102,8 @@ void drawPassDifferenceAudit(bool& open, RenderStack& stack) {
     for (int index = 0; index < static_cast<int>(AnimationProperty::Count); ++index) {
       const AnimationProperty property = static_cast<AnimationProperty>(index);
       const AnimationPropertyInfo& info = animationPropertyInfo(property);
-      const glm::vec4 selectedValue = animationPropertyValue(selected, property);
-      const glm::vec4 referenceValue = animationPropertyValue(reference, property);
+      const glm::vec4 selectedValue = animationPropertyValue(selectedEffective, property);
+      const glm::vec4 referenceValue = animationPropertyValue(referenceEffective, property);
       const PropertyAnimationTrack* selectedTrack = findPropertyTrack(selected, property);
       const PropertyAnimationTrack* referenceTrack = findPropertyTrack(reference, property);
       const bool trackDifference = !tracksEqual(selectedTrack, referenceTrack);
@@ -117,6 +119,10 @@ void drawPassDifferenceAudit(bool& open, RenderStack& stack) {
       ImGui::PushID(index);
       ImGui::TableNextRow();
       ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(info.label.data());
+      if (!animationPropertyIsPassLocal(property)) {
+        ImGui::SameLine();
+        ImGui::TextDisabled(findRenderPassOverride(selected, property) != nullptr ? "override" : "inherited");
+      }
       if (info.behavior == AnimationBehavior::NotAnimatable) { ImGui::SameLine(); ImGui::TextDisabled("fixed"); }
       ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(valueText(property, referenceValue).c_str());
       ImGui::TableSetColumnIndex(2); ImGui::TextUnformatted(valueText(property, selectedValue).c_str());
@@ -128,27 +134,36 @@ void drawPassDifferenceAudit(bool& open, RenderStack& stack) {
       else ImGui::TextDisabled("Static");
       ImGui::TableSetColumnIndex(4);
       if (ImGui::SmallButton("Match reference")) {
-        setAnimationPropertyValue(selected, property, referenceValue);
+        if (animationPropertyIsPassLocal(property)) {
+          setAnimationPropertyValue(selected, property, referenceValue);
+        } else if (const PropertyOverride* referenceOverride = findRenderPassOverride(reference, property)) {
+          setRenderPassOverride(selected, property, referenceOverride->value);
+        } else {
+          static_cast<void>(clearRenderPassOverride(selected, property));
+        }
         replaceTrack(selected, reference, property);
       }
       ImGui::PopID();
     }
-    const std::uint64_t selectedTextureHash = selected.importedTexture != nullptr
-      ? selected.importedTexture->contentHash : 0;
-    const std::uint64_t referenceTextureHash = reference.importedTexture != nullptr
-      ? reference.importedTexture->contentHash : 0;
+    const std::uint64_t selectedTextureHash = selectedEffective.importedTexture != nullptr
+      ? selectedEffective.importedTexture->contentHash : 0;
+    const std::uint64_t referenceTextureHash = referenceEffective.importedTexture != nullptr
+      ? referenceEffective.importedTexture->contentHash : 0;
     if (!animatedOnly && selectedTextureHash != referenceTextureHash) {
       ++differenceCount;
       ImGui::PushID("imported-texture-resource");
       ImGui::TableNextRow();
       ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted("Imported texture asset");
-      ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(reference.importedTexture != nullptr
-        ? reference.importedTexture->name.c_str() : "None");
-      ImGui::TableSetColumnIndex(2); ImGui::TextUnformatted(selected.importedTexture != nullptr
-        ? selected.importedTexture->name.c_str() : "None");
+      ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(referenceEffective.importedTexture != nullptr
+        ? referenceEffective.importedTexture->name.c_str() : "None");
+      ImGui::TableSetColumnIndex(2); ImGui::TextUnformatted(selectedEffective.importedTexture != nullptr
+        ? selectedEffective.importedTexture->name.c_str() : "None");
       ImGui::TableSetColumnIndex(3); ImGui::TextDisabled("Resource");
       ImGui::TableSetColumnIndex(4);
-      if (ImGui::SmallButton("Match reference")) selected.importedTexture = reference.importedTexture;
+      if (ImGui::SmallButton("Match reference")) {
+        selected.importedTextureOverride = reference.importedTextureOverride;
+        selected.importedTexture = reference.importedTextureOverride ? reference.importedTexture : nullptr;
+      }
       ImGui::PopID();
     }
     ImGui::EndTable();

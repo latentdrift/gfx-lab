@@ -23,12 +23,14 @@ struct KeySelection {
 
 KeySelection selection;
 int propertyToAdd = 0;
+constexpr std::size_t globalPassIndex = std::numeric_limits<std::size_t>::max() - 1;
 
-std::vector<AnimationProperty> animatableProperties() {
+std::vector<AnimationProperty> animatableProperties(const bool globalScope) {
   std::vector<AnimationProperty> properties;
   for (int index = 0; index < static_cast<int>(AnimationProperty::Count); ++index) {
     const AnimationProperty property = static_cast<AnimationProperty>(index);
-    if (animationPropertyIsAnimatable(property)) properties.push_back(property);
+    if (animationPropertyIsAnimatable(property) && (!globalScope || !animationPropertyIsPassLocal(property)))
+      properties.push_back(property);
   }
   return properties;
 }
@@ -45,9 +47,8 @@ bool selected(const std::size_t passIndex, const AnimationProperty property, con
   return selection.pass == passIndex && selection.property == property && std::abs(selection.time - time) < 0.0001f;
 }
 
-void drawTrackRow(AnimationTimeline& timeline, RenderStack& stack, const std::size_t passIndex,
+void drawTrackRow(AnimationTimeline& timeline, RenderPass& pass, const std::size_t passIndex,
     PropertyAnimationTrack& track, const float labelWidth) {
-  RenderPass& pass = stack.passes()[passIndex];
   const AnimationPropertyInfo& info = animationPropertyInfo(track.property);
   const float rowWidth = ImGui::GetContentRegionAvail().x;
   const float trackWidth = std::max(80.0f, rowWidth - labelWidth);
@@ -86,8 +87,7 @@ void drawTrackRow(AnimationTimeline& timeline, RenderStack& stack, const std::si
   ImGui::PushID(static_cast<int>(track.property));
   if (ImGui::BeginPopupContextItem("track-menu")) {
     if (ImGui::MenuItem("Key at playhead")) {
-      const RenderPass evaluated = evaluateRenderPass(pass, timeline.timeSeconds);
-      const glm::vec4 value = animationPropertyValue(evaluated, track.property);
+      const glm::vec4 value = samplePropertyTrack(track, timeline.timeSeconds);
       setPropertyKeyframe(pass, track.property, timeline.timeSeconds, &value);
     }
     if (ImGui::MenuItem("Remove track")) track.keyframes.clear();
@@ -99,11 +99,11 @@ void drawTrackRow(AnimationTimeline& timeline, RenderStack& stack, const std::si
 
 void drawSelectedKeyEditor(AnimationTimeline& timeline, RenderStack& stack) {
   ImGui::TextDisabled("SELECTED KEY");
-  if (selection.pass >= stack.passes().size()) {
+  if (selection.pass != globalPassIndex && selection.pass >= stack.passes().size()) {
     ImGui::TextWrapped("Click a diamond to inspect and modify its exact time and value.");
     return;
   }
-  RenderPass& pass = stack.passes()[selection.pass];
+  RenderPass& pass = selection.pass == globalPassIndex ? stack.global() : stack.passes()[selection.pass];
   PropertyAnimationTrack* track = findPropertyTrack(pass, selection.property);
   if (track == nullptr) {
     selection.pass = std::numeric_limits<std::size_t>::max();
@@ -176,10 +176,11 @@ void drawSelectedKeyEditor(AnimationTimeline& timeline, RenderStack& stack) {
 
 } // namespace
 
-void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& previewAtPlayhead) {
+void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& previewAtPlayhead,
+    const bool globalScope) {
   ImGui::BeginChild("Animation timeline", ImVec2(0.0f, 238.0f), true);
   ImGui::AlignTextToFramePadding();
-  ImGui::TextDisabled("ANIMATION DOPE SHEET");
+  ImGui::TextDisabled(globalScope ? "GLOBAL ANIMATION" : "LOCAL PASS ANIMATION");
   ImGui::SameLine();
   if (ImGui::Button(timeline.playing ? "Pause" : "Play")) timeline.playing = !timeline.playing;
   ImGui::SameLine();
@@ -206,7 +207,7 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
     timeline.playing = false;
   ImGui::SameLine();
   ImGui::SetNextItemWidth(180.0f);
-  const std::vector<AnimationProperty> properties = animatableProperties();
+  const std::vector<AnimationProperty> properties = animatableProperties(globalScope);
   propertyToAdd = std::clamp(propertyToAdd, 0, static_cast<int>(properties.size()) - 1);
   const AnimationProperty chosenProperty = properties[static_cast<std::size_t>(propertyToAdd)];
   if (ImGui::BeginCombo("##property-to-key", animationPropertyInfo(chosenProperty).label.data())) {
@@ -225,20 +226,40 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
   }
   ImGui::SameLine();
   if (ImGui::Button("Key property")) {
-    RenderPass& pass = stack.selected();
+    RenderPass& pass = globalScope ? stack.global() : stack.selected();
     const AnimationProperty property = properties[static_cast<std::size_t>(propertyToAdd)];
-    const RenderPass evaluated = evaluateRenderPass(pass, timeline.timeSeconds);
+    const RenderPass evaluated = globalScope ? evaluateRenderPass(pass, timeline.timeSeconds)
+      : materializeRenderPass(stack, stack.selectedIndex(), timeline.timeSeconds);
     const glm::vec4 value = animationPropertyValue(evaluated, property);
     setPropertyKeyframe(pass, property, timeline.timeSeconds, &value);
-    selection = {stack.selectedIndex(), property, timeline.timeSeconds};
+    selection = {globalScope ? globalPassIndex : stack.selectedIndex(), property, timeline.timeSeconds};
     previewAtPlayhead = true;
   }
 
   const float editorWidth = 290.0f;
   ImGui::BeginChild("Dope sheet tracks", ImVec2(std::max(200.0f, ImGui::GetContentRegionAvail().x - editorWidth - 7.0f), 146.0f), true);
   bool anyTracks = false;
+  if (globalScope || timeline.showAllPasses) {
+    RenderPass& pass = stack.global();
+    ImGui::TextDisabled("%s", globalScope ? "> Global base" : "  Global base");
+    for (std::size_t trackIndex = 0; trackIndex < pass.animation.tracks.size();) {
+      PropertyAnimationTrack& track = pass.animation.tracks[trackIndex];
+      if (track.keyframes.empty()) {
+        pass.animation.tracks.erase(pass.animation.tracks.begin() + static_cast<std::ptrdiff_t>(trackIndex));
+        continue;
+      }
+      ImGui::PushID("global");
+      ImGui::PushID(static_cast<int>(track.property));
+      drawTrackRow(timeline, pass, globalPassIndex, track, 190.0f);
+      ImGui::PopID();
+      ImGui::PopID();
+      anyTracks = true;
+      ++trackIndex;
+    }
+  }
   const std::size_t firstPass = timeline.showAllPasses ? 0 : stack.selectedIndex();
-  const std::size_t endPass = timeline.showAllPasses ? stack.passes().size() : stack.selectedIndex() + 1;
+  const std::size_t endPass = globalScope && !timeline.showAllPasses ? 0
+    : timeline.showAllPasses ? stack.passes().size() : stack.selectedIndex() + 1;
   for (std::size_t passIndex = firstPass; passIndex < endPass; ++passIndex) {
     RenderPass& pass = stack.passes()[passIndex];
     if (timeline.showAllPasses) {
@@ -253,7 +274,7 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
       }
       ImGui::PushID(static_cast<int>(passIndex));
       ImGui::PushID(static_cast<int>(track.property));
-      drawTrackRow(timeline, stack, passIndex, track, 190.0f);
+      drawTrackRow(timeline, pass, passIndex, track, 190.0f);
       ImGui::PopID();
       ImGui::PopID();
       anyTracks = true;

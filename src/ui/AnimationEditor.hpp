@@ -7,6 +7,7 @@ struct AnimationTimeline;
 
 namespace gfxlab::ui {
 
-void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& previewAtPlayhead);
+void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& previewAtPlayhead,
+  bool globalScope);
 
 } // namespace gfxlab::ui

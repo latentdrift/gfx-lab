@@ -20,18 +20,20 @@ void description(const char* text) {
 
 } // namespace
 
-void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline) {
+void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bool globalScope) {
   RenderPass& pass = stack.selected();
-  ImGui::TextDisabled("SELECTED RENDER PASS");
-  std::array<char, 64> name{};
-  std::snprintf(name.data(), name.size(), "%s", pass.name.c_str());
-  if (ImGui::InputText("Name", name.data(), name.size())) pass.name = name.data();
+  ImGui::TextDisabled(globalScope ? "GLOBAL BASE" : "SELECTED RENDER PASS");
+  if (!globalScope) {
+    std::array<char, 64> name{};
+    std::snprintf(name.data(), name.size(), "%s", pass.name.c_str());
+    if (ImGui::InputText("Name", name.data(), name.size())) pass.name = name.data();
 
-  const char* outputLabels[] = {"Color", "Linear depth", "Normals", "Vertex colors"};
-  int output = static_cast<int>(pass.output);
-  const bool outputChanged = ImGui::Combo("Output buffer", &output, outputLabels, 4);
-  if (outputChanged) pass.output = static_cast<PassOutput>(output);
-  animationKeyControl(pass, AnimationProperty::PassOutput, timeline, outputChanged);
+    const char* outputLabels[] = {"Color", "Linear depth", "Normals", "Vertex colors"};
+    int output = static_cast<int>(pass.output);
+    const bool outputChanged = ImGui::Combo("Output buffer", &output, outputLabels, 4);
+    if (outputChanged) pass.output = static_cast<PassOutput>(output);
+    animationKeyControl(pass, AnimationProperty::PassOutput, timeline, outputChanged);
+  }
 
   ImGui::Spacing();
   ImGui::TextDisabled("GEOMETRY PERTURBATION");
@@ -60,6 +62,8 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline) {
     ImGui::DragFloat2("UV offset", &pass.perturbation.uvOffset.x, 1.0f / 512.0f, -1.0f, 1.0f, "%.5f"));
   animationKeyControl(pass, AnimationProperty::UvScale, timeline,
     ImGui::DragFloat2("UV scale", &pass.perturbation.uvScale.x, 0.001f, 0.25f, 4.0f, "%.4f"));
+
+  if (globalScope) return;
 
   std::size_t firstEnabled = stack.passes().size();
   for (std::size_t index = 0; index < stack.passes().size(); ++index) {

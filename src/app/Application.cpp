@@ -80,6 +80,39 @@ void applyEditedPass(RenderPass& authored, const RenderPass& displayedBefore, Re
   }
 }
 
+void applyEditedLocalPass(RenderStack& stack, const RenderPass& displayedBefore, const RenderPass& edited) {
+  RenderPass& definition = stack.selected();
+  const RenderPass definitionBefore = definition;
+  definition.name = edited.name;
+  definition.enabled = edited.enabled;
+  definition.output = edited.output;
+  definition.composite = edited.composite;
+  definition.animation = edited.animation;
+  for (int index = 0; index < static_cast<int>(AnimationProperty::Count); ++index) {
+    const AnimationProperty property = static_cast<AnimationProperty>(index);
+    const glm::vec4 displayedValue = animationPropertyValue(displayedBefore, property);
+    const glm::vec4 editedValue = animationPropertyValue(edited, property);
+    if (animationPropertyValuesEqual(property, displayedValue, editedValue)) continue;
+    if (findPropertyTrack(edited, property) != nullptr) continue;
+    if (animationPropertyIsPassLocal(property)) {
+      setAnimationPropertyValue(definition, property, editedValue);
+      continue;
+    }
+    const glm::vec4 globalValue = animationPropertyValue(stack.global(), property);
+    if (animationPropertyValuesEqual(property, globalValue, editedValue))
+      static_cast<void>(clearRenderPassOverride(definition, property));
+    else
+      setRenderPassOverride(definition, property, editedValue);
+  }
+  if (edited.importedTexture != displayedBefore.importedTexture) {
+    definition.importedTextureOverride = edited.importedTexture != stack.global().importedTexture;
+    definition.importedTexture = definition.importedTextureOverride ? edited.importedTexture : nullptr;
+  } else {
+    definition.importedTextureOverride = definitionBefore.importedTextureOverride;
+    definition.importedTexture = definitionBefore.importedTexture;
+  }
+}
+
 } // namespace
 
 namespace gfxlab {
@@ -121,6 +154,7 @@ int runApplication() {
   bool animationPanelOpen = true;
   bool previewAnimation = true;
   bool passDifferenceAuditOpen = false;
+  bool inspectorGlobalScope = true;
   AnimationTimeline animationTimeline;
   double previousFrameTime = glfwGetTime();
   double configCopiedAt = -10.0;
@@ -175,6 +209,23 @@ int runApplication() {
         std::abs(hierarchicalPass.renderer.post.fogStart - 4.0f) > 0.0001f ||
         validationStack.selected().overrides.size() != 2)
       fail("global base, sparse override, or hierarchical animation evaluation failed validation");
+    RenderStack editScopeValidation;
+    editScopeValidation.global().renderer.lighting.ambient = 0.2f;
+    const RenderPass inheritedBefore = materializeRenderPass(editScopeValidation, 1, 0.0f);
+    RenderPass locallyEdited = inheritedBefore;
+    locallyEdited.renderer.lighting.ambient = 0.8f;
+    editScopeValidation.select(1);
+    applyEditedLocalPass(editScopeValidation, inheritedBefore, locallyEdited);
+    editScopeValidation.global().renderer.lighting.ambient = 0.4f;
+    if (std::abs(materializeRenderPass(editScopeValidation, 1).renderer.lighting.ambient - 0.8f) > 0.0001f ||
+        findRenderPassOverride(editScopeValidation.selected(), AnimationProperty::Ambient) == nullptr)
+      fail("local inspector edit did not create a stable sparse override");
+    const RenderPass overriddenBefore = materializeRenderPass(editScopeValidation, 1, 0.0f);
+    RenderPass reverted = overriddenBefore;
+    reverted.renderer.lighting.ambient = 0.4f;
+    applyEditedLocalPass(editScopeValidation, overriddenBefore, reverted);
+    if (findRenderPassOverride(editScopeValidation.selected(), AnimationProperty::Ambient) != nullptr)
+      fail("local inspector edit matching the global base did not restore inheritance");
     RenderStack animationValidation;
     animationValidation.select(1);
     animationValidation.selected().perturbation.modelTranslation.x = 0.0f;
@@ -255,6 +306,7 @@ int runApplication() {
     historyScene = TestScene::Lighting;
     historyProfile = HardwareProfile::Nintendo64;
     historyTimeline.durationSeconds = 9.0f;
+    historyStack.global().renderer.camera.nearPlane = 0.12f;
     historyValidation.observe(captureEditorSnapshot(historyStack, historyCamera, historyScene, historyProfile,
       historyTimeline, importedFixture.asset), true);
     setRenderPassOverride(historyStack.selected(), AnimationProperty::Ambient, glm::vec4(0.7f));
@@ -271,6 +323,7 @@ int runApplication() {
         historyRestored.renderStack.passes().size() != 2 || historyRestored.scene != TestScene::Torus ||
         historyRestored.hardwareProfile != HardwareProfile::Unrestricted ||
         historyRestored.importedModel != nullptr ||
+        std::abs(historyRestored.renderStack.global().renderer.camera.nearPlane - 0.05f) > 0.0001f ||
         std::abs(historyRestored.camera.yaw - CameraOrbit{}.yaw) > 0.0001f ||
         std::abs(historyRestored.timeline.durationSeconds - 4.0f) > 0.0001f ||
         historyValidation.canUndo() || !historyValidation.canRedo())
@@ -292,6 +345,7 @@ int runApplication() {
         historyRestored.hardwareProfile != HardwareProfile::Nintendo64 ||
         historyRestored.importedModel == nullptr ||
         historyRestored.importedModel->contentHash != importedFixture.asset->contentHash ||
+        std::abs(historyRestored.renderStack.global().renderer.camera.nearPlane - 0.12f) > 0.0001f ||
         std::abs(historyRestored.camera.yaw - 1.25f) > 0.0001f ||
         std::abs(historyRestored.timeline.durationSeconds - 9.0f) > 0.0001f)
       fail("editor history redo failed validation");
@@ -437,6 +491,15 @@ int runApplication() {
 
   RenderStack renderStack;
   renderStack.global().renderer = current;
+  const auto normalizeDocument = [&renderStack](const HardwareProfile profile) {
+    if (profile == HardwareProfile::Unrestricted) renderStack.global().renderer.n64.enabled = false;
+    normalizeForHardwareProfile(profile, renderStack.global().renderer);
+    for (std::size_t passIndex = 0; passIndex < renderStack.passes().size(); ++passIndex) {
+      RenderPass normalized = materializeRenderPass(renderStack, passIndex, 0.0f);
+      normalizeForHardwareProfile(profile, normalized.renderer);
+      replaceRenderPassOverrides(renderStack.passes()[passIndex], renderStack.global(), normalized);
+    }
+  };
   std::shared_ptr<const ModelAsset> importedModel;
   std::string modelImportError;
   EditorHistory editorHistory(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile,
@@ -513,10 +576,7 @@ int runApplication() {
     const char* hardwareProfileLabels[] = {"Unrestricted", "PlayStation (PS1)", "Nintendo 64"};
     if (ImGui::Combo("##hardware-profile", &hardwareProfileIndex, hardwareProfileLabels, 3)) {
       hardwareProfile = static_cast<HardwareProfile>(hardwareProfileIndex);
-      if (hardwareProfile == HardwareProfile::Unrestricted) {
-        for (RenderPass& pass : renderStack.passes()) pass.renderer.n64.enabled = false;
-      }
-      for (RenderPass& pass : renderStack.passes()) normalizeForHardwareProfile(hardwareProfile, pass.renderer);
+      normalizeDocument(hardwareProfile);
       if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
       if (hardwareProfile != HardwareProfile::Unrestricted && scene == TestScene::StencilMask) scene = TestScene::Torus;
     }
@@ -566,9 +626,31 @@ int runApplication() {
       ImGui::EndPopup();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Reset neutral")) renderStack.selected().renderer = RendererState{};
+    ImGui::TextDisabled("Edit");
     ImGui::SameLine();
-    if (ImGui::Button("Reset scene setup")) applyRecommendedSetup(scene, renderStack.selected().renderer, camera);
+    if (ImGui::RadioButton("Global base", inspectorGlobalScope)) inspectorGlobalScope = true;
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Selected pass", !inspectorGlobalScope)) inspectorGlobalScope = false;
+    ImGui::SameLine();
+    if (inspectorGlobalScope) {
+      if (ImGui::Button("Reset global neutral")) renderStack.global().renderer = RendererState{};
+    } else {
+      if (ImGui::Button("Clear pass overrides")) {
+        renderStack.selected().overrides.clear();
+        renderStack.selected().importedTextureOverride = false;
+        renderStack.selected().importedTexture.reset();
+      }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset scene setup")) {
+      if (inspectorGlobalScope) {
+        applyRecommendedSetup(scene, renderStack.global().renderer, camera);
+      } else {
+        RenderPass recommended = materializeRenderPass(renderStack, renderStack.selectedIndex(), 0.0f);
+        applyRecommendedSetup(scene, recommended.renderer, camera);
+        replaceRenderPassOverrides(renderStack.selected(), renderStack.global(), recommended);
+      }
+    }
     if (ImGui::IsItemHovered())
       ImGui::SetTooltip("Apply the recommended renderer state and camera framing for the selected scene.");
     ImGui::SameLine();
@@ -602,7 +684,7 @@ int runApplication() {
     ImGui::TextDisabled("LMB orbit   MMB/RMB pan   Wheel zoom");
     ImGui::Separator();
     if (animationPanelOpen) {
-      drawAnimationEditor(animationTimeline, renderStack, previewAnimation);
+      drawAnimationEditor(animationTimeline, renderStack, previewAnimation, inspectorGlobalScope);
       ImGui::Separator();
     }
 
@@ -647,11 +729,18 @@ int runApplication() {
       const bool passEnabledChanged = ImGui::Checkbox("##enabled", &pass.enabled);
       animationKeyControl(pass, AnimationProperty::PassEnabled, animationTimeline, passEnabledChanged);
       ImGui::SameLine();
-      if (ImGui::Selectable(pass.name.c_str(), renderStack.selectedIndex() == passIndex, 0, ImVec2(0, 24)))
+      const std::string passLabel = pass.name + "  [" + std::to_string(pass.overrides.size()) + " local, " +
+        std::to_string(pass.animation.tracks.size()) + " tracks]";
+      if (ImGui::Selectable(passLabel.c_str(), renderStack.selectedIndex() == passIndex, 0, ImVec2(0, 24))) {
         renderStack.select(passIndex);
+        inspectorGlobalScope = false;
+      }
       ImGui::PopID();
     }
-    if (ImGui::Button("Duplicate pass", ImVec2(-1, 0))) renderStack.duplicateSelected();
+    if (ImGui::Button("Duplicate pass", ImVec2(-1, 0))) {
+      renderStack.duplicateSelected();
+      inspectorGlobalScope = false;
+    }
     if (ImGui::Button("Up")) renderStack.moveSelected(-1);
     ImGui::SameLine();
     if (ImGui::Button("Down")) renderStack.moveSelected(1);
@@ -686,7 +775,7 @@ int runApplication() {
       paneOrigin.x + std::floor((available.x - presentationSize.x) * 0.5f),
       paneOrigin.y + std::floor((available.y - presentationSize.y) * 0.5f));
     const ImVec2 end(origin.x + presentationSize.x, origin.y + presentationSize.y);
-    for (RenderPass& pass : renderStack.passes()) normalizeForHardwareProfile(hardwareProfile, pass.renderer);
+    normalizeDocument(hardwareProfile);
     const bool evaluateAnimation = animationTimeline.playing || previewAnimation;
     RenderStack evaluatedStack = evaluateRenderStack(renderStack,
       evaluateAnimation ? animationTimeline.timeSeconds : 0.0f);
@@ -729,15 +818,21 @@ int runApplication() {
 
     ImGui::BeginChild("Inspector", ImVec2(inspectorWidth, contentHeight), true);
       RenderStack inspectorStack = renderStack;
-      const RenderPass displayedBefore = (animationTimeline.playing || previewAnimation)
-        ? evaluateRenderPass(renderStack.selected(), animationTimeline.timeSeconds) : renderStack.selected();
+      const float inspectorTime = (animationTimeline.playing || previewAnimation)
+        ? animationTimeline.timeSeconds : 0.0f;
+      const RenderPass displayedBefore = inspectorGlobalScope
+        ? evaluateRenderPass(renderStack.global(), inspectorTime)
+        : materializeRenderPass(renderStack, renderStack.selectedIndex(), inspectorTime);
       inspectorStack.selected() = displayedBefore;
-      drawPassInspector(inspectorStack, animationTimeline);
+      drawPassInspector(inspectorStack, animationTimeline, inspectorGlobalScope);
       ImGui::Spacing();
       ImGui::Separator();
       drawInspector(category, inspectorStack.selected(), hardwareProfile, animationTimeline,
         importedModel.get(), scene);
-      applyEditedPass(renderStack.selected(), displayedBefore, inspectorStack.selected());
+      if (inspectorGlobalScope)
+        applyEditedPass(renderStack.global(), displayedBefore, inspectorStack.selected());
+      else
+        applyEditedLocalPass(renderStack, displayedBefore, inspectorStack.selected());
     ImGui::EndChild();
     ImGui::End();
 
@@ -746,30 +841,37 @@ int runApplication() {
     if (handbookAction.type != handbook::ActionType::None && isNintendo64Example(handbookAction.example))
       hardwareProfile = HardwareProfile::Nintendo64;
     if (handbookAction.type == handbook::ActionType::ApplyToA) {
-      applyHandbookExample(handbookAction.example, false, renderStack.passes().front().renderer, camera, scene, category);
+      applyHandbookExample(handbookAction.example, false, renderStack.global().renderer, camera, scene, category);
+      inspectorGlobalScope = true;
     } else if (handbookAction.type == handbook::ActionType::ApplyToB) {
       if (renderStack.selectedIndex() == 0) {
         renderStack.select(0);
         if (renderStack.passes().size() < 2) renderStack.duplicateSelected();
         else renderStack.select(1);
       }
-      applyHandbookExample(handbookAction.example, true, renderStack.selected().renderer, camera, scene, category);
+      RenderPass comparison = materializeRenderPass(renderStack, renderStack.selectedIndex(), 0.0f);
+      applyHandbookExample(handbookAction.example, true, comparison.renderer, camera, scene, category);
+      replaceRenderPassOverrides(renderStack.selected(), renderStack.global(), comparison);
+      inspectorGlobalScope = false;
     } else if (handbookAction.type == handbook::ActionType::LoadComparison) {
       renderStack = RenderStack{};
-      applyHandbookExample(handbookAction.example, false, renderStack.passes()[0].renderer, camera, scene, category);
+      applyHandbookExample(handbookAction.example, false, renderStack.global().renderer, camera, scene, category);
       RendererState comparisonState;
       CameraOrbit comparisonCamera = camera;
       TestScene comparisonScene = scene;
       Category comparisonCategory = category;
       applyHandbookExample(handbookAction.example, true, comparisonState, comparisonCamera, comparisonScene, comparisonCategory);
-      renderStack.passes()[1].renderer = comparisonState;
+      RenderPass comparison = materializeRenderPass(renderStack, 1, 0.0f);
+      comparison.renderer = comparisonState;
+      replaceRenderPassOverrides(renderStack.passes()[1], renderStack.global(), comparison);
       renderStack.select(1);
       camera = comparisonCamera;
       scene = comparisonScene;
       category = comparisonCategory;
       compare = CompareMode::Split;
+      inspectorGlobalScope = false;
     }
-    for (RenderPass& pass : renderStack.passes()) normalizeForHardwareProfile(hardwareProfile, pass.renderer);
+    normalizeDocument(hardwareProfile);
     const bool viewportInteraction = viewportHovered && (ImGui::IsMouseDown(ImGuiMouseButton_Left) ||
       ImGui::IsMouseDown(ImGuiMouseButton_Middle) || ImGui::IsMouseDown(ImGuiMouseButton_Right));
     editorHistory.observe(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile, animationTimeline,
