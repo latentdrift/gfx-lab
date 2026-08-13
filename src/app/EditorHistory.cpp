@@ -1,19 +1,22 @@
 #include "app/EditorHistory.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace gfxlab {
 
 EditorSnapshot captureEditorSnapshot(const RenderStack& renderStack, const CameraOrbit& camera,
-    const TestScene scene, const HardwareProfile hardwareProfile, const AnimationTimeline& timeline) {
-  EditorSnapshot snapshot{renderStack, camera, scene, hardwareProfile, timeline};
+    const TestScene scene, const HardwareProfile hardwareProfile, const AnimationTimeline& timeline,
+    std::shared_ptr<const ModelAsset> importedModel) {
+  EditorSnapshot snapshot{renderStack, camera, scene, hardwareProfile, timeline, std::move(importedModel)};
   snapshot.timeline.timeSeconds = 0.0f;
   snapshot.timeline.playing = false;
   return snapshot;
 }
 
 void restoreEditorSnapshot(const EditorSnapshot& snapshot, RenderStack& renderStack, CameraOrbit& camera,
-    TestScene& scene, HardwareProfile& hardwareProfile, AnimationTimeline& timeline) {
+    TestScene& scene, HardwareProfile& hardwareProfile, AnimationTimeline& timeline,
+    std::shared_ptr<const ModelAsset>* importedModel) {
   const float currentTime = timeline.timeSeconds;
   renderStack = snapshot.renderStack;
   camera = snapshot.camera;
@@ -22,6 +25,7 @@ void restoreEditorSnapshot(const EditorSnapshot& snapshot, RenderStack& renderSt
   timeline = snapshot.timeline;
   timeline.timeSeconds = std::clamp(currentTime, 0.0f, timeline.durationSeconds);
   timeline.playing = false;
+  if (importedModel != nullptr) *importedModel = snapshot.importedModel;
 }
 
 EditorHistory::EditorHistory(const EditorSnapshot& initial)
@@ -64,7 +68,7 @@ bool EditorHistory::redo(const EditorSnapshot& current, EditorSnapshot& restored
 
 std::string EditorHistory::fingerprint(const EditorSnapshot& snapshot) {
   return renderStackConfigJson(snapshot.renderStack, snapshot.camera, snapshot.scene, snapshot.hardwareProfile,
-    &snapshot.timeline);
+    &snapshot.timeline, snapshot.importedModel.get());
 }
 
 void EditorHistory::finishTransaction(const EditorSnapshot& current) {

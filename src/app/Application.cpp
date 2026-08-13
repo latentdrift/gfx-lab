@@ -13,6 +13,7 @@
 
 #include "app/State.hpp"
 #include "app/EditorHistory.hpp"
+#include "app/FileDialog.hpp"
 #include "app/HardwareProfile.hpp"
 #include "app/RenderStack.hpp"
 #include "assets/ModelAsset.hpp"
@@ -143,19 +144,20 @@ int runApplication() {
     historyProfile = HardwareProfile::Nintendo64;
     historyTimeline.durationSeconds = 9.0f;
     historyValidation.observe(captureEditorSnapshot(historyStack, historyCamera, historyScene, historyProfile,
-      historyTimeline), true);
+      historyTimeline, importedFixture.asset), true);
     historyStack.selected().renderer.lighting.ambient = 0.7f;
     historyStack.selected().perturbation.cameraYaw = 0.2f;
     historyValidation.observe(captureEditorSnapshot(historyStack, historyCamera, historyScene, historyProfile,
-      historyTimeline), true);
+      historyTimeline, importedFixture.asset), true);
     const EditorSnapshot historyChanged = captureEditorSnapshot(historyStack, historyCamera, historyScene,
-      historyProfile, historyTimeline);
+      historyProfile, historyTimeline, importedFixture.asset);
     historyValidation.observe(historyChanged, false);
     EditorSnapshot historyRestored;
     if (!historyValidation.undo(historyChanged, historyRestored) ||
         std::abs(historyRestored.renderStack.selected().renderer.lighting.ambient - 0.22f) > 0.0001f ||
         historyRestored.renderStack.passes().size() != 2 || historyRestored.scene != TestScene::Torus ||
         historyRestored.hardwareProfile != HardwareProfile::Unrestricted ||
+        historyRestored.importedModel != nullptr ||
         std::abs(historyRestored.camera.yaw - CameraOrbit{}.yaw) > 0.0001f ||
         std::abs(historyRestored.timeline.durationSeconds - 4.0f) > 0.0001f ||
         historyValidation.canUndo() || !historyValidation.canRedo())
@@ -167,6 +169,8 @@ int runApplication() {
         historyRestored.renderStack.selected().animation.keyframes.size() != 1 ||
         historyRestored.scene != TestScene::Lighting ||
         historyRestored.hardwareProfile != HardwareProfile::Nintendo64 ||
+        historyRestored.importedModel == nullptr ||
+        historyRestored.importedModel->contentHash != importedFixture.asset->contentHash ||
         std::abs(historyRestored.camera.yaw - 1.25f) > 0.0001f ||
         std::abs(historyRestored.timeline.durationSeconds - 9.0f) > 0.0001f)
       fail("editor history redo failed validation");
@@ -186,12 +190,13 @@ int runApplication() {
       if (renderer.composite(compositeValidation) == 0) fail("render-pass composite mask failed validation");
     }
     const std::string stackConfig = renderStackConfigJson(compositeValidation, camera, scene,
-      HardwareProfile::Unrestricted);
+      HardwareProfile::Unrestricted, nullptr, importedFixture.asset.get());
     if (stackConfig.find("graphics-lab.render-stack.v1") == std::string::npos ||
         stackConfig.find("\"passes\"") == std::string::npos ||
         stackConfig.find("\"perturbation\"") == std::string::npos ||
         stackConfig.find("\"composite_into_previous\"") == std::string::npos ||
-        stackConfig.find("\"animation\"") == std::string::npos)
+        stackConfig.find("\"animation\"") == std::string::npos ||
+        stackConfig.find("\"imported_model\"") == std::string::npos)
       fail("render-pass stack missing from config export");
     constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,
       handbook::Example::AffineMapping, handbook::Example::TextureMinification, handbook::Example::NormalMapping,
@@ -297,15 +302,23 @@ int runApplication() {
   RenderStack renderStack;
   renderStack.passes()[0].renderer = current;
   renderStack.passes()[1].renderer = reference;
+  std::shared_ptr<const ModelAsset> importedModel;
+  std::string modelImportError;
   EditorHistory editorHistory(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile,
-    animationTimeline));
+    animationTimeline, importedModel));
   const auto restoreHistory = [&](const bool redo) {
     const EditorSnapshot present = captureEditorSnapshot(renderStack, camera, scene, hardwareProfile,
-      animationTimeline);
+      animationTimeline, importedModel);
     EditorSnapshot restored;
     const bool changed = redo ? editorHistory.redo(present, restored) : editorHistory.undo(present, restored);
     if (!changed) return;
-    restoreEditorSnapshot(restored, renderStack, camera, scene, hardwareProfile, animationTimeline);
+    const std::shared_ptr<const ModelAsset> previousModel = importedModel;
+    restoreEditorSnapshot(restored, renderStack, camera, scene, hardwareProfile, animationTimeline,
+      &importedModel);
+    if (previousModel != importedModel) {
+      if (importedModel != nullptr) renderer.setImportedModel(*importedModel);
+      else renderer.clearImportedModel();
+    }
     if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
   };
 
@@ -377,10 +390,46 @@ int runApplication() {
     ImGui::TextDisabled("Scene");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(180.0f);
-    const char* sceneLabels[] = {"Torus", "Texture minification", "Depth precision", "Transparency", "Lighting comparison", "Stencil mask"};
-    const int sceneCount = hardwareProfile == HardwareProfile::Unrestricted ? 6 : 5;
-    int sceneIndex = static_cast<int>(scene);
-    if (ImGui::Combo("##test-scene", &sceneIndex, sceneLabels, sceneCount)) scene = static_cast<TestScene>(sceneIndex);
+    const char* standardSceneLabels[] = {"Torus", "Texture minification", "Depth precision", "Transparency",
+      "Lighting comparison", "Stencil mask"};
+    const char* currentSceneLabel = scene == TestScene::ImportedModel && importedModel != nullptr
+      ? importedModel->name.c_str() : standardSceneLabels[std::min(static_cast<int>(scene), 5)];
+    if (ImGui::BeginCombo("##test-scene", currentSceneLabel)) {
+      for (int option = 0; option < 5; ++option) {
+        const TestScene candidate = static_cast<TestScene>(option);
+        if (ImGui::Selectable(standardSceneLabels[option], scene == candidate)) scene = candidate;
+      }
+      if (hardwareProfile == HardwareProfile::Unrestricted &&
+          ImGui::Selectable(standardSceneLabels[5], scene == TestScene::StencilMask))
+        scene = TestScene::StencilMask;
+      if (importedModel != nullptr &&
+          ImGui::Selectable(importedModel->name.c_str(), scene == TestScene::ImportedModel))
+        scene = TestScene::ImportedModel;
+      ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Import model")) {
+      const FileDialogResult dialog = openModelFileDialog();
+      if (!dialog.error.empty()) modelImportError = dialog.error;
+      else if (dialog.path.has_value()) {
+        const ModelImportResult imported = importModelAsset(*dialog.path);
+        if (imported) {
+          importedModel = imported.asset;
+          renderer.setImportedModel(*importedModel);
+          scene = TestScene::ImportedModel;
+          camera = CameraOrbit{};
+          modelImportError.clear();
+        } else {
+          modelImportError = imported.error;
+        }
+      }
+      if (!modelImportError.empty()) ImGui::OpenPopup("Model import failed");
+    }
+    if (ImGui::BeginPopupModal("Model import failed", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+      ImGui::TextWrapped("%s", modelImportError.c_str());
+      if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
+      ImGui::EndPopup();
+    }
     ImGui::SameLine();
     if (ImGui::Button("Reset neutral")) renderStack.selected().renderer = RendererState{};
     ImGui::SameLine();
@@ -390,7 +439,7 @@ int runApplication() {
     ImGui::SameLine();
     if (ImGui::Button("Copy stack JSON")) {
       const std::string exportedConfig = renderStackConfigJson(renderStack, camera, scene, hardwareProfile,
-        &animationTimeline);
+        &animationTimeline, importedModel.get());
       ImGui::SetClipboardText(exportedConfig.c_str());
       configCopiedAt = glfwGetTime();
     }
@@ -423,6 +472,20 @@ int runApplication() {
     const float contentHeight = ImGui::GetContentRegionAvail().y;
     constexpr float pipelineWidth = 200.0f;
     ImGui::BeginChild("Pipeline", ImVec2(pipelineWidth, contentHeight), true);
+    if (importedModel != nullptr) {
+      ImGui::TextDisabled("IMPORTED MODEL");
+      ImGui::TextWrapped("%s", importedModel->name.c_str());
+      ImGui::TextDisabled("%zu triangles  %zu meshes", importedModel->triangleCount,
+        importedModel->sourceMeshCount);
+      if (scene != TestScene::ImportedModel && ImGui::Button("Use model", ImVec2(-1, 0)))
+        scene = TestScene::ImportedModel;
+      if (ImGui::Button("Unload model", ImVec2(-1, 0))) {
+        importedModel.reset();
+        renderer.clearImportedModel();
+        if (scene == TestScene::ImportedModel) scene = TestScene::Torus;
+      }
+      ImGui::Separator();
+    }
     ImGui::TextDisabled("RENDER PASSES");
     ImGui::Spacing();
     for (std::size_t passIndex = 0; passIndex < renderStack.passes().size(); ++passIndex) {
@@ -548,7 +611,8 @@ int runApplication() {
     for (RenderPass& pass : renderStack.passes()) normalizeForHardwareProfile(hardwareProfile, pass.renderer);
     const bool viewportInteraction = viewportHovered && (ImGui::IsMouseDown(ImGuiMouseButton_Left) ||
       ImGui::IsMouseDown(ImGuiMouseButton_Middle) || ImGui::IsMouseDown(ImGuiMouseButton_Right));
-    editorHistory.observe(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile, animationTimeline),
+    editorHistory.observe(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile, animationTimeline,
+      importedModel),
       ImGui::IsAnyItemActive() || viewportInteraction);
 
     ImGui::Render();

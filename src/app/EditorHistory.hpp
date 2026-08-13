@@ -2,6 +2,7 @@
 
 #include "app/Animation.hpp"
 #include "app/RenderStack.hpp"
+#include "assets/ModelAsset.hpp"
 
 #include <cstddef>
 #include <optional>
@@ -16,12 +17,15 @@ struct EditorSnapshot {
   TestScene scene = TestScene::Torus;
   HardwareProfile hardwareProfile = HardwareProfile::Unrestricted;
   AnimationTimeline timeline;
+  std::shared_ptr<const ModelAsset> importedModel;
 };
 
 [[nodiscard]] EditorSnapshot captureEditorSnapshot(const RenderStack& renderStack, const CameraOrbit& camera,
-  TestScene scene, HardwareProfile hardwareProfile, const AnimationTimeline& timeline);
+  TestScene scene, HardwareProfile hardwareProfile, const AnimationTimeline& timeline,
+  std::shared_ptr<const ModelAsset> importedModel = nullptr);
 void restoreEditorSnapshot(const EditorSnapshot& snapshot, RenderStack& renderStack, CameraOrbit& camera,
-  TestScene& scene, HardwareProfile& hardwareProfile, AnimationTimeline& timeline);
+  TestScene& scene, HardwareProfile& hardwareProfile, AnimationTimeline& timeline,
+  std::shared_ptr<const ModelAsset>* importedModel = nullptr);
 
 class EditorHistory {
 public:

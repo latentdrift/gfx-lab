@@ -11,6 +11,8 @@
 
 namespace gfxlab {
 
+struct ModelAsset;
+
 enum class CompositeColorSpace { EncodedRgb, LinearLight };
 enum class CompositeRange { Clamp, Preserve, Wrap };
 enum class PassOutput { Color, Depth, Normals, VertexColor };
@@ -78,6 +80,7 @@ private:
 [[nodiscard]] const char* relationOperatorMeaning(RelationOperator operation);
 void resetCompositeTransform(CompositeStep& step);
 [[nodiscard]] std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& camera,
-  TestScene scene, HardwareProfile profile, const AnimationTimeline* timeline = nullptr);
+  TestScene scene, HardwareProfile profile, const AnimationTimeline* timeline = nullptr,
+  const ModelAsset* importedModel = nullptr);
 
 } // namespace gfxlab

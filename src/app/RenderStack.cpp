@@ -1,4 +1,5 @@
 #include "app/RenderStack.hpp"
+#include "assets/ModelAsset.hpp"
 
 #include <algorithm>
 #include <array>
@@ -97,7 +98,7 @@ void resetCompositeTransform(CompositeStep& step) {
 }
 
 std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& camera, const TestScene scene,
-    const HardwareProfile profile, const AnimationTimeline* timeline) {
+    const HardwareProfile profile, const AnimationTimeline* timeline, const ModelAsset* importedModel) {
   constexpr const char* outputIds[] = {"color", "linear_depth_0_to_10_units", "normals", "vertex_colors"};
   constexpr const char* colorSpaceIds[] = {"encoded_rgb", "linear_light"};
   constexpr const char* rangeIds[] = {"clamp_0_to_1", "preserve_signed_hdr", "wrap_fractional_part"};
@@ -129,6 +130,17 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   json << "  \"evaluation\": \"bottom_to_top_sequential_compositing\",\n";
   json << "  \"seed_rule\": \"the first enabled pass becomes the accumulator; every later enabled pass applies its composite step\",\n";
   json << "  \"test_scene\": \"" << testSceneName(scene) << "\",\n";
+  if (importedModel != nullptr) {
+    json << "  \"imported_model\": {\"name\": \"" << escape(importedModel->name)
+         << "\", \"source_path\": \"" << escape(importedModel->sourcePath)
+         << "\", \"content_hash_fnv1a64\": \"" << std::hex << importedModel->contentHash << std::dec
+         << "\", \"source_meshes\": " << importedModel->sourceMeshCount
+         << ", \"triangles\": " << importedModel->triangleCount
+         << ", \"normalization_scale\": " << importedModel->normalizationScale
+         << ", \"has_uv0\": " << importedModel->hasTextureCoordinates
+         << ", \"has_vertex_color0\": " << importedModel->hasVertexColors
+         << ", \"has_tangents\": " << importedModel->hasTangents << "},\n";
+  }
   if (timeline != nullptr) {
     json << "  \"animation_timeline\": {\"duration_seconds\": " << timeline->durationSeconds
          << ", \"playback_rate\": " << timeline->playbackRate << ", \"loop\": " << timeline->loop
