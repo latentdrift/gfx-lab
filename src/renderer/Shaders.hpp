@@ -870,6 +870,11 @@ uniform float uScanlineStrength;
 uniform float uMaskStrength;
 uniform float uBloomStrength;
 uniform float uBloomRadius;
+uniform float uObserverExposureStops;
+uniform float uDarkAdaptation;
+uniform float uRodSensitivity;
+uniform float uOpponentGain;
+uniform int uReceptorXorBits;
 out vec4 fragColor;
 
 vec3 rgbToYiq(vec3 rgb) {
@@ -882,6 +887,61 @@ vec3 yiqToRgb(vec3 yiq) {
   return vec3(yiq.x + 0.956 * yiq.y + 0.621 * yiq.z,
     yiq.x - 0.272 * yiq.y - 0.647 * yiq.z,
     yiq.x - 1.106 * yiq.y + 1.703 * yiq.z);
+}
+
+vec3 linearRgbToLms(vec3 rgb) {
+  return vec3(dot(rgb, vec3(0.31399022, 0.63951294, 0.04649755)),
+    dot(rgb, vec3(0.15537241, 0.75789446, 0.08670142)),
+    dot(rgb, vec3(0.01775239, 0.10944209, 0.87256922)));
+}
+
+vec3 lmsToLinearRgb(vec3 lms) {
+  return vec3(dot(lms, vec3(5.47221206, -4.64196010, 0.16963708)),
+    dot(lms, vec3(-1.12524190, 2.29317094, -0.16789520)),
+    dot(lms, vec3(0.02980165, -0.19318073, 1.16364789)));
+}
+
+vec3 encodeRgb(vec3 linearRgb) {
+  return pow(clamp(linearRgb, 0.0, 1.0), vec3(1.0 / 2.2));
+}
+
+vec3 observerSignal(vec3 encodedRgb) {
+  vec3 linearRgb = pow(max(encodedRgb, vec3(0.0)), vec3(2.2));
+  linearRgb *= exp2(uObserverExposureStops);
+  vec3 lms = max(linearRgbToLms(linearRgb), vec3(0.0));
+  vec3 coneResponse = 1.0 - exp(-lms);
+  vec3 coneRgb = encodeRgb(lmsToLinearRgb(coneResponse));
+  float rodLinear = max(dot(linearRgb, vec3(0.04, 0.68, 0.28)), 0.0) * uRodSensitivity;
+  float rod = 1.0 - exp(-rodLinear);
+  vec3 rodRgb = pow(clamp(rod * vec3(0.52, 0.76, 1.0), 0.0, 1.0), vec3(1.0 / 2.2));
+
+  if (uSignal == 2) return pow(clamp(coneResponse, 0.0, 1.0), vec3(1.0 / 2.2));
+  if (uSignal == 3) return vec3(pow(clamp(rod, 0.0, 1.0), 1.0 / 2.2));
+  if (uSignal == 4) return mix(coneRgb, rodRgb, clamp(uDarkAdaptation, 0.0, 1.0));
+  if (uSignal == 5) return vec3(pow(clamp(coneResponse.x, 0.0, 1.0), 1.0 / 2.2));
+  if (uSignal == 6) return vec3(pow(clamp(coneResponse.y, 0.0, 1.0), 1.0 / 2.2));
+  if (uSignal == 7) return vec3(pow(clamp(coneResponse.z, 0.0, 1.0), 1.0 / 2.2));
+  if (uSignal == 8) {
+    float opponent = (coneResponse.x - coneResponse.y) * uOpponentGain;
+    return opponent >= 0.0 ? vec3(opponent, 0.0, opponent * 0.18)
+      : vec3(0.0, -opponent, -opponent * 0.06);
+  }
+  if (uSignal == 9) {
+    float opponent = (coneResponse.z - 0.5 * (coneResponse.x + coneResponse.y)) * uOpponentGain;
+    return opponent >= 0.0 ? vec3(0.0, opponent * 0.22, opponent)
+      : vec3(-opponent, -opponent, 0.0);
+  }
+  if (uSignal == 10) return abs(coneRgb - rodRgb);
+  int bits = clamp(uReceptorXorBits, 1, 8);
+  float levels = exp2(float(bits)) - 1.0;
+  uvec3 coneBits = uvec3(round(clamp(coneRgb, 0.0, 1.0) * levels));
+  uvec3 rodBits = uvec3(round(clamp(rodRgb, 0.0, 1.0) * levels));
+  return vec3(coneBits ^ rodBits) / levels;
+}
+
+vec3 bloomInput(vec2 uv) {
+  vec3 sampleColor = texture(uImage, uv).rgb;
+  return uSignal >= 2 ? observerSignal(sampleColor) : sampleColor;
 }
 
 void main() {
@@ -900,13 +960,15 @@ void main() {
     decoded.x += carrier * neighborhood.y * uCrosstalk * 0.22;
     decoded.yz += vec2(carrier, -carrier) * (centerYiq.x - neighborhood.x) * uCrosstalk * 0.08;
     color = yiqToRgb(decoded);
+  } else if (uSignal >= 2) {
+    color = observerSignal(center);
   }
 
   vec2 bloomStep = texel * uBloomRadius;
-  vec3 bloom = texture(uImage, vUv + vec2(bloomStep.x, 0.0)).rgb;
-  bloom += texture(uImage, vUv - vec2(bloomStep.x, 0.0)).rgb;
-  bloom += texture(uImage, vUv + vec2(0.0, bloomStep.y)).rgb;
-  bloom += texture(uImage, vUv - vec2(0.0, bloomStep.y)).rgb;
+  vec3 bloom = bloomInput(vUv + vec2(bloomStep.x, 0.0));
+  bloom += bloomInput(vUv - vec2(bloomStep.x, 0.0));
+  bloom += bloomInput(vUv + vec2(0.0, bloomStep.y));
+  bloom += bloomInput(vUv - vec2(0.0, bloomStep.y));
   bloom *= 0.25;
   color += max(bloom - vec3(0.35), vec3(0.0)) * uBloomStrength;
 

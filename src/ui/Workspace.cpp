@@ -87,6 +87,8 @@ WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, c
   if (ImGui::BeginMainMenuBar()) {
     if (ImGui::BeginMenu("File")) {
       if (ImGui::MenuItem("Import Model...")) actions.importModel = true;
+      if (ImGui::MenuItem("Open Stack JSON...", "Ctrl+O")) actions.loadJson = true;
+      if (ImGui::MenuItem("Save Stack JSON...", "Ctrl+S")) actions.saveJson = true;
       if (ImGui::MenuItem("Copy Stack JSON")) actions.copyJson = true;
       ImGui::Separator();
       if (ImGui::MenuItem("Quit")) actions.quit = true;

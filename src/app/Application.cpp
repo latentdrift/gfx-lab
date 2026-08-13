@@ -13,6 +13,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "app/State.hpp"
+#include "app/StackDocument.hpp"
 #include "app/EditorHistory.hpp"
 #include "app/FileDialog.hpp"
 #include "app/HardwareProfile.hpp"
@@ -185,6 +186,8 @@ int runApplication() {
   std::string modelImportError;
   std::string recordingMessage;
   bool recordingFailed = false;
+  std::string documentMessage;
+  bool documentOperationFailed = false;
   EditorHistory editorHistory(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile,
     animationTimeline, importedModel));
   const auto restoreHistory = [&](const bool redo) {
@@ -228,6 +231,10 @@ int runApplication() {
 
     ImGuiIO& io = ImGui::GetIO();
     const bool commandModifier = io.KeyCtrl || io.KeySuper;
+    const bool openDocumentShortcut = !io.WantTextInput && commandModifier &&
+      ImGui::IsKeyPressed(ImGuiKey_O, false);
+    const bool saveDocumentShortcut = !io.WantTextInput && commandModifier &&
+      ImGui::IsKeyPressed(ImGuiKey_S, false);
     if (!io.WantTextInput && commandModifier && ImGui::IsKeyPressed(ImGuiKey_Z, false))
       restoreHistory(io.KeyShift);
     else if (!io.WantTextInput && commandModifier && ImGui::IsKeyPressed(ImGuiKey_Y, false))
@@ -279,6 +286,53 @@ int runApplication() {
     if (workspaceActions.undo) restoreHistory(false);
     if (workspaceActions.redo) restoreHistory(true);
     if (workspaceActions.importModel) importModelFromDialog();
+    if (workspaceActions.loadJson || openDocumentShortcut) {
+      documentMessage.clear();
+      documentOperationFailed = false;
+      const FileDialogResult dialog = openStackDocumentDialog();
+      if (!dialog.error.empty()) {
+        documentMessage = dialog.error;
+        documentOperationFailed = true;
+      } else if (dialog.path.has_value()) {
+        StackDocumentLoadResult loaded = loadStackDocumentFile(*dialog.path);
+        if (!loaded) {
+          documentMessage = loaded.error;
+          documentOperationFailed = true;
+        } else {
+          StackDocument document = std::move(*loaded.document);
+          renderStack = std::move(document.renderStack);
+          camera = document.camera;
+          scene = document.scene;
+          hardwareProfile = document.hardwareProfile;
+          animationTimeline = document.timeline;
+          importedModel = std::move(document.importedModel);
+          if (importedModel != nullptr) renderer.setImportedModel(*importedModel);
+          else renderer.clearImportedModel();
+          renderer.resetFrameHistory();
+          inspectorGlobalScope = true;
+          compare = CompareMode::Relation;
+          documentMessage = "Loaded stack document:\n" + *dialog.path;
+        }
+      }
+      if (!documentMessage.empty()) ImGui::OpenPopup("Stack document");
+    }
+    if (workspaceActions.saveJson || saveDocumentShortcut) {
+      documentMessage.clear();
+      documentOperationFailed = false;
+      const FileDialogResult dialog = saveStackDocumentDialog();
+      if (!dialog.error.empty()) {
+        documentMessage = dialog.error;
+        documentOperationFailed = true;
+      } else if (dialog.path.has_value()) {
+        const std::string exported = renderStackConfigJson(renderStack, camera, scene, hardwareProfile,
+          &animationTimeline, importedModel.get());
+        if (saveStackDocumentFile(*dialog.path, exported, documentMessage))
+          documentMessage = "Saved stack document:\n" + *dialog.path;
+        else
+          documentOperationFailed = true;
+      }
+      if (!documentMessage.empty()) ImGui::OpenPopup("Stack document");
+    }
     if (workspaceActions.copyJson) {
       const std::string exported = renderStackConfigJson(renderStack, camera, scene, hardwareProfile,
         &animationTimeline, importedModel.get());
@@ -340,6 +394,13 @@ int runApplication() {
       if (recordingFailed)
         ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f), "Recording export failed");
       ImGui::TextWrapped("%s", recordingMessage.c_str());
+      if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
+      ImGui::EndPopup();
+    }
+    if (ImGui::BeginPopupModal("Stack document", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+      if (documentOperationFailed)
+        ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f), "Stack document operation failed");
+      ImGui::TextWrapped("%s", documentMessage.c_str());
       if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
       ImGui::EndPopup();
     }

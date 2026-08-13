@@ -13,5 +13,7 @@ struct FileDialogResult {
 [[nodiscard]] FileDialogResult openModelFileDialog();
 [[nodiscard]] FileDialogResult openTextureFileDialog();
 [[nodiscard]] FileDialogResult saveViewportRecordingDialog();
+[[nodiscard]] FileDialogResult openStackDocumentDialog();
+[[nodiscard]] FileDialogResult saveStackDocumentDialog();
 
 } // namespace gfxlab

@@ -38,6 +38,30 @@ FileDialogResult openTextureFileDialog() {
   return openFileDialog(filters, 5);
 }
 
+FileDialogResult openStackDocumentDialog() {
+  const nfdu8filteritem_t filters[] = {{"Graphics Lab stack", "json"}};
+  return openFileDialog(filters, 1);
+}
+
+FileDialogResult saveStackDocumentDialog() {
+  if (NFD_Init() != NFD_OKAY) return {std::nullopt, NFD_GetError()};
+  const nfdu8filteritem_t filters[] = {{"Graphics Lab stack", "json"}};
+  nfdu8char_t* selectedPath = nullptr;
+  const nfdresult_t result = NFD_SaveDialogU8(&selectedPath, filters, 1, nullptr,
+    "graphics-lab-stack.json");
+  FileDialogResult dialog;
+  if (result == NFD_OKAY) {
+    dialog.path = std::string(selectedPath);
+    if (dialog.path->size() < 5 || dialog.path->substr(dialog.path->size() - 5) != ".json")
+      *dialog.path += ".json";
+    NFD_FreePathU8(selectedPath);
+  } else if (result == NFD_ERROR) {
+    dialog.error = NFD_GetError();
+  }
+  NFD_Quit();
+  return dialog;
+}
+
 FileDialogResult saveViewportRecordingDialog() {
   if (NFD_Init() != NFD_OKAY) return {std::nullopt, NFD_GetError()};
   const nfdu8filteritem_t filters[] = {{"MP4 video", "mp4"}};

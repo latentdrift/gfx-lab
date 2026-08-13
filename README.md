@@ -41,6 +41,7 @@ src/
     HardwareProfile.cpp       target capabilities and state normalization
     PassEditing.cpp           global/local inspector reconciliation
     RenderStack.cpp           pass definitions, compositing state, and stack export
+    StackDocument.cpp         validated JSON document loading and file persistence
     State.cpp                 explicit renderer state, scene setups, JSON export
     Validation.cpp            opt-in renderer, document, import, and UI validation suite
   assets/
@@ -71,6 +72,17 @@ src/
 - Redo: Ctrl+Shift+Z or Ctrl+Y
 - Play/pause animation: Space
 
+Use **File → Save Stack JSON…** (`Ctrl+S`) to save the complete authored document, and
+**File → Open Stack JSON…** (`Ctrl+O`) to restore it. Loading restores the global base, sparse pass
+overrides, pass identities and operands, animation tracks and timeline, camera, scene, hardware target,
+display reconstruction, and imported asset references. A parse or asset error leaves the current document
+untouched.
+
+The [`examples`](examples) directory contains loadable stack documents. Start with
+[`rod-cone-xor-sdf.json`](examples/rod-cone-xor-sdf.json): it XORs two related SDF render passes, then sends
+the result through the quantized rod/cone observer comparison. Its parameters remain ordinary editable lab
+state after loading.
+
 Graphics Lab uses a persistent dockable workspace rather than one fixed application page. **Scene**, **Render Passes**, **Pass Properties**, **Viewport**, every rendering-pipeline category, **Texture Mapping**, **Display Reconstruction**, **Animation Timeline**, and **Pass Differences** are independent tool windows. The pipeline, mapping, and final-display tools begin as tabs in one dock node; tear out or rearrange the tools needed for an experiment and manage them under **Window**. **Window → Restore Default Layout** rebuilds the supplied compact workspace. ImGui saves subsequent window and docking changes between runs.
 
 Use **View → UI Scale** to resize text, controls, spacing, tabs, and interaction targets together from 75% to
@@ -97,6 +109,8 @@ Press **Duplicate pass** to copy one compact set of deviations, then change only
 
 **Display Reconstruction** is deliberately downstream of the render stack. It can leave the final image as direct RGB or approximate composite-NTSC chroma bandwidth and luma/chroma crosstalk, then model scanlines, an aperture grille, and display bloom. These controls affect presentation only: raw pass textures and all A/B arithmetic remain unchanged and inspectable.
 
+Its RGB observer modes reinterpret the completed image through approximate L, M, S cone and scotopic rod responses. Outputs include the LMS triplet, individual receptor channels, rod vision, a mesopic rod/cone mixture, L-minus-M and blue/yellow opponent channels, rod/cone absolute difference, and quantized rod/cone XOR. Exposure, dark adaptation, rod sensitivity, opponent gain, and XOR precision remain explicit. This is an RGB observer approximation rather than spectral rendering, so it cannot separate metameric spectra that already collapsed to the same RGB value.
+
 The **Animation dope sheet** stores a separate sparse track for each animated property. Global tracks move the shared base for all inheriting passes; local tracks move only one pass and take precedence over its static override and the evaluated global value. Track rows use the same technical names as the inspector and show every keyed time as a diamond. Click a diamond to select it, scrub by clicking a track, and edit the selected key's exact time, value, and step/linear/smooth-step interpolation at the right. **All passes** shows the global tracks and every pass's local tracks together.
 
 Animatable inspector controls have a right-aligned diamond: gray outline means unanimated, blue means the property has a track, and gold means it has a key at the playhead. Click the diamond to add or remove that exact key. Once a property is animated, changing its ordinary control writes that property at the playhead; **Auto Key** allows an ordinary control edit to create its first track. The control displays the evaluated playhead value, so editing does not require copying a sampled pose into the pass first.
@@ -113,7 +127,7 @@ The Nintendo 64 target exposes the standard RSP/RDP/VI model: one- or two-cycle 
 
 The unrestricted **Field** tool can produce either wave interference or a genuine signed-distance field. SDF producers currently include sphere, box, and torus primitives with union, intersection, A-minus-B, and smooth-union operations. The pass field attachment stores signed world-unit distance in `R16F`; preview colors are only a display mapping, while named pass-field operands retain negative and positive values for composite arithmetic. A proximity mapping lets the same field drive mesh-vertex displacement, fragment discard, surface color, emission, and pass masks. **Ray-march iso-surface** renders the selected level as implicit geometry and writes fragment depth, so it participates in ordinary occlusion with rasterized meshes. Producer transforms, dimensions, combination, smoothing, iso level, and iso color are animatable.
 
-Use **File > Copy Stack JSON** to place a human-readable `graphics-lab.render-stack.v7` document on the clipboard. It records the global base, sparse local overrides, global and local property tracks, effective time-zero renderers, texture mapping, pass perturbations, selected output buffers, composite equations, masks, color spaces, range behavior, scene, and camera. Evaluation order is explicit: global base, global track, local override, then local track.
+Use **File > Copy Stack JSON** to place the same human-readable `graphics-lab.render-stack.v8` document on the clipboard. It records the global base, sparse local overrides, global and local property tracks, effective time-zero renderers, texture mapping, pass perturbations, selected output buffers, composite equations, masks, color spaces, range behavior, scene, camera, and display/observer state. Evaluation order is explicit: global base, global track, local override, then local track.
 
 Use **Help > Graphics Handbook** to open the built-in technical reference. Start with **From mesh to pixel**, then follow its related-concept links or browse the knowledge map. Every article begins with a plain causal **Quick read** before preserving the precise definition, pipeline location, visible results, interactions, engine vocabulary, and technical diagram. The map groups the pipeline, shading, visibility and output, engine systems, animation, and ray tracing. Reading never changes renderer state; example buttons apply configurations deliberately.
 

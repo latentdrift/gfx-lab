@@ -148,6 +148,17 @@ bool RenderStack::moveSelected(const int direction) {
   return true;
 }
 
+void RenderStack::replacePasses(std::vector<RenderPass> passes) {
+  if (passes.empty()) passes.emplace_back();
+  if (passes.size() > maximumPasses) passes.resize(maximumPasses);
+  int maximumId = 0;
+  for (RenderPass& pass : passes) maximumId = std::max(maximumId, pass.id);
+  passes_ = std::move(passes);
+  selected_ = 0;
+  nextPassId_ = std::max(maximumId + 1, 1);
+  nextPassNumber_ = static_cast<unsigned int>(passes_.size() + 1);
+}
+
 namespace {
 constexpr std::array<const char*, 19> labels = {
   "Absolute difference", "Signed A - B", "Positive A - B", "Positive B - A", "Multiply", "Screen",
@@ -248,16 +259,28 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   json << "  \"evaluation\": \"bottom_to_top_sequential_compositing\",\n";
   json << "  \"property_precedence\": \"global base, global track, local override, local track\",\n";
   json << "  \"seed_rule\": \"the first enabled pass becomes the accumulator; every later enabled pass applies its composite step\",\n";
+  json << "  \"hardware_target\": \"" << hardwareProfileId(profile) << "\",\n";
   json << "  \"test_scene\": \"" << testSceneName(scene) << "\",\n";
   const DisplayReconstructionState& display = stack.display();
+  constexpr std::array<const char*, 12> displaySignalIds = {
+    "direct_rgb", "composite_ntsc", "lms_receptor_triplet", "rod_response", "mesopic_mix",
+    "l_cone_response", "m_cone_response", "s_cone_response", "l_minus_m_opponent",
+    "s_minus_lm_half_opponent", "rod_cone_absolute_difference", "rod_cone_quantized_xor"
+  };
   json << "  \"display_reconstruction\": {\"enabled\": " << display.enabled
-       << ", \"signal\": \"" << (display.signal == DisplaySignal::DirectRgb ? "direct_rgb" : "composite_ntsc")
+       << ", \"signal\": \"" << displaySignalIds[std::clamp(static_cast<int>(display.signal), 0, 11)]
        << "\", \"chroma_bleed\": " << display.chromaBleed
        << ", \"luma_chroma_crosstalk\": " << display.lumaChromaCrosstalk
        << ", \"scanline_strength\": " << display.scanlineStrength
        << ", \"phosphor_mask_strength\": " << display.phosphorMaskStrength
        << ", \"bloom_strength\": " << display.bloomStrength
-       << ", \"bloom_radius_pixels\": " << display.bloomRadiusPixels << "},\n";
+       << ", \"bloom_radius_pixels\": " << display.bloomRadiusPixels
+       << ", \"rgb_observer_approximation\": {\"exposure_stops\": " << display.observerExposureStops
+       << ", \"dark_adaptation_rod_fraction\": " << display.darkAdaptation
+       << ", \"rod_sensitivity\": " << display.rodSensitivity
+       << ", \"opponent_gain\": " << display.opponentGain
+       << ", \"xor_bit_depth\": " << display.receptorXorBits
+       << ", \"spectral_rendering\": false}},\n";
   if (importedModel != nullptr) {
     json << "  \"imported_model\": {\"name\": \"" << escape(importedModel->name)
          << "\", \"source_path\": \"" << escape(importedModel->sourcePath)

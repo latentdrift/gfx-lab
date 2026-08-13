@@ -13,6 +13,7 @@ find_package(imgui REQUIRED)
 find_package(assimp REQUIRED)
 find_package(nfd REQUIRED)
 find_package(ZLIB REQUIRED)
+find_package(nlohmann_json REQUIRED)
 find_program(GRAPHICS_LAB_FFMPEG_EXECUTABLE ffmpeg REQUIRED)
 
 add_executable(graphics-lab
@@ -26,6 +27,7 @@ add_executable(graphics-lab
   src/app/PassEditing.cpp
   src/app/RenderStack.cpp
   src/app/State.cpp
+  src/app/StackDocument.cpp
   src/app/Validation.cpp
   src/app/ViewportRecorder.cpp
   src/handbook/Handbook.cpp
@@ -63,6 +65,7 @@ target_link_libraries(graphics-lab PRIVATE
   assimp::assimp
   nfd::nfd
   ZLIB::ZLIB
+  nlohmann_json::nlohmann_json
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -73,3 +76,4 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 install(TARGETS graphics-lab RUNTIME DESTINATION bin)
+install(DIRECTORY examples DESTINATION share/graphics-lab)

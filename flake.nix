@@ -48,6 +48,7 @@
               nativefiledialog-extended
               stb
               zlib
+              nlohmann_json
               gtk3
               gsettings-desktop-schemas
               libGL
@@ -86,6 +87,7 @@
               nativefiledialog-extended
               stb
               zlib
+              nlohmann_json
               gtk3
               gsettings-desktop-schemas
               libGL

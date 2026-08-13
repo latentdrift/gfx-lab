@@ -24,7 +24,13 @@ enum class CompositeSource {
 };
 enum class TextureSource { SceneMaterial, BuiltInChecker, ImportedOverride, White };
 enum class UvMapping { MeshUv0, PlanarXy, PlanarXz, PlanarYz };
-enum class DisplaySignal { DirectRgb, CompositeNtsc };
+enum class DisplaySignal {
+  DirectRgb, CompositeNtsc,
+  LmsReceptorTriplet, RodResponse, MesopicMix,
+  LResponse, MResponse, SResponse,
+  RedGreenOpponent, BlueYellowOpponent,
+  RodConeDifference, RodConeXor
+};
 
 struct DisplayReconstructionState {
   bool enabled = false;
@@ -35,6 +41,11 @@ struct DisplayReconstructionState {
   float phosphorMaskStrength = 0.10f;
   float bloomStrength = 0.12f;
   float bloomRadiusPixels = 2.0f;
+  float observerExposureStops = 0.0f;
+  float darkAdaptation = 0.65f;
+  float rodSensitivity = 4.0f;
+  float opponentGain = 4.0f;
+  int receptorXorBits = 5;
 };
 
 struct PassPerturbation {
@@ -113,6 +124,7 @@ public:
   bool duplicateSelected();
   bool removeSelected();
   bool moveSelected(int direction);
+  void replacePasses(std::vector<RenderPass> passes);
 
 private:
   RenderPass global_;

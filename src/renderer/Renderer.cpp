@@ -1135,6 +1135,11 @@ public:
     glUniform1f(glGetUniformLocation(displayProgram_, "uMaskStrength"), state.phosphorMaskStrength);
     glUniform1f(glGetUniformLocation(displayProgram_, "uBloomStrength"), state.bloomStrength);
     glUniform1f(glGetUniformLocation(displayProgram_, "uBloomRadius"), state.bloomRadiusPixels);
+    glUniform1f(glGetUniformLocation(displayProgram_, "uObserverExposureStops"), state.observerExposureStops);
+    glUniform1f(glGetUniformLocation(displayProgram_, "uDarkAdaptation"), state.darkAdaptation);
+    glUniform1f(glGetUniformLocation(displayProgram_, "uRodSensitivity"), state.rodSensitivity);
+    glUniform1f(glGetUniformLocation(displayProgram_, "uOpponentGain"), state.opponentGain);
+    glUniform1i(glGetUniformLocation(displayProgram_, "uReceptorXorBits"), state.receptorXorBits);
     glBindVertexArray(fullscreenVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

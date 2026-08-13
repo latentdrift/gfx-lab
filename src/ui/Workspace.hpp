@@ -33,6 +33,8 @@ struct WorkspaceActions {
   bool redo = false;
   bool importModel = false;
   bool copyJson = false;
+  bool saveJson = false;
+  bool loadJson = false;
   bool toggleViewportRecording = false;
   bool handbook = false;
   bool resetFrameHistory = false;

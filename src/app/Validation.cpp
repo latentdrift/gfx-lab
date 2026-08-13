@@ -6,6 +6,7 @@
 #include "app/HardwareProfile.hpp"
 #include "app/PassEditing.hpp"
 #include "app/RenderStack.hpp"
+#include "app/StackDocument.hpp"
 #include "assets/ModelAsset.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
@@ -16,6 +17,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 
 namespace gfxlab {
@@ -310,7 +312,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       fail("extreme temporal composite feedback produced an OpenGL error");
     compositeValidation.display().enabled = true;
     for (int signal = static_cast<int>(DisplaySignal::DirectRgb);
-         signal <= static_cast<int>(DisplaySignal::CompositeNtsc); ++signal) {
+         signal <= static_cast<int>(DisplaySignal::RodConeXor); ++signal) {
       compositeValidation.display().signal = static_cast<DisplaySignal>(signal);
       const unsigned int composite = renderer.composite(compositeValidation);
       if (renderer.reconstructDisplay(composite, compositeValidation.display(),
@@ -340,6 +342,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         stackConfig.find("\"fixed_color_rgba\"") == std::string::npos ||
         stackConfig.find("\"previous_frame\"") == std::string::npos ||
         stackConfig.find("\"display_reconstruction\"") == std::string::npos ||
+        stackConfig.find("rod_cone_quantized_xor") == std::string::npos ||
+        stackConfig.find("\"spectral_rendering\": false") == std::string::npos ||
         stackConfig.find("\"animation\"") == std::string::npos ||
         stackConfig.find("\"property_tracks\"") == std::string::npos ||
         stackConfig.find("\"value_kind\"") == std::string::npos ||
@@ -351,6 +355,31 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         stackConfig.find("\"imported_model\"") == std::string::npos ||
         stackConfig.find("\"effective_renderer_at_time_zero\"") == std::string::npos)
       fail("render-pass stack missing from config export");
+    const StackDocumentLoadResult exampleDocument = loadStackDocumentFile("examples/rod-cone-xor-sdf.json");
+    if (!exampleDocument || exampleDocument.document->scene != TestScene::SdfIsoSurface ||
+        exampleDocument.document->renderStack.passes().size() != 2 ||
+        exampleDocument.document->renderStack.display().signal != DisplaySignal::RodConeXor ||
+        !exampleDocument.document->renderStack.display().enabled ||
+        exampleDocument.document->renderStack.passes()[1].composite.operation != RelationOperator::BitwiseXor ||
+        findRenderPassOverride(exampleDocument.document->renderStack.passes()[0],
+          AnimationProperty::SdfAType) == nullptr)
+      fail("rod/cone XOR example stack failed document loading validation");
+    const std::filesystem::path roundTripPath = std::filesystem::temp_directory_path() /
+      "graphics-lab-stack-document-validation.json";
+    std::string documentIoError;
+    const std::string roundTripJson = renderStackConfigJson(exampleDocument.document->renderStack,
+      exampleDocument.document->camera, exampleDocument.document->scene,
+      exampleDocument.document->hardwareProfile, &exampleDocument.document->timeline);
+    if (!saveStackDocumentFile(roundTripPath.string(), roundTripJson, documentIoError))
+      fail("stack document save validation failed: " + documentIoError);
+    const StackDocumentLoadResult roundTripDocument = loadStackDocumentFile(roundTripPath.string());
+    std::error_code removeError;
+    std::filesystem::remove(roundTripPath, removeError);
+    if (!roundTripDocument || roundTripDocument.document->renderStack.passes().size() != 2 ||
+        roundTripDocument.document->renderStack.display().signal != DisplaySignal::RodConeXor ||
+        roundTripDocument.document->renderStack.passes()[1].composite.operation != RelationOperator::BitwiseXor ||
+        std::abs(roundTripDocument.document->camera.yaw - exampleDocument.document->camera.yaw) > 0.0001f)
+      fail("stack document save/load round trip failed validation");
     constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,
       handbook::Example::AffineMapping, handbook::Example::TextureMinification, handbook::Example::NormalMapping,
       handbook::Example::LightingInterpolation, handbook::Example::DepthPrecision, handbook::Example::Transparency,

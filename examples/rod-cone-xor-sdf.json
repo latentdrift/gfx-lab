@@ -1,0 +1,114 @@
+{
+  "schema": "graphics-lab.render-stack.v8",
+  "hardware_target": "unrestricted",
+  "test_scene": "sdf_iso_surface",
+  "view": {
+    "orbit_yaw_radians": -0.88,
+    "orbit_pitch_radians": 0.72,
+    "distance_units": 5.4,
+    "target": [0.0, -0.15, 0.0]
+  },
+  "display_reconstruction": {
+    "enabled": true,
+    "signal": "rod_cone_quantized_xor",
+    "chroma_bleed": 0.0,
+    "luma_chroma_crosstalk": 0.0,
+    "scanline_strength": 0.0,
+    "phosphor_mask_strength": 0.0,
+    "bloom_strength": 0.0,
+    "bloom_radius_pixels": 2.0,
+    "rgb_observer_approximation": {
+      "exposure_stops": 0.0,
+      "dark_adaptation_rod_fraction": 0.65,
+      "rod_sensitivity": 4.0,
+      "opponent_gain": 4.0,
+      "xor_bit_depth": 5,
+      "spectral_rendering": false
+    }
+  },
+  "animation_timeline": {
+    "duration_seconds": 4.0,
+    "playback_rate": 1.0,
+    "loop": true,
+    "auto_key": false,
+    "show_all_passes": false,
+    "snap_to_frames": true,
+    "frames_per_second": 24,
+    "current_time_seconds": 0.0
+  },
+  "global_base": {
+    "properties": {
+      "lighting_model": [2.0],
+      "ambient": [0.12],
+      "field_enabled": [1.0],
+      "field_producer_kind": [1.0],
+      "sdf_a_type": [1.0],
+      "sdf_a_position": [-1.05, 0.30, -0.20],
+      "sdf_a_parameters": [1.10, 0.42, 0.42],
+      "sdf_b_type": [2.0],
+      "sdf_b_position": [0.85, 0.0, 0.0],
+      "sdf_b_parameters": [0.85, 0.28, 0.28],
+      "sdf_operation": [3.0],
+      "sdf_smoothness": [0.45],
+      "sdf_preview_range": [1.5],
+      "iso_surface_enabled": [1.0],
+      "iso_level": [0.0],
+      "iso_color": [0.64, 0.78, 1.0],
+      "iso_maximum_steps": [128.0],
+      "iso_hit_epsilon": [0.002],
+      "iso_maximum_distance": [30.0],
+      "depth_test_enabled": [1.0],
+      "depth_write_enabled": [1.0],
+      "linear_light": [1.0],
+      "internal_resolution": [640.0, 480.0]
+    },
+    "property_tracks": []
+  },
+  "passes": [
+    {
+      "id": 1,
+      "name": "Torus interpretation",
+      "enabled": true,
+      "output_buffer": "color",
+      "overrides": [
+        {"property": "sdf_a_type", "value": [2.0]},
+        {"property": "sdf_a_position", "value": [-1.05, -0.48, -0.48]},
+        {"property": "sdf_a_parameters", "value": [1.18, 0.52, 0.52]}
+      ],
+      "composite_into_previous": {
+        "operation": "absolute_difference",
+        "source_a": {"type": "accumulated_result", "pass_id": 1},
+        "source_b": {"type": "current_pass", "pass_id": 1},
+        "gain": 1.0,
+        "bias": 0.0,
+        "opacity": 1.0,
+        "arithmetic_color_space": "encoded_rgb",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    },
+    {
+      "id": 2,
+      "name": "Box interpretation XOR",
+      "enabled": true,
+      "output_buffer": "color",
+      "overrides": [],
+      "composite_into_previous": {
+        "operation": "bitwise_xor",
+        "source_a": {"type": "accumulated_result", "pass_id": 1},
+        "source_b": {"type": "current_pass", "pass_id": 2},
+        "bit_depth": 8,
+        "gain": 1.0,
+        "bias": 0.0,
+        "opacity": 1.0,
+        "arithmetic_color_space": "encoded_rgb",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    }
+  ]
+}
