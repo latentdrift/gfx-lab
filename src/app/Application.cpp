@@ -16,6 +16,7 @@
 #include "app/RenderStack.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
+#include "ui/AnimationEditor.hpp"
 #include "ui/Inspector.hpp"
 #include "ui/PassInspector.hpp"
 
@@ -78,6 +79,10 @@ int runApplication() {
   CompareMode compare = CompareMode::A;
   HardwareProfile hardwareProfile = HardwareProfile::Unrestricted;
   bool viewportHovered = false;
+  bool animationPanelOpen = true;
+  bool previewAnimation = false;
+  AnimationTimeline animationTimeline;
+  double previousFrameTime = glfwGetTime();
   double configCopiedAt = -10.0;
   handbook::Handbook graphicsHandbook;
 
@@ -236,6 +241,10 @@ int runApplication() {
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
+    const double frameTime = glfwGetTime();
+    const float deltaSeconds = static_cast<float>(std::min(frameTime - previousFrameTime, 0.1));
+    previousFrameTime = frameTime;
+    animationTimeline.advance(deltaSeconds);
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
@@ -305,6 +314,9 @@ int runApplication() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Handbook")) graphicsHandbook.open();
+    ImGui::SameLine();
+    if (ImGui::Button(animationPanelOpen ? "Hide animation" : "Animation"))
+      animationPanelOpen = !animationPanelOpen;
     ImGui::TextDisabled("Compare:");
     ImGui::SameLine();
     if (ImGui::RadioButton("Selected pass", compare == CompareMode::A)) compare = CompareMode::A;
@@ -317,6 +329,10 @@ int runApplication() {
     ImGui::SameLine(ImGui::GetWindowWidth() - 260);
     ImGui::TextDisabled("LMB orbit   MMB/RMB pan   Wheel zoom");
     ImGui::Separator();
+    if (animationPanelOpen) {
+      drawAnimationEditor(animationTimeline, renderStack, previewAnimation);
+      ImGui::Separator();
+    }
 
     const float contentHeight = ImGui::GetContentRegionAvail().y;
     constexpr float pipelineWidth = 200.0f;
@@ -367,14 +383,17 @@ int runApplication() {
       paneOrigin.x + std::floor((available.x - presentationSize.x) * 0.5f),
       paneOrigin.y + std::floor((available.y - presentationSize.y) * 0.5f));
     const ImVec2 end(origin.x + presentationSize.x, origin.y + presentationSize.y);
+    for (RenderPass& pass : renderStack.passes()) normalizeForHardwareProfile(hardwareProfile, pass.renderer);
+    const bool evaluateAnimation = animationTimeline.playing || previewAnimation;
+    RenderStack evaluatedStack = evaluateAnimation
+      ? evaluateRenderStack(renderStack, animationTimeline.timeSeconds) : renderStack;
     std::array<GLuint, RenderStack::maximumPasses> passTextures{};
-    for (std::size_t passIndex = 0; passIndex < renderStack.passes().size(); ++passIndex) {
-      normalizeForHardwareProfile(hardwareProfile, renderStack.passes()[passIndex].renderer);
-      passTextures[passIndex] = renderer.renderPass(renderStack.passes()[passIndex], camera, scene, passIndex);
+    for (std::size_t passIndex = 0; passIndex < evaluatedStack.passes().size(); ++passIndex) {
+      passTextures[passIndex] = renderer.renderPass(evaluatedStack.passes()[passIndex], camera, scene, passIndex);
     }
     const GLuint selectedTexture = passTextures[renderStack.selectedIndex()];
     const GLuint baseTexture = passTextures.front();
-    const GLuint renderedComposite = renderer.composite(renderStack);
+    const GLuint renderedComposite = renderer.composite(evaluatedStack);
     const GLuint compositeTexture = renderedComposite != 0 ? renderedComposite : selectedTexture;
     ImDrawList* draw = ImGui::GetWindowDrawList();
     draw->AddRectFilled(origin, end, IM_COL32(27, 29, 31, 255));
