@@ -158,6 +158,23 @@ int runApplication() {
         validationStack.passes().size() != 3 || !validationStack.moveSelected(-1) ||
         !validationStack.removeSelected() || validationStack.passes().size() != 2)
       fail("render-pass stack operations failed validation");
+    validationStack.global().renderer.lighting.ambient = 0.31f;
+    validationStack.global().perturbation.modelTranslation = {0.2f, 0.0f, 0.0f};
+    setRenderPassOverride(validationStack.selected(), AnimationProperty::Ambient, glm::vec4(0.77f));
+    setRenderPassOverride(validationStack.selected(), AnimationProperty::UvOffset,
+      glm::vec4(0.125f, 0.0f, 0.0f, 0.0f));
+    validationStack.global().renderer.post.fogStart = 2.0f;
+    setPropertyKeyframe(validationStack.global(), AnimationProperty::FogStart, 0.0f);
+    validationStack.global().renderer.post.fogStart = 6.0f;
+    setPropertyKeyframe(validationStack.global(), AnimationProperty::FogStart, 2.0f);
+    const RenderPass hierarchicalPass = materializeRenderPass(validationStack,
+      validationStack.selectedIndex(), 1.0f);
+    if (std::abs(hierarchicalPass.renderer.lighting.ambient - 0.77f) > 0.0001f ||
+        std::abs(hierarchicalPass.perturbation.modelTranslation.x - 0.2f) > 0.0001f ||
+        std::abs(hierarchicalPass.perturbation.uvOffset.x - 0.125f) > 0.0001f ||
+        std::abs(hierarchicalPass.renderer.post.fogStart - 4.0f) > 0.0001f ||
+        validationStack.selected().overrides.size() != 2)
+      fail("global base, sparse override, or hierarchical animation evaluation failed validation");
     RenderStack animationValidation;
     animationValidation.select(1);
     animationValidation.selected().perturbation.modelTranslation.x = 0.0f;
@@ -227,10 +244,12 @@ int runApplication() {
     EditorHistory historyValidation(historyInitial);
     historyStack.select(0);
     historyStack.duplicateSelected();
-    historyStack.selected().renderer.lighting.ambient = 0.4f;
-    historyStack.selected().perturbation.uvOffset = {0.25f, -0.125f};
-    historyStack.selected().textureSource = TextureSource::ImportedOverride;
+    setRenderPassOverride(historyStack.selected(), AnimationProperty::Ambient, glm::vec4(0.4f));
+    setRenderPassOverride(historyStack.selected(), AnimationProperty::UvOffset, glm::vec4(0.25f, -0.125f, 0, 0));
+    setRenderPassOverride(historyStack.selected(), AnimationProperty::TextureSource,
+      glm::vec4(static_cast<float>(TextureSource::ImportedOverride)));
     historyStack.selected().importedTexture = importedTexture.asset;
+    historyStack.selected().importedTextureOverride = true;
     setPropertyKeyframe(historyStack.selected(), AnimationProperty::UvOffset, 1.0f);
     historyCamera.yaw = 1.25f;
     historyScene = TestScene::Lighting;
@@ -238,8 +257,8 @@ int runApplication() {
     historyTimeline.durationSeconds = 9.0f;
     historyValidation.observe(captureEditorSnapshot(historyStack, historyCamera, historyScene, historyProfile,
       historyTimeline, importedFixture.asset), true);
-    historyStack.selected().renderer.lighting.ambient = 0.7f;
-    historyStack.selected().perturbation.cameraYaw = 0.2f;
+    setRenderPassOverride(historyStack.selected(), AnimationProperty::Ambient, glm::vec4(0.7f));
+    setRenderPassOverride(historyStack.selected(), AnimationProperty::CameraYaw, glm::vec4(0.2f));
     historyValidation.observe(captureEditorSnapshot(historyStack, historyCamera, historyScene, historyProfile,
       historyTimeline, importedFixture.asset), true);
     const EditorSnapshot historyChanged = captureEditorSnapshot(historyStack, historyCamera, historyScene,
@@ -247,7 +266,8 @@ int runApplication() {
     historyValidation.observe(historyChanged, false);
     EditorSnapshot historyRestored;
     if (!historyValidation.undo(historyChanged, historyRestored) ||
-        std::abs(historyRestored.renderStack.selected().renderer.lighting.ambient - 0.22f) > 0.0001f ||
+        std::abs(materializeRenderPass(historyRestored.renderStack,
+          historyRestored.renderStack.selectedIndex()).renderer.lighting.ambient - 0.22f) > 0.0001f ||
         historyRestored.renderStack.passes().size() != 2 || historyRestored.scene != TestScene::Torus ||
         historyRestored.hardwareProfile != HardwareProfile::Unrestricted ||
         historyRestored.importedModel != nullptr ||
@@ -256,13 +276,18 @@ int runApplication() {
         historyValidation.canUndo() || !historyValidation.canRedo())
       fail("editor history undo or interaction coalescing failed validation");
     if (!historyValidation.redo(historyRestored, historyRestored) ||
-        std::abs(historyRestored.renderStack.selected().renderer.lighting.ambient - 0.7f) > 0.0001f ||
-        std::abs(historyRestored.renderStack.selected().perturbation.cameraYaw - 0.2f) > 0.0001f ||
+        std::abs(materializeRenderPass(historyRestored.renderStack,
+          historyRestored.renderStack.selectedIndex()).renderer.lighting.ambient - 0.7f) > 0.0001f ||
+        std::abs(materializeRenderPass(historyRestored.renderStack,
+          historyRestored.renderStack.selectedIndex()).perturbation.cameraYaw - 0.2f) > 0.0001f ||
         historyRestored.renderStack.passes().size() != 3 ||
         historyRestored.renderStack.selected().animation.tracks.size() != 1 ||
-        historyRestored.renderStack.selected().textureSource != TextureSource::ImportedOverride ||
-        historyRestored.renderStack.selected().importedTexture == nullptr ||
-        historyRestored.renderStack.selected().importedTexture->contentHash != importedTexture.asset->contentHash ||
+        materializeRenderPass(historyRestored.renderStack,
+          historyRestored.renderStack.selectedIndex()).textureSource != TextureSource::ImportedOverride ||
+        materializeRenderPass(historyRestored.renderStack,
+          historyRestored.renderStack.selectedIndex()).importedTexture == nullptr ||
+        materializeRenderPass(historyRestored.renderStack,
+          historyRestored.renderStack.selectedIndex()).importedTexture->contentHash != importedTexture.asset->contentHash ||
         historyRestored.scene != TestScene::Lighting ||
         historyRestored.hardwareProfile != HardwareProfile::Nintendo64 ||
         historyRestored.importedModel == nullptr ||
@@ -273,14 +298,18 @@ int runApplication() {
     RenderStack compositeValidation;
     compositeValidation.select(1);
     compositeValidation.duplicateSelected();
-    compositeValidation.passes()[1].perturbation.cameraYaw = 0.01f;
-    compositeValidation.passes()[2].perturbation.uvOffset = {1.0f / 256.0f, 0.0f};
-    compositeValidation.passes()[2].textureSource = TextureSource::ImportedOverride;
+    setRenderPassOverride(compositeValidation.passes()[1], AnimationProperty::CameraYaw, glm::vec4(0.01f));
+    setRenderPassOverride(compositeValidation.passes()[2], AnimationProperty::UvOffset,
+      glm::vec4(1.0f / 256.0f, 0.0f, 0, 0));
+    setRenderPassOverride(compositeValidation.passes()[2], AnimationProperty::TextureSource,
+      glm::vec4(static_cast<float>(TextureSource::ImportedOverride)));
     compositeValidation.passes()[2].importedTexture = importedTexture.asset;
+    compositeValidation.passes()[2].importedTextureOverride = true;
     setPropertyKeyframe(compositeValidation.passes()[2], AnimationProperty::WireframeOverlay, 0.0f);
     compositeValidation.passes()[2].composite.operation = RelationOperator::Exclusion;
-    for (std::size_t passIndex = 0; passIndex < compositeValidation.passes().size(); ++passIndex)
-      renderer.renderPass(compositeValidation.passes()[passIndex], camera, scene, passIndex);
+    const RenderStack materializedCompositeValidation = evaluateRenderStack(compositeValidation, 0.0f);
+    for (std::size_t passIndex = 0; passIndex < materializedCompositeValidation.passes().size(); ++passIndex)
+      renderer.renderPass(materializedCompositeValidation.passes()[passIndex], camera, scene, passIndex);
     if (renderer.composite(compositeValidation) == 0)
       fail("sequential render-pass compositing failed validation");
     for (int mask = static_cast<int>(CompositeMask::None); mask <= static_cast<int>(CompositeMask::PassEdges); ++mask) {
@@ -292,6 +321,8 @@ int runApplication() {
       HardwareProfile::Unrestricted, nullptr, importedFixture.asset.get());
     if (stackConfig.find("graphics-lab.render-stack.v1") == std::string::npos ||
         stackConfig.find("\"passes\"") == std::string::npos ||
+        stackConfig.find("\"global_base\"") == std::string::npos ||
+        stackConfig.find("\"overrides\"") == std::string::npos ||
         stackConfig.find("\"perturbation\"") == std::string::npos ||
         stackConfig.find("\"composite_into_previous\"") == std::string::npos ||
         stackConfig.find("\"animation\"") == std::string::npos ||
@@ -300,7 +331,8 @@ int runApplication() {
         stackConfig.find("\"animation_behavior\"") == std::string::npos ||
         stackConfig.find("\"texture_source\": \"imported_override\"") == std::string::npos ||
         stackConfig.find("\"imported_texture\"") == std::string::npos ||
-        stackConfig.find("\"imported_model\"") == std::string::npos)
+        stackConfig.find("\"imported_model\"") == std::string::npos ||
+        stackConfig.find("\"effective_renderer_at_time_zero\"") == std::string::npos)
       fail("render-pass stack missing from config export");
     constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,
       handbook::Example::AffineMapping, handbook::Example::TextureMinification, handbook::Example::NormalMapping,
@@ -404,8 +436,7 @@ int runApplication() {
   }
 
   RenderStack renderStack;
-  renderStack.passes()[0].renderer = current;
-  renderStack.passes()[1].renderer = reference;
+  renderStack.global().renderer = current;
   std::shared_ptr<const ModelAsset> importedModel;
   std::string modelImportError;
   EditorHistory editorHistory(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile,
@@ -657,8 +688,8 @@ int runApplication() {
     const ImVec2 end(origin.x + presentationSize.x, origin.y + presentationSize.y);
     for (RenderPass& pass : renderStack.passes()) normalizeForHardwareProfile(hardwareProfile, pass.renderer);
     const bool evaluateAnimation = animationTimeline.playing || previewAnimation;
-    RenderStack evaluatedStack = evaluateAnimation
-      ? evaluateRenderStack(renderStack, animationTimeline.timeSeconds) : renderStack;
+    RenderStack evaluatedStack = evaluateRenderStack(renderStack,
+      evaluateAnimation ? animationTimeline.timeSeconds : 0.0f);
     for (RenderPass& pass : evaluatedStack.passes()) normalizeForHardwareProfile(hardwareProfile, pass.renderer);
     std::array<GLuint, RenderStack::maximumPasses> passTextures{};
     for (std::size_t passIndex = 0; passIndex < evaluatedStack.passes().size(); ++passIndex) {

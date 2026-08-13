@@ -44,6 +44,11 @@ struct CompositeStep {
   bool invertMask = false;
 };
 
+struct PropertyOverride {
+  AnimationProperty property = AnimationProperty::VertexQuantization;
+  glm::vec4 value{0.0f};
+};
+
 struct RenderPass {
   std::string name;
   bool enabled = true;
@@ -55,6 +60,8 @@ struct RenderPass {
   bool importedTextureSrgb = true;
   CompositeStep composite;
   PassAnimation animation;
+  std::vector<PropertyOverride> overrides;
+  bool importedTextureOverride = false;
 };
 
 class RenderStack {
@@ -68,6 +75,8 @@ public:
   [[nodiscard]] std::size_t selectedIndex() const { return selected_; }
   [[nodiscard]] RenderPass& selected();
   [[nodiscard]] const RenderPass& selected() const;
+  [[nodiscard]] RenderPass& global() { return global_; }
+  [[nodiscard]] const RenderPass& global() const { return global_; }
 
   void select(std::size_t index);
   bool duplicateSelected();
@@ -75,10 +84,19 @@ public:
   bool moveSelected(int direction);
 
 private:
+  RenderPass global_;
   std::vector<RenderPass> passes_;
   std::size_t selected_ = 0;
   unsigned int nextPassNumber_ = 3;
 };
+
+[[nodiscard]] bool animationPropertyIsPassLocal(AnimationProperty property);
+[[nodiscard]] const PropertyOverride* findRenderPassOverride(const RenderPass& pass, AnimationProperty property);
+void setRenderPassOverride(RenderPass& pass, AnimationProperty property, const glm::vec4& value);
+[[nodiscard]] bool clearRenderPassOverride(RenderPass& pass, AnimationProperty property);
+void replaceRenderPassOverrides(RenderPass& pass, const RenderPass& global, const RenderPass& materialized);
+[[nodiscard]] RenderPass materializeRenderPass(const RenderStack& stack, std::size_t passIndex,
+  float timeSeconds = 0.0f);
 
 [[nodiscard]] const char* relationOperatorLabel(RelationOperator operation);
 [[nodiscard]] const char* relationOperatorId(RelationOperator operation);

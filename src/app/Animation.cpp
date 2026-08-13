@@ -551,7 +551,7 @@ RenderPass evaluateRenderPass(const RenderPass& source, const float timeSeconds)
 RenderStack evaluateRenderStack(const RenderStack& source, const float timeSeconds) {
   RenderStack evaluated = source;
   for (std::size_t index = 0; index < source.passes().size(); ++index)
-    evaluated.passes()[index] = evaluateRenderPass(source.passes()[index], timeSeconds);
+    evaluated.passes()[index] = materializeRenderPass(source, index, timeSeconds);
   return evaluated;
 }
 

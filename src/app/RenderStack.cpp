@@ -10,11 +10,84 @@
 namespace gfxlab {
 
 RenderStack::RenderStack() {
+  global_.name = "Global base";
   RenderPass a;
   a.name = "Pass A";
   RenderPass b = a;
   b.name = "Pass B";
   passes_ = {std::move(a), std::move(b)};
+}
+
+bool animationPropertyIsPassLocal(const AnimationProperty property) {
+  switch (property) {
+  case AnimationProperty::PassEnabled:
+  case AnimationProperty::PassOutput:
+  case AnimationProperty::CompositeGain:
+  case AnimationProperty::CompositeBias:
+  case AnimationProperty::CompositeOpacity:
+  case AnimationProperty::CompositeOperation:
+  case AnimationProperty::CompositeColorSpace:
+  case AnimationProperty::CompositeRange:
+  case AnimationProperty::CompositeMask:
+  case AnimationProperty::CompositeMaskInverted: return true;
+  default: return false;
+  }
+}
+
+const PropertyOverride* findRenderPassOverride(const RenderPass& pass, const AnimationProperty property) {
+  const auto found = std::find_if(pass.overrides.begin(), pass.overrides.end(),
+    [property](const PropertyOverride& candidate) { return candidate.property == property; });
+  return found == pass.overrides.end() ? nullptr : &*found;
+}
+
+void setRenderPassOverride(RenderPass& pass, const AnimationProperty property, const glm::vec4& value) {
+  if (animationPropertyIsPassLocal(property) || property == AnimationProperty::Count) return;
+  const auto found = std::find_if(pass.overrides.begin(), pass.overrides.end(),
+    [property](const PropertyOverride& candidate) { return candidate.property == property; });
+  if (found == pass.overrides.end()) pass.overrides.push_back({property, value});
+  else found->value = value;
+}
+
+bool clearRenderPassOverride(RenderPass& pass, const AnimationProperty property) {
+  const auto before = pass.overrides.size();
+  pass.overrides.erase(std::remove_if(pass.overrides.begin(), pass.overrides.end(),
+    [property](const PropertyOverride& candidate) { return candidate.property == property; }), pass.overrides.end());
+  return pass.overrides.size() != before;
+}
+
+void replaceRenderPassOverrides(RenderPass& pass, const RenderPass& global, const RenderPass& materialized) {
+  pass.overrides.clear();
+  for (int index = 0; index < static_cast<int>(AnimationProperty::Count); ++index) {
+    const AnimationProperty property = static_cast<AnimationProperty>(index);
+    if (animationPropertyIsPassLocal(property)) continue;
+    const glm::vec4 globalValue = animationPropertyValue(global, property);
+    const glm::vec4 materializedValue = animationPropertyValue(materialized, property);
+    if (!animationPropertyValuesEqual(property, globalValue, materializedValue))
+      pass.overrides.push_back({property, materializedValue});
+  }
+  pass.importedTextureOverride = materialized.importedTexture != global.importedTexture;
+  if (pass.importedTextureOverride) pass.importedTexture = materialized.importedTexture;
+  else pass.importedTexture.reset();
+}
+
+RenderPass materializeRenderPass(const RenderStack& stack, const std::size_t passIndex,
+    const float timeSeconds) {
+  const RenderPass& definition = stack.passes()[passIndex];
+  RenderPass materialized = evaluateRenderPass(stack.global(), timeSeconds);
+  materialized.name = definition.name;
+  materialized.enabled = definition.enabled;
+  materialized.output = definition.output;
+  materialized.composite = definition.composite;
+  materialized.animation = definition.animation;
+  materialized.overrides = definition.overrides;
+  materialized.importedTextureOverride = definition.importedTextureOverride;
+  for (const PropertyOverride& overrideValue : definition.overrides)
+    setAnimationPropertyValue(materialized, overrideValue.property, overrideValue.value);
+  if (definition.importedTextureOverride) materialized.importedTexture = definition.importedTexture;
+  for (const PropertyAnimationTrack& track : definition.animation.tracks)
+    if (!track.keyframes.empty())
+      setAnimationPropertyValue(materialized, track.property, samplePropertyTrack(track, timeSeconds));
+  return materialized;
 }
 
 RenderPass& RenderStack::selected() { return passes_[selected_]; }
@@ -153,24 +226,80 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
          << ", \"auto_key\": " << timeline->autoKey << ", \"show_all_passes\": "
          << timeline->showAllPasses << ", \"current_time_seconds\": " << timeline->timeSeconds << "},\n";
   }
+  json << "  \"global_base\": {\n";
+  json << "    \"properties\": {";
+  bool firstGlobalProperty = true;
+  for (int propertyIndex = 0; propertyIndex < static_cast<int>(AnimationProperty::Count); ++propertyIndex) {
+    const AnimationProperty property = static_cast<AnimationProperty>(propertyIndex);
+    if (animationPropertyIsPassLocal(property)) continue;
+    const AnimationPropertyInfo& info = animationPropertyInfo(property);
+    const glm::vec4 value = animationPropertyValue(stack.global(), property);
+    if (!firstGlobalProperty) json << ",";
+    json << "\n      \"" << info.id << "\": [";
+    for (int component = 0; component < info.components; ++component) {
+      if (component != 0) json << ", ";
+      json << value[component];
+    }
+    json << "]";
+    firstGlobalProperty = false;
+  }
+  if (!firstGlobalProperty) json << "\n    ";
+  json << "},\n";
+  json << "    \"property_tracks\": [";
+  for (std::size_t trackIndex = 0; trackIndex < stack.global().animation.tracks.size(); ++trackIndex) {
+    const PropertyAnimationTrack& track = stack.global().animation.tracks[trackIndex];
+    const AnimationPropertyInfo& info = animationPropertyInfo(track.property);
+    if (trackIndex != 0) json << ",";
+    json << "\n      {\"property\": \"" << info.id << "\", \"interpolation\": \""
+         << interpolationIds[static_cast<int>(track.interpolation)] << "\", \"keys\": [";
+    for (std::size_t keyIndex = 0; keyIndex < track.keyframes.size(); ++keyIndex) {
+      const PropertyKeyframe& key = track.keyframes[keyIndex];
+      if (keyIndex != 0) json << ", ";
+      json << "{\"time_seconds\": " << key.timeSeconds << ", \"value\": [";
+      for (int component = 0; component < info.components; ++component) {
+        if (component != 0) json << ", ";
+        json << key.value[component];
+      }
+      json << "]}";
+    }
+    json << "]}";
+  }
+  if (!stack.global().animation.tracks.empty()) json << "\n    ";
+  json << "],\n";
+  json << "    \"renderer\": " << nested(configJson(stack.global().renderer, camera, scene, profile), 4) << "\n";
+  json << "  },\n";
   json << "  \"passes\": [\n";
   for (std::size_t index = 0; index < stack.passes().size(); ++index) {
     const RenderPass& pass = stack.passes()[index];
-    const PassPerturbation& p = pass.perturbation;
+    const RenderPass effective = materializeRenderPass(stack, index, 0.0f);
+    const PassPerturbation& p = effective.perturbation;
     const CompositeStep& c = pass.composite;
     json << "    {\n";
     json << "      \"name\": \"" << escape(pass.name) << "\", \"enabled\": " << pass.enabled << ",\n";
     json << "      \"output_buffer\": \"" << outputIds[static_cast<int>(pass.output)] << "\",\n";
-    json << "      \"texture_source\": \"" << textureSourceIds[static_cast<int>(pass.textureSource)] << "\"";
-    if (pass.importedTexture != nullptr) {
-      json << ", \"imported_texture\": {\"name\": \"" << escape(pass.importedTexture->name)
-           << "\", \"source_path\": \"" << escape(pass.importedTexture->sourcePath)
-           << "\", \"content_hash_fnv1a64\": \"" << std::hex << pass.importedTexture->contentHash << std::dec
-           << "\", \"dimensions\": [" << pass.importedTexture->width << ", " << pass.importedTexture->height
-           << "], \"alpha_present\": " << pass.importedTexture->hasAlpha
-           << ", \"color_interpretation\": \"" << (pass.importedTextureSrgb ? "srgb" : "linear_data") << "\"}";
+    json << "      \"texture_source\": \"" << textureSourceIds[static_cast<int>(effective.textureSource)] << "\"";
+    if (effective.importedTexture != nullptr) {
+      json << ", \"imported_texture\": {\"name\": \"" << escape(effective.importedTexture->name)
+           << "\", \"source_path\": \"" << escape(effective.importedTexture->sourcePath)
+           << "\", \"content_hash_fnv1a64\": \"" << std::hex << effective.importedTexture->contentHash << std::dec
+           << "\", \"dimensions\": [" << effective.importedTexture->width << ", " << effective.importedTexture->height
+           << "], \"alpha_present\": " << effective.importedTexture->hasAlpha
+           << ", \"color_interpretation\": \"" << (effective.importedTextureSrgb ? "srgb" : "linear_data") << "\"}";
     }
     json << ",\n";
+    json << "      \"overrides\": [";
+    for (std::size_t overrideIndex = 0; overrideIndex < pass.overrides.size(); ++overrideIndex) {
+      const PropertyOverride& overrideValue = pass.overrides[overrideIndex];
+      const AnimationPropertyInfo& info = animationPropertyInfo(overrideValue.property);
+      if (overrideIndex != 0) json << ", ";
+      json << "{\"property\": \"" << info.id << "\", \"value\": [";
+      for (int component = 0; component < info.components; ++component) {
+        if (component != 0) json << ", ";
+        json << overrideValue.value[component];
+      }
+      json << "]}";
+    }
+    json << "],\n";
     json << "      \"perturbation\": {\n";
     json << "        \"model_translation_units\": [" << p.modelTranslation.x << ", " << p.modelTranslation.y
          << ", " << p.modelTranslation.z << "], \"model_scale\": " << p.modelScale
@@ -213,7 +342,7 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
     }
     if (!pass.animation.tracks.empty()) json << "\n      ";
     json << "]},\n";
-    json << "      \"renderer\": " << nested(configJson(pass.renderer, camera, scene, profile), 6) << "\n";
+    json << "      \"effective_renderer_at_time_zero\": " << nested(configJson(effective.renderer, camera, scene, profile), 6) << "\n";
     json << "    }" << (index + 1 < stack.passes().size() ? "," : "") << "\n";
   }
   json << "  ]\n";
