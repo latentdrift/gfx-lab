@@ -23,6 +23,10 @@ The inspector provides cursor-centered zoom, panning, texel coordinates, and raw
 this makes clipped, negative, and above-white composite results visible as data even when the viewport cannot
 display their full numerical range.
 
+The Animation Timeline can switch between its dope sheet and a focused **Curve view**. Select a key first,
+then inspect or drag the chosen vector/color component in time and value; the exact key editor remains beside it
+for precise entry and interpolation selection.
+
 ## Source architecture
 
 The executable is divided by rendering responsibility:

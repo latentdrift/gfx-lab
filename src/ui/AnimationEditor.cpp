@@ -6,9 +6,11 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -23,6 +25,8 @@ struct KeySelection {
 
 KeySelection selection;
 int propertyToAdd = 0;
+int curveComponent = 0;
+bool draggingCurveKey = false;
 constexpr std::size_t globalPassIndex = std::numeric_limits<std::size_t>::max() - 1;
 
 std::vector<AnimationProperty> animatableProperties(const bool globalScope) {
@@ -174,10 +178,109 @@ void drawSelectedKeyEditor(AnimationTimeline& timeline, RenderStack& stack) {
   }
 }
 
+void drawCurveEditor(AnimationTimeline& timeline, RenderStack& stack) {
+  if (selection.pass != globalPassIndex && selection.pass >= stack.passes().size()) {
+    ImGui::TextWrapped("Select a key diamond to inspect its property curve.");
+    return;
+  }
+  RenderPass& pass = selection.pass == globalPassIndex ? stack.global() : stack.passes()[selection.pass];
+  PropertyAnimationTrack* track = findPropertyTrack(pass, selection.property);
+  if (track == nullptr || track->keyframes.empty()) {
+    ImGui::TextWrapped("Select a key diamond to inspect its property curve.");
+    return;
+  }
+  const AnimationPropertyInfo& info = animationPropertyInfo(track->property);
+  curveComponent = std::clamp(curveComponent, 0, info.components - 1);
+  ImGui::Text("%s / %s", pass.name.c_str(), info.label.data());
+  if (info.components > 1) {
+    constexpr std::array<const char*, 4> components = {"X / R", "Y / G", "Z / B", "W / A"};
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(78.0f);
+    ImGui::Combo("##curve-component", &curveComponent, components.data(), info.components);
+  }
+  const ImVec2 origin = ImGui::GetCursorScreenPos();
+  const ImVec2 size = ImGui::GetContentRegionAvail();
+  ImGui::InvisibleButton("curve-canvas", size);
+  const ImVec2 end(origin.x + size.x, origin.y + size.y);
+  ImDrawList* draw = ImGui::GetWindowDrawList();
+  draw->AddRectFilled(origin, end, IM_COL32(24, 26, 29, 255));
+
+  float minimum = track->keyframes.front().value[curveComponent];
+  float maximum = minimum;
+  for (const PropertyKeyframe& key : track->keyframes) {
+    minimum = std::min(minimum, key.value[curveComponent]);
+    maximum = std::max(maximum, key.value[curveComponent]);
+  }
+  const float padding = std::max((maximum - minimum) * 0.15f, 0.05f);
+  minimum -= padding;
+  maximum += padding;
+  const auto point = [&](const float time, const float value) {
+    const float x = origin.x + time / timeline.durationSeconds * size.x;
+    const float normalizedValue = (value - minimum) / std::max(0.000001f, maximum - minimum);
+    return ImVec2(x, end.y - normalizedValue * size.y);
+  };
+  for (int division = 1; division < 4; ++division) {
+    const float y = origin.y + size.y * static_cast<float>(division) / 4.0f;
+    draw->AddLine(ImVec2(origin.x, y), ImVec2(end.x, y), IM_COL32(52, 55, 60, 255));
+  }
+  ImVec2 previous = point(0.0f, samplePropertyTrack(*track, 0.0f)[curveComponent]);
+  constexpr int sampleCount = 180;
+  for (int sample = 1; sample <= sampleCount; ++sample) {
+    const float time = timeline.durationSeconds * static_cast<float>(sample) / sampleCount;
+    const ImVec2 current = point(time, samplePropertyTrack(*track, time)[curveComponent]);
+    draw->AddLine(previous, current, IM_COL32(105, 182, 221, 255), 2.0f);
+    previous = current;
+  }
+  const float playheadX = origin.x + timeline.timeSeconds / timeline.durationSeconds * size.x;
+  draw->AddLine(ImVec2(playheadX, origin.y), ImVec2(playheadX, end.y), IM_COL32(235, 112, 83, 210));
+
+  bool moveKey = false;
+  float oldTime = 0.0f;
+  float newTime = 0.0f;
+  glm::vec4 newValue{};
+  if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) draggingCurveKey = false;
+  for (const PropertyKeyframe& key : track->keyframes) {
+    const ImVec2 keyPoint = point(key.timeSeconds, key.value[curveComponent]);
+    const bool isSelected = selected(selection.pass, track->property, key.timeSeconds);
+    drawDiamond(draw, keyPoint, IM_COL32(245, 187, 72, 255), isSelected);
+    const glm::vec2 delta(ImGui::GetIO().MousePos.x - keyPoint.x, ImGui::GetIO().MousePos.y - keyPoint.y);
+    if (glm::dot(delta, delta) <= 81.0f && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+      selection.time = key.timeSeconds;
+      timeline.timeSeconds = key.timeSeconds;
+      timeline.playing = false;
+      draggingCurveKey = true;
+    }
+    if (isSelected && draggingCurveKey && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+      oldTime = key.timeSeconds;
+      newTime = std::clamp((ImGui::GetIO().MousePos.x - origin.x) / std::max(1.0f, size.x) *
+        timeline.durationSeconds, 0.0f, timeline.durationSeconds);
+      newValue = key.value;
+      newValue[curveComponent] = minimum + (end.y - ImGui::GetIO().MousePos.y) /
+        std::max(1.0f, size.y) * (maximum - minimum);
+      moveKey = true;
+    }
+  }
+  if (moveKey) {
+    static_cast<void>(removePropertyKeyframe(pass, track->property, oldTime, 0.0001f));
+    setPropertyKeyframe(pass, track->property, newTime, &newValue);
+    selection.time = newTime;
+    timeline.timeSeconds = newTime;
+  } else if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+    timeline.timeSeconds = std::clamp((ImGui::GetIO().MousePos.x - origin.x) /
+      std::max(1.0f, size.x) * timeline.durationSeconds, 0.0f, timeline.durationSeconds);
+    timeline.playing = false;
+  }
+  draw->AddText(ImVec2(origin.x + 5.0f, origin.y + 4.0f), IM_COL32(180, 183, 188, 255),
+    std::to_string(maximum).c_str());
+  draw->AddText(ImVec2(origin.x + 5.0f, end.y - 18.0f), IM_COL32(180, 183, 188, 255),
+    std::to_string(minimum).c_str());
+}
+
 } // namespace
 
 void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& previewAtPlayhead,
     const bool globalScope) {
+  static bool curveView = false;
   ImGui::BeginChild("Animation timeline", ImVec2(0.0f, 238.0f), true);
   ImGui::AlignTextToFramePadding();
   ImGui::TextDisabled(globalScope ? "GLOBAL ANIMATION" : "LOCAL PASS ANIMATION");
@@ -236,8 +339,21 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
     previewAtPlayhead = true;
   }
 
+  ImGui::SameLine();
+  if (ImGui::Button(curveView ? "Dope sheet" : "Curve view")) curveView = !curveView;
+
   const float editorWidth = 290.0f;
   ImGui::BeginChild("Dope sheet tracks", ImVec2(std::max(200.0f, ImGui::GetContentRegionAvail().x - editorWidth - 7.0f), 146.0f), true);
+  if (curveView) {
+    drawCurveEditor(timeline, stack);
+    ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::BeginChild("Selected key editor", ImVec2(0.0f, 146.0f), true);
+    drawSelectedKeyEditor(timeline, stack);
+    ImGui::EndChild();
+    ImGui::EndChild();
+    return;
+  }
   bool anyTracks = false;
   if (globalScope || timeline.showAllPasses) {
     RenderPass& pass = stack.global();
