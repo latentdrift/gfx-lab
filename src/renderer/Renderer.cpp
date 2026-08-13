@@ -1,6 +1,7 @@
 #include "renderer/Renderer.hpp"
 #include "renderer/Shaders.hpp"
 #include "renderer/TestGeometry.hpp"
+#include "assets/ModelAsset.hpp"
 
 #include <GL/glew.h>
 
@@ -186,10 +187,9 @@ public:
     relationProgram_ = makeProgram(outputVertexShader, relationFragmentShader);
     shadowProgram_ = makeProgram(shadowVertexShader, shadowFragmentShader);
     overdrawProgram_ = makeProgram(overdrawVertexShader, overdrawFragmentShader);
-    std::vector<Vertex> vertices;
-    auto appendMesh = [&vertices](const std::vector<Vertex>& mesh) {
-      const MeshRange range{static_cast<GLint>(vertices.size()), static_cast<GLsizei>(mesh.size())};
-      vertices.insert(vertices.end(), mesh.begin(), mesh.end());
+    auto appendMesh = [this](const std::vector<Vertex>& mesh) {
+      const MeshRange range{static_cast<GLint>(baseVertices_.size()), static_cast<GLsizei>(mesh.size())};
+      baseVertices_.insert(baseVertices_.end(), mesh.begin(), mesh.end());
       return range;
     };
     torus_ = appendMesh(makeTorus());
@@ -197,12 +197,11 @@ public:
     quad_ = appendMesh(makeQuad());
     lowSphere_ = appendMesh(makeSphere(12, 6));
     smoothSphere_ = appendMesh(makeSphere(32, 16));
-    vertexCount_ = static_cast<GLsizei>(vertices.size());
     glGenVertexArrays(1, &vao_);
     glGenBuffers(1, &vbo_);
     glBindVertexArray(vao_);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
-    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(Vertex)), vertices.data(), GL_STATIC_DRAW);
+    uploadGeometry(nullptr);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, position)));
     glEnableVertexAttribArray(1);
@@ -274,6 +273,9 @@ public:
     glDeleteProgram(overdrawProgram_);
   }
 
+  void setImportedModel(const ModelAsset& asset) { uploadGeometry(&asset.vertices); }
+  void clearImportedModel() { uploadGeometry(nullptr); }
+
   GLuint render(const RendererState& state, const CameraOrbit& camera, TestScene scene, const std::size_t targetIndex,
       const PassPerturbation& perturbation = {}, const PassOutput output = PassOutput::Color) {
     if (targetIndex >= passTargets_.size()) return 0;
@@ -292,7 +294,8 @@ public:
     const glm::mat4 lightView = glm::lookAt(lightDirection * 9.0f, glm::vec3(0), lightUp);
     const glm::mat4 lightProjection = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 0.1f, 20.0f);
     const glm::mat4 lightSpace = lightProjection * lightView;
-    const bool shadowsEnabled = state.lighting.shadows && scene == TestScene::Lighting;
+    const bool shadowsEnabled = state.lighting.shadows &&
+      (scene == TestScene::Lighting || scene == TestScene::ImportedModel);
 
     if (shadowsEnabled) {
       resizeShadowMap(state.lighting.shadowResolution);
@@ -317,10 +320,14 @@ public:
         glDrawArrays(GL_TRIANGLES, mesh.first, mesh.count);
       };
       const glm::mat4 identity(1.0f);
-      drawShadow(lowSphere_, glm::translate(identity, glm::vec3(-1.35f, 0, 0)));
-      drawShadow(smoothSphere_, glm::translate(identity, glm::vec3(1.35f, 0, 0)));
-      drawShadow(torus_, glm::translate(glm::scale(identity, glm::vec3(0.62f)), glm::vec3(0, 1.9f, 0)));
-      drawShadow(plane_, glm::translate(glm::scale(identity, glm::vec3(0.75f)), glm::vec3(0, -1.55f, -0.1f)));
+      if (scene == TestScene::ImportedModel) {
+        drawShadow(imported_, identity);
+      } else {
+        drawShadow(lowSphere_, glm::translate(identity, glm::vec3(-1.35f, 0, 0)));
+        drawShadow(smoothSphere_, glm::translate(identity, glm::vec3(1.35f, 0, 0)));
+        drawShadow(torus_, glm::translate(glm::scale(identity, glm::vec3(0.62f)), glm::vec3(0, 1.9f, 0)));
+        drawShadow(plane_, glm::translate(glm::scale(identity, glm::vec3(0.75f)), glm::vec3(0, -1.55f, -0.1f)));
+      }
     }
 
     const int samples = state.rasterization.samples == 1 ? 1 : std::min(state.rasterization.samples, maxSamples_);
@@ -547,6 +554,9 @@ public:
         glStencilMask(0xff);
         glDisable(GL_STENCIL_TEST);
         break;
+      case TestScene::ImportedModel:
+        drawMesh(imported_, identity, glm::vec3(1.0f));
+        break;
     }
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
@@ -616,6 +626,9 @@ public:
         case TestScene::StencilMask:
           if (state.stencil.enabled) countMesh(lowSphere_, glm::scale(identity, glm::vec3(1.35f)));
           countMesh(quad_, glm::translate(glm::scale(identity, glm::vec3(2.0f)), glm::vec3(0, 0, -0.35f)));
+          break;
+        case TestScene::ImportedModel:
+          countMesh(imported_, identity);
           break;
       }
       glDisable(GL_BLEND);
@@ -725,13 +738,26 @@ public:
   }
 
 private:
+  void uploadGeometry(const std::vector<Vertex>* importedVertices) {
+    std::vector<Vertex> combined = baseVertices_;
+    imported_ = {static_cast<int>(combined.size()), 0};
+    if (importedVertices != nullptr) {
+      imported_.count = static_cast<int>(importedVertices->size());
+      combined.insert(combined.end(), importedVertices->begin(), importedVertices->end());
+    }
+    glBindVertexArray(vao_);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(combined.size() * sizeof(Vertex)), combined.data(),
+      GL_STATIC_DRAW);
+  }
+
   GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0, shadowProgram_ = 0, overdrawProgram_ = 0;
   GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, indexedTexture_ = 0,
     clutTexture_ = 0, normalTexture_ = 0, detailTexture_ = 0;
-  GLsizei vertexCount_ = 0;
   GLint maxSamples_ = 1;
   GLfloat maxAnisotropy_ = 1.0f;
-  MeshRange torus_, plane_, quad_, lowSphere_, smoothSphere_;
+  std::vector<Vertex> baseVertices_;
+  MeshRange torus_, plane_, quad_, lowSphere_, smoothSphere_, imported_;
   GLuint shadowFbo_ = 0, shadowTexture_ = 0;
   int shadowResolution_ = 0;
   std::array<RenderTarget, RenderStack::maximumPasses> passTargets_;
@@ -887,5 +913,8 @@ unsigned int Renderer::renderPass(const RenderPass& pass, const CameraOrbit& cam
 }
 
 unsigned int Renderer::composite(const RenderStack& stack) { return impl_->composite(stack); }
+
+void Renderer::setImportedModel(const ModelAsset& asset) { impl_->setImportedModel(asset); }
+void Renderer::clearImportedModel() { impl_->clearImportedModel(); }
 
 } // namespace gfxlab

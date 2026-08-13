@@ -68,7 +68,7 @@ enum class RelationOperator {
   CenteredSum,
   RelativeDifference,
 };
-enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask };
+enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask, ImportedModel };
 
 struct CameraOrbit {
   float yaw = 0.72f;

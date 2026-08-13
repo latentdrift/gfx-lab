@@ -7,6 +7,8 @@
 
 namespace gfxlab {
 
+struct ModelAsset;
+
 class Renderer {
 public:
   Renderer();
@@ -21,6 +23,8 @@ public:
   unsigned int renderPass(const RenderPass& pass, const CameraOrbit& camera, TestScene scene,
     std::size_t targetIndex);
   unsigned int composite(const RenderStack& stack);
+  void setImportedModel(const ModelAsset& asset);
+  void clearImportedModel();
 
 private:
   class Impl;

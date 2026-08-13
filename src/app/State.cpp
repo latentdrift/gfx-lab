@@ -26,6 +26,7 @@ const char* testSceneName(TestScene scene) {
     case TestScene::Transparency: return "transparency";
     case TestScene::Lighting: return "lighting_comparison";
     case TestScene::StencilMask: return "stencil_mask";
+    case TestScene::ImportedModel: return "imported_model";
   }
   return "unknown";
 }
@@ -91,6 +92,9 @@ void applyRecommendedSetup(TestScene scene, RendererState& state, CameraOrbit& c
       camera.yaw = 0.0f;
       camera.pitch = 0.0f;
       camera.distance = 5.0f;
+      break;
+    case TestScene::ImportedModel:
+      camera.distance = 5.2f;
       break;
   }
 }

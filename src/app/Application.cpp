@@ -97,6 +97,9 @@ int runApplication() {
       fail("OBJ model import or normalization failed validation");
     if (importModelAsset("tests/fixtures/not_a_model.txt"))
       fail("model importer accepted an unsupported file type");
+    renderer.setImportedModel(*importedFixture.asset);
+    renderer.render(RendererState{}, CameraOrbit{}, TestScene::ImportedModel, false);
+    renderer.clearImportedModel();
     RenderStack validationStack;
     if (validationStack.passes().size() != 2 || !validationStack.duplicateSelected() ||
         validationStack.passes().size() != 3 || !validationStack.moveSelected(-1) ||
