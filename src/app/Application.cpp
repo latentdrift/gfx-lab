@@ -224,6 +224,7 @@ int runApplication() {
     drawPipelineWindow(workspaceWindows.pipeline, category, hardwareProfile);
 
     if (workspaceWindows.animation) {
+      ImGui::SetNextWindowSize(ImVec2(980.0f, 300.0f), ImGuiCond_FirstUseEver);
       if (ImGui::Begin("Animation Timeline", &workspaceWindows.animation))
         drawAnimationEditor(animationTimeline, renderStack, previewAnimation, inspectorGlobalScope);
       ImGui::End();

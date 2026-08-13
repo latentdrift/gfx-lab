@@ -25,8 +25,10 @@ src/
     Animation.cpp             keyframe capture, interpolation, and stack evaluation
     EditorHistory.cpp         document snapshots and coalesced undo/redo transactions
     HardwareProfile.cpp       target capabilities and state normalization
+    PassEditing.cpp           global/local inspector reconciliation
     RenderStack.cpp           pass definitions, compositing state, and stack export
     State.cpp                 explicit renderer state, scene setups, JSON export
+    Validation.cpp            opt-in renderer, document, import, and UI validation suite
   assets/
     ModelAsset.cpp            mesh/material import, image decoding, validation, and normalization
   renderer/
@@ -39,6 +41,7 @@ src/
     AnimationEditor.cpp       transport, dope sheet, tracks, and selected-key editing
     PassInspector.cpp         pass perturbation and composite controls
     PassDifferenceAudit.cpp  authored selected/reference pass comparison and restore
+    Workspace.cpp             desktop menu, docking layout, and primary tool windows
   handbook/
     Handbook.cpp              searchable articles, diagrams, and live comparisons
 ```
@@ -53,7 +56,9 @@ src/
 - Undo: Ctrl+Z
 - Redo: Ctrl+Shift+Z or Ctrl+Y
 
-Use **Import model** to load OBJ, glTF, or GLB geometry through the native file chooser. The importer applies scene-node transforms, triangulates faces, generates missing smooth normals and usable tangents, preserves UV0, vertex color 0, submesh material assignments, base-color factors, and external or embedded base-color images. It centers the result and scales its longest bounds extent to exactly 3.0 lab units so camera distance, fog, quantization, and pass perturbations remain comparable between unrelated assets. The left panel reports geometry, material, texture, and attribute facts; missing image references appear as explicit warnings. **Use model** and **Unload model** are undoable.
+Graphics Lab uses a persistent dockable workspace rather than one fixed application page. **Scene**, **Render Passes**, **Pipeline**, **Viewport**, **Pipeline Inspector**, **Animation Timeline**, and **Pass Differences** are independent tool windows. Resize or rearrange them for the current experiment, close tools that are not relevant, and reopen them from **Window**. **Window > Restore Default Layout** rebuilds the supplied compact workspace. ImGui saves subsequent window and docking changes between runs.
+
+Use **File > Import Model** or the Scene window to load OBJ, glTF, or GLB geometry through the native file chooser. The importer applies scene-node transforms, triangulates faces, generates missing smooth normals and usable tangents, preserves UV0, vertex color 0, submesh material assignments, base-color factors, and external or embedded base-color images. It centers the result and scales its longest bounds extent to exactly 3.0 lab units so camera distance, fog, quantization, and pass perturbations remain comparable between unrelated assets. The Scene window reports geometry, material, texture, and attribute facts; missing image references appear as explicit warnings. **Use Model** and **Unload Model** are undoable.
 
 The **Texture source** control can be authored on the global base and inherited by every pass. A selected pass stores a local override only when it differs. **Scene material** uses imported submesh materials, **Built-in checker** substitutes the diagnostic texture, **White texel** removes image variation while retaining material factors, and **Imported override** applies a separately imported PNG, JPEG, TGA, or BMP to any scene. A locally overridden texture is copied when its pass is duplicated, so correlated renders can perturb its UVs, sampling, color precision, and compositing independently. The inspector reports dimensions and alpha and exposes sRGB-color versus linear-data interpretation.
 
@@ -61,7 +66,7 @@ This first material boundary intentionally imports only base color and alpha. No
 
 Undo and redo cover the authored render stack, all renderer and composite settings, pass order and names, animation tracks, camera, scene, hardware target, and timeline configuration. Continuous sliders and viewport-camera drags collapse into one history entry. Playback time, pass selection, comparison view, open windows, and temporary evaluated animation frames are workspace state rather than authored operations, so they do not flood document history.
 
-The document has one **global base** and a bottom-to-top **render-pass stack**. Global geometry, camera, sampling, lighting, color, output, model perturbation, and texture choices feed every pass. A pass stores only deliberate local differences plus its inherently local enabled/output/composite state. Use the header's **Edit** scope to switch between the base and selected pass. Editing a local value creates an override; returning it to the global value restores inheritance. **Clear pass overrides** removes every static local deviation without deleting that pass's animation tracks.
+The document has one **global base** and a bottom-to-top **render-pass stack**. Global geometry, camera, sampling, lighting, color, output, model perturbation, and texture choices feed every pass. A pass stores only deliberate local differences plus its inherently local enabled/output/composite state. Use the Pipeline Inspector's **Editing** scope to switch between the base and selected pass. Editing a local value creates an override; returning it to the global value restores inheritance. **Clear pass overrides** removes every static local deviation without deleting that pass's animation tracks.
 
 Press **Duplicate pass** to copy one compact set of deviations, then change only what should disagree. Later passes combine sequentially with the accumulated image using explicit per-channel operations: absolute or signed difference, one-sided subtraction, multiply, screen, exclusion, minimum, maximum, `A x (1 - B)`, centered sum, or relative difference. Each step exposes opacity, gain, bias, encoded-RGB versus linear-light arithmetic, clamp/preserve/wrap range behavior, and optional luminance/depth/edge masks.
 
@@ -71,17 +76,17 @@ Animatable inspector controls have a right-aligned diamond: gray outline means u
 
 The animation catalog covers eligible state across every pipeline category. Continuous numbers, vectors, colors, and angles support step, linear, or smooth-step interpolation. Booleans, integers, algorithm selections, filtering modes, depth/stencil modes, texture sources, composite operations, and N64 fixed-function selections use step tracks because intermediate values have no meaning. Settings that reallocate large GPU resources during playback—MSAA count, shadow-map resolution, internal resolution, and N64 tile dimensions—remain visible in the catalog but deliberately non-keyable. Playback evaluates a temporary render stack and does not overwrite authored base values.
 
-Use **Pass differences** after duplicating a pass to audit effective disagreements against any reference pass. Each property is labelled inherited or overridden, alongside its local track state. Matching adopts the reference pass's override/inheritance choice and local track; if the reference inherits, the selected pass resumes tracking the global base. Imported texture resources are compared separately from their sampling state.
+Open **Window > Pass Differences** after duplicating a pass to audit effective disagreements against any reference pass. Each property is labelled inherited or overridden, alongside its local track state. Matching adopts the reference pass's override/inheritance choice and local track; if the reference inherits, the selected pass resumes tracking the global base. Imported texture resources are compared separately from their sampling state.
 
-The **Target** selector defaults to **Unrestricted**. **PlayStation (PS1)** and **Nintendo 64** normalize every pass to target-representable state, remove unavailable categories and controls, narrow shared controls to supported choices, and display important forced values or labelled emulation substitutes as profile facts. Switching back to Unrestricted unlocks the controls but does not restore values discarded during normalization. Reset buttons are also normalized by the active target.
+The Scene window's **Hardware Target** selector defaults to **Unrestricted**. **PlayStation (PS1)** and **Nintendo 64** normalize every pass to target-representable state, remove unavailable categories and controls, narrow shared controls to supported choices, and display important forced values or labelled emulation substitutes as profile facts. Switching back to Unrestricted unlocks the controls but does not restore values discarded during normalization. Reset buttons are also normalized by the active target.
 
 The Nintendo 64 target exposes the standard RSP/RDP/VI model: one- or two-cycle `(A - B) x C + D` color combiners, named combiner sources, primitive/environment registers, RDP surface and alpha-compare modes, point/three-point/box texture filters, mip/trilinear/sharpen/detail modes, nine texture formats, tile addressing and calculated 4096-byte TMEM use, RSP texture generation and vertex fog, Z compare/update, coverage antialiasing, RGBA16/RGBA32 framebuffer state, color dithering, and VI reconstruction/divot filters. Coverage and VI behavior are explicitly labelled approximations; the combiner, format quantization, three-point filter, alpha comparison, and TMEM accounting are modeled directly.
 
-Use **Copy stack JSON** to place a human-readable `graphics-lab.render-stack.v2` document on the clipboard. It records the global base, sparse local overrides, global and local property tracks, effective time-zero renderers, pass perturbations, selected output buffers, composite equations, masks, color spaces, range behavior, scene, and camera. Evaluation order is explicit: global base, global track, local override, then local track.
+Use **File > Copy Stack JSON** to place a human-readable `graphics-lab.render-stack.v2` document on the clipboard. It records the global base, sparse local overrides, global and local property tracks, effective time-zero renderers, pass perturbations, selected output buffers, composite equations, masks, color spaces, range behavior, scene, and camera. Evaluation order is explicit: global base, global track, local override, then local track.
 
-Use **Handbook** to open the built-in technical reference. Start with **From mesh to pixel**, then follow its related-concept links or browse the knowledge map. Every article begins with a plain causal **Quick read** before preserving the precise definition, pipeline location, visible results, interactions, engine vocabulary, and technical diagram. The map groups the pipeline, shading, visibility and output, engine systems, animation, and ray tracing. Reading never changes renderer state; example buttons apply configurations deliberately.
+Use **Help > Graphics Handbook** to open the built-in technical reference. Start with **From mesh to pixel**, then follow its related-concept links or browse the knowledge map. Every article begins with a plain causal **Quick read** before preserving the precise definition, pipeline location, visible results, interactions, engine vocabulary, and technical diagram. The map groups the pipeline, shading, visibility and output, engine systems, animation, and ray tracing. Reading never changes renderer state; example buttons apply configurations deliberately.
 
-The toolbar scene selector provides purpose-built geometry for texture minification, depth precision, transparency ordering, and lighting interpolation experiments in addition to the default torus.
+The Scene window provides purpose-built geometry for texture minification, depth precision, transparency ordering, and lighting interpolation experiments in addition to the default torus.
 
 Changing the selected scene preserves the current renderer state and camera. **Reset scene setup** explicitly applies that scene's recommended starting state and camera framing:
 
