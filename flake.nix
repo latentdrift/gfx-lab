@@ -7,10 +7,20 @@
     let
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+      imguiDockingFor = pkgs: pkgs.imgui.overrideAttrs (_: {
+        version = "1.91.4-docking";
+        src = pkgs.fetchFromGitHub {
+          owner = "ocornut";
+          repo = "imgui";
+          tag = "v1.91.4-docking";
+          hash = "sha256-b0ZXuSXV8U8eBU6WE6blxUvS6xaIgEt9Svob+Kow0g8=";
+        };
+      });
     in {
       packages = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          imguiDocking = imguiDockingFor pkgs;
         in {
           default = pkgs.stdenv.mkDerivation {
             pname = "graphics-lab";
@@ -30,7 +40,7 @@
               glew
               glfw
               glm
-              imgui
+              imguiDocking
               assimp
               nativefiledialog-extended
               stb
@@ -51,6 +61,7 @@
       devShells = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          imguiDocking = imguiDockingFor pkgs;
         in {
           default = pkgs.mkShell {
             packages = with pkgs; [
@@ -62,7 +73,7 @@
               glew
               glfw
               glm
-              imgui
+              imguiDocking
               assimp
               nativefiledialog-extended
               stb
