@@ -290,6 +290,7 @@ void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& t
       ? "Color · Depth · Field · Spectrum16"
       : pass.kind == StackOperationKind::Interpret ? "Spectrum16  ->  Color"
       : pass.kind == StackOperationKind::Composite ? "A + B  ->  Color"
+      : pass.kind == StackOperationKind::StereoAnalysis ? "Left depth + Right depth  ->  analysis"
       : "Color  ->  accumulator";
     ImGui::TextDisabled("%s", stackOperationKindLabel(pass.kind));
     if (pass.kind == StackOperationKind::Render || pass.kind == StackOperationKind::LegacyRenderComposite) {
@@ -322,6 +323,10 @@ void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& t
     }
     if (ImGui::Selectable("Composite two signals")) {
       stack.addOperation(StackOperationKind::Composite);
+      globalScope = false;
+    }
+    if (ImGui::Selectable("Analyze binocular views")) {
+      stack.addOperation(StackOperationKind::StereoAnalysis);
       globalScope = false;
     }
     ImGui::EndPopup();
@@ -362,6 +367,12 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   ImGui::SameLine();
   if (ImGui::RadioButton("Composite", compare == CompareMode::Relation)) compare = CompareMode::Relation;
   ImGui::SameLine();
+  const bool hasStereoPair = images.leftEye != 0 && images.rightEye != 0;
+  ImGui::BeginDisabled(!hasStereoPair);
+  if (ImGui::RadioButton("Stereo pair", compare == CompareMode::StereoPair)) compare = CompareMode::StereoPair;
+  ImGui::EndDisabled();
+  if (!hasStereoPair && compare == CompareMode::StereoPair) compare = CompareMode::A;
+  ImGui::SameLine();
   ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
   ImGui::SameLine();
   if (ImGui::RadioButton("Orbit", tool == Tool::Orbit)) tool = Tool::Orbit;
@@ -389,18 +400,27 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   const ImVec2 end(origin.x + size.x, origin.y + size.y);
   ImDrawList* draw = ImGui::GetWindowDrawList();
   draw->AddRectFilled(origin, end, IM_COL32(27, 29, 31, 255));
-  if (compare == CompareMode::Split) {
-    const float middle = origin.x + std::floor(size.x * 0.5f);
-    draw->PushClipRect(origin, ImVec2(middle, end.y), true);
-    draw->AddImage(static_cast<ImTextureID>(images.base), origin, end, ImVec2(0, 1), ImVec2(1, 0));
+  if (compare == CompareMode::Split || compare == CompareMode::StereoPair) {
+    const float eyeHeight = compare == CompareMode::StereoPair ? std::floor(size.x * 0.375f) : size.y;
+    const float pairTop = origin.y + std::floor((size.y - eyeHeight) * 0.5f);
+    const ImVec2 pairOrigin(origin.x, pairTop);
+    const ImVec2 pairEnd(end.x, pairTop + eyeHeight);
+    const float middle = pairOrigin.x + std::floor(size.x * 0.5f);
+    const unsigned int leftTexture = compare == CompareMode::StereoPair ? images.leftEye : images.base;
+    const unsigned int rightTexture = compare == CompareMode::StereoPair ? images.rightEye : images.selected;
+    draw->PushClipRect(pairOrigin, ImVec2(middle, pairEnd.y), true);
+    draw->AddImage(static_cast<ImTextureID>(leftTexture), pairOrigin, ImVec2(middle, pairEnd.y),
+      ImVec2(0, 1), ImVec2(1, 0));
     draw->PopClipRect();
-    draw->PushClipRect(ImVec2(middle + 1, origin.y), end, true);
-    draw->AddImage(static_cast<ImTextureID>(images.selected), origin, end, ImVec2(0, 1), ImVec2(1, 0));
+    draw->PushClipRect(ImVec2(middle + 1, pairOrigin.y), pairEnd, true);
+    draw->AddImage(static_cast<ImTextureID>(rightTexture), ImVec2(middle + 1, pairOrigin.y), pairEnd,
+      ImVec2(0, 1), ImVec2(1, 0));
     draw->PopClipRect();
-    draw->AddLine(ImVec2(middle, origin.y), ImVec2(middle, end.y), IM_COL32(225, 225, 225, 210));
-    draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240, 240, 240, 220), "BASE PASS");
-    draw->AddText(ImVec2(middle + 10, origin.y + 8), IM_COL32(240, 240, 240, 220),
-      stack.selected().name.c_str());
+    draw->AddLine(ImVec2(middle, pairOrigin.y), ImVec2(middle, pairEnd.y), IM_COL32(225, 225, 225, 210));
+    draw->AddText(ImVec2(pairOrigin.x + 9, pairOrigin.y + 8), IM_COL32(240, 240, 240, 220),
+      compare == CompareMode::StereoPair ? "LEFT EYE" : "BASE PASS");
+    draw->AddText(ImVec2(middle + 10, pairOrigin.y + 8), IM_COL32(240, 240, 240, 220),
+      compare == CompareMode::StereoPair ? "RIGHT EYE" : stack.selected().name.c_str());
   } else {
     const unsigned int texture = compare == CompareMode::A ? images.selected
       : compare == CompareMode::Relation ? images.composite : images.base;

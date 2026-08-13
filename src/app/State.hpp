@@ -91,7 +91,7 @@ struct RendererState {
 };
 
 enum class Category { Geometry, Camera, Rasterization, Surface, Texture, Lighting, Field, Spectral, Depth, Stencil, Color, Post, Output };
-enum class CompareMode { A, B, Split, Relation };
+enum class CompareMode { A, B, Split, Relation, StereoPair };
 enum class RelationOperator {
   AbsoluteDifference,
   SignedDifference,

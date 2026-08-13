@@ -418,18 +418,19 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         roundTripDocument.document->renderStack.passes()[1].composite.operation != RelationOperator::BitwiseXor ||
         std::abs(roundTripDocument.document->camera.yaw - exampleDocument.document->camera.yaw) > 0.0001f)
       fail("stack document save/load round trip failed validation");
-    const StackDocumentLoadResult binocularDocument =
+    StackDocumentLoadResult binocularDocument =
       loadStackDocumentFile("examples/binocular-disparity-difference.json");
     if (!binocularDocument || binocularDocument.document->scene != TestScene::Lighting ||
-        binocularDocument.document->renderStack.passes().size() != 2 ||
+        binocularDocument.document->renderStack.passes().size() != 3 ||
         std::abs(materializeRenderPass(binocularDocument.document->renderStack, 0).perturbation.cameraLateral +
-          0.065f) > 0.0001f ||
+          0.0325f) > 0.0001f ||
         std::abs(materializeRenderPass(binocularDocument.document->renderStack, 1).perturbation.cameraLateral -
-          0.065f) > 0.0001f ||
+          0.0325f) > 0.0001f ||
         std::abs(materializeRenderPass(binocularDocument.document->renderStack, 1).perturbation.stereoConvergence -
           4.0f) > 0.0001f ||
-        binocularDocument.document->renderStack.passes()[1].composite.operation !=
-          RelationOperator::AbsoluteDifference)
+        binocularDocument.document->renderStack.passes()[2].kind != StackOperationKind::StereoAnalysis ||
+        binocularDocument.document->renderStack.passes()[2].stereoAnalysis !=
+          StereoAnalysisMode::AbsoluteDisparity)
       fail("binocular disparity example failed document loading validation");
     CameraOrbit stereoCamera;
     stereoCamera.yaw = 0.0f;
@@ -451,11 +452,24 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         std::abs(glm::distance(leftCamera.eye, rightCamera.eye) - 0.2f) > 0.0001f)
       fail("off-axis stereo camera convergence failed validation");
     for (std::size_t passIndex = 0;
-         passIndex < binocularDocument.document->renderStack.passes().size(); ++passIndex)
-      renderer.renderPass(materializeRenderPass(binocularDocument.document->renderStack, passIndex),
-        binocularDocument.document->camera, binocularDocument.document->scene, passIndex);
+         passIndex < binocularDocument.document->renderStack.passes().size(); ++passIndex) {
+      const RenderPass materialized = materializeRenderPass(binocularDocument.document->renderStack, passIndex);
+      if (materialized.kind == StackOperationKind::Render)
+        renderer.renderPass(materialized, binocularDocument.document->camera,
+          binocularDocument.document->scene, passIndex);
+    }
     if (renderer.composite(binocularDocument.document->renderStack) == 0)
       fail("binocular disparity example failed render validation");
+    for (int mode = static_cast<int>(StereoAnalysisMode::Anaglyph);
+         mode <= static_cast<int>(StereoAnalysisMode::MonocularOcclusion); ++mode) {
+      binocularDocument.document->renderStack.passes()[2].stereoAnalysis =
+        static_cast<StereoAnalysisMode>(mode);
+      if (renderer.composite(binocularDocument.document->renderStack) == 0)
+        fail("binocular analysis mode failed render validation");
+    }
+    glFinish();
+    if (glGetError() != GL_NO_ERROR)
+      fail("binocular analysis produced an OpenGL error");
     StackDocumentLoadResult observerOperandDocument =
       loadStackDocumentFile("examples/single-world-cone-rod-xor.json");
     if (!observerOperandDocument || observerOperandDocument.document->renderStack.passes().size() != 2 ||

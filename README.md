@@ -83,13 +83,16 @@ The [`examples`](examples) directory contains loadable stack documents. Start wi
 the result through the quantized rod/cone observer comparison. Its parameters remain ordinary editable lab
 state after loading.
 
-[`binocular-disparity-difference.json`](examples/binocular-disparity-difference.json) renders the same scene
-from parallel left- and right-eye cameras and displays `|L - R|`. The eye cameras use opposite lateral offsets
-and asymmetric off-axis frusta that meet at a shared convergence distance; they are translated, never toed in.
-Black regions agree between the eyes, while bright paired contours expose disparity, depth discontinuities,
-specular disagreement, and monocular occlusion. Reduce composite gain to inspect subtle disagreement, change
-the convergence distance to move the zero-disparity plane, or switch the second pass to signed difference with
-a `0.5` bias to retain disparity direction.
+[`binocular-disparity-difference.json`](examples/binocular-disparity-difference.json) is the introductory
+human-stereo experiment. Two Render operations use parallel left- and right-eye cameras with opposite lateral
+offsets and asymmetric off-axis frusta that meet at one convergence distance; the cameras are translated, never
+toed in. A separate **Stereo analysis** operation reconstructs visible points from the eye depth buffers and
+reprojects them between cameras. Its outputs are red/cyan anaglyph, signed or absolute geometric disparity,
+correspondence confidence, and monocular occlusion. In the latter, red is visible only to the left eye and cyan
+only to the right. Use **Stereo pair** in the viewport to inspect what the two eyes receive without analysis.
+Change the eye separation to change stereo strength, or convergence distance to move the zero-disparity plane.
+This is distinct from ordinary `|leftColor-rightColor|`, which remains available as an artistic image operator
+but mixes geometry with lighting, texture, and shading disagreement.
 
 [`single-world-cone-rod-xor.json`](examples/single-world-cone-rod-xor.json) demonstrates observer inputs at the
 composite boundary. Both operands read the exact same raw render pass; A measures approximate cone luminance,

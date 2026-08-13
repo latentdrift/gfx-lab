@@ -20,7 +20,8 @@ enum class CompositeRange { Clamp, Preserve, Wrap };
 // A stack operation describes what a row does, independently of its position.
 // LegacyRenderComposite exists solely so v8 documents retain their original
 // "render this row, then composite it" evaluation semantics.
-enum class StackOperationKind { Render, Interpret, Composite, LegacyRenderComposite };
+enum class StackOperationKind { Render, Interpret, Composite, StereoAnalysis, LegacyRenderComposite };
+enum class StereoAnalysisMode { Anaglyph, SignedDisparity, AbsoluteDisparity, Correspondence, MonocularOcclusion };
 enum class CompositeInterpretation {
   RawRgb, LResponse, MResponse, SResponse, ConeLuminance, RodResponse,
   RedGreenOpponent, BlueYellowOpponent, SpectralHuman, SpectralAlternate, SpectralRod
@@ -121,6 +122,9 @@ struct RenderPass {
   std::shared_ptr<const TextureAsset> importedTexture;
   bool importedTextureSrgb = true;
   CompositeStep composite;
+  StereoAnalysisMode stereoAnalysis = StereoAnalysisMode::AbsoluteDisparity;
+  float stereoMaximumDisparityPixels = 64.0f;
+  float stereoOcclusionTolerance = 0.0025f;
   PassAnimation animation;
   std::vector<PropertyOverride> overrides;
   bool importedTextureOverride = false;

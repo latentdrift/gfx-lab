@@ -439,11 +439,22 @@ int runApplication() {
     GLuint selectedTexture = renderer.stackOperationResult(renderStack.selectedIndex());
     if (selectedTexture == 0) selectedTexture = renderedComposite;
     GLuint baseTexture = 0;
+    GLuint leftEyeTexture = 0;
+    GLuint rightEyeTexture = 0;
     for (std::size_t index = 0; index < evaluatedStack.passes().size(); ++index) {
       if (evaluatedStack.passes()[index].kind == StackOperationKind::Render ||
           evaluatedStack.passes()[index].kind == StackOperationKind::LegacyRenderComposite) {
-        baseTexture = passTextures[index];
-        break;
+        if (baseTexture == 0) baseTexture = passTextures[index];
+        if (leftEyeTexture == 0) leftEyeTexture = passTextures[index];
+        else if (rightEyeTexture == 0) rightEyeTexture = passTextures[index];
+      }
+    }
+    if (renderStack.selected().kind == StackOperationKind::StereoAnalysis) {
+      const int leftId = renderStack.selected().composite.sourceAPassId;
+      const int rightId = renderStack.selected().composite.sourceBPassId;
+      for (std::size_t index = 0; index < evaluatedStack.passes().size(); ++index) {
+        if (evaluatedStack.passes()[index].id == leftId) leftEyeTexture = passTextures[index];
+        if (evaluatedStack.passes()[index].id == rightId) rightEyeTexture = passTextures[index];
       }
     }
     if (baseTexture == 0) baseTexture = selectedTexture;
@@ -468,7 +479,8 @@ int runApplication() {
       : materializeRenderPass(renderStack, renderStack.selectedIndex(), viewportTime);
     RenderPass viewportPass = viewportBefore;
     const ViewportWindowResult viewportResult = drawViewportWindow(workspaceWindows.viewport,
-      {displayedSelected, displayedBase, displayedComposite}, compare, renderStack, viewportPass, camera,
+      {displayedSelected, displayedBase, displayedComposite, leftEyeTexture, rightEyeTexture},
+      compare, renderStack, viewportPass, camera,
       animationTimeline, inspectorGlobalScope);
     viewportHovered = viewportResult.hovered;
     viewportAcceptsCameraInput = viewportResult.acceptsCameraInput;

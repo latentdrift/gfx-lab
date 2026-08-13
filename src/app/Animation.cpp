@@ -66,6 +66,9 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   STEP("composite_range", "Composite range", "Composite", K::Enumeration, 0, 2),
   STEP("composite_mask", "Composite mask", "Composite", K::Enumeration, 0, 4),
   STEP("composite_mask_inverted", "Composite mask inverted", "Composite", K::Boolean, 0, 1),
+  STEP("stereo_analysis_mode", "Stereo analysis output", "Stereo analysis", K::Enumeration, 0, 4),
+  CONT("stereo_maximum_disparity", "Maximum displayed disparity", "Stereo analysis", 1, K::Float, 1, 512),
+  CONT("stereo_occlusion_tolerance", "Depth agreement tolerance", "Stereo analysis", 1, K::Float, 0.00001f, 0.05f),
   CONT("vertex_quantization", "Vertex position precision", "Geometry", 1, K::Float, 0, 0.125f),
   STEP("clipping_enabled", "Clipping plane enabled", "Geometry", K::Boolean, 0, 1),
   CONT("clipping_height", "Clipping plane height", "Geometry", 1, K::Float, -10, 10),
@@ -335,6 +338,9 @@ glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty
   case AnimationProperty::CompositeRange: return glm::vec4(static_cast<float>(pass.composite.range));
   case AnimationProperty::CompositeMask: return glm::vec4(static_cast<float>(pass.composite.mask));
   case AnimationProperty::CompositeMaskInverted: return glm::vec4(pass.composite.invertMask ? 1.0f : 0.0f);
+  case AnimationProperty::StereoAnalysisMode: return glm::vec4(static_cast<float>(pass.stereoAnalysis));
+  case AnimationProperty::StereoMaximumDisparity: return glm::vec4(pass.stereoMaximumDisparityPixels);
+  case AnimationProperty::StereoOcclusionTolerance: return glm::vec4(pass.stereoOcclusionTolerance);
   case AnimationProperty::VertexQuantization: return glm::vec4(pass.renderer.geometry.vertexQuantization);
   case AnimationProperty::ClippingEnabled: return glm::vec4(pass.renderer.geometry.clipping ? 1.0f : 0.0f);
   case AnimationProperty::ClippingHeight: return glm::vec4(pass.renderer.geometry.clipHeight);
@@ -508,6 +514,10 @@ void setAnimationPropertyValue(RenderPass& pass, const AnimationProperty propert
   case AnimationProperty::CompositeRange: pass.composite.range = static_cast<CompositeRange>(static_cast<int>(std::round(value.x))); break;
   case AnimationProperty::CompositeMask: pass.composite.mask = static_cast<CompositeMask>(static_cast<int>(std::round(value.x))); break;
   case AnimationProperty::CompositeMaskInverted: pass.composite.invertMask = value.x >= 0.5f; break;
+  case AnimationProperty::StereoAnalysisMode:
+    pass.stereoAnalysis = static_cast<gfxlab::StereoAnalysisMode>(static_cast<int>(std::round(value.x))); break;
+  case AnimationProperty::StereoMaximumDisparity: pass.stereoMaximumDisparityPixels = value.x; break;
+  case AnimationProperty::StereoOcclusionTolerance: pass.stereoOcclusionTolerance = value.x; break;
   case AnimationProperty::VertexQuantization: pass.renderer.geometry.vertexQuantization = value.x; break;
   case AnimationProperty::ClippingEnabled: pass.renderer.geometry.clipping = value.x >= 0.5f; break;
   case AnimationProperty::ClippingHeight: pass.renderer.geometry.clipHeight = value.x; break;

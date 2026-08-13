@@ -272,6 +272,7 @@ StackDocumentLoadResult loadStackDocumentFile(const std::string& path) {
       if (operationKind == "render") pass.kind = StackOperationKind::Render;
       else if (operationKind == "interpret") pass.kind = StackOperationKind::Interpret;
       else if (operationKind == "composite") pass.kind = StackOperationKind::Composite;
+      else if (operationKind == "stereo_analysis") pass.kind = StackOperationKind::StereoAnalysis;
       else if (operationKind == "legacy_render_composite")
         pass.kind = StackOperationKind::LegacyRenderComposite;
       else
@@ -289,6 +290,17 @@ StackDocumentLoadResult loadStackDocumentFile(const std::string& path) {
       if (sourcePass.contains("perturbation")) parsePerturbation(sourcePass.at("perturbation"), pass.perturbation);
       if (sourcePass.contains("composite_into_previous"))
         parseComposite(sourcePass.at("composite_into_previous"), pass.composite);
+      if (sourcePass.contains("stereo_analysis") && sourcePass.at("stereo_analysis").is_object()) {
+        const Json& analysis = sourcePass.at("stereo_analysis");
+        constexpr std::array stereoIds = {"anaglyph", "signed_disparity", "absolute_disparity",
+          "correspondence_confidence", "monocular_occlusion"};
+        pass.stereoAnalysis = enumFromId(analysis.value("mode", "absolute_disparity"), stereoIds,
+          StereoAnalysisMode::AbsoluteDisparity);
+        pass.stereoMaximumDisparityPixels = std::max(analysis.value("maximum_disparity_pixels",
+          pass.stereoMaximumDisparityPixels), 1.0f);
+        pass.stereoOcclusionTolerance = std::max(analysis.value("occlusion_depth_tolerance",
+          pass.stereoOcclusionTolerance), 0.00001f);
+      }
       if (sourcePass.contains("animation") && sourcePass.at("animation").is_object()) {
         const Json& animation = sourcePass.at("animation");
         pass.animation.enabled = animation.value("enabled", true);

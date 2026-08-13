@@ -271,6 +271,77 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
     return;
   }
 
+  if (pass.kind == StackOperationKind::StereoAnalysis) {
+    ImGui::SeparatorText("BINOCULAR INPUTS");
+    const auto renderSourceCombo = [&](const char* label, int& sourceId) {
+      const RenderPass* selected = nullptr;
+      for (const RenderPass& candidate : stack.passes()) if (candidate.id == sourceId) selected = &candidate;
+      bool changed = false;
+      if (ImGui::BeginCombo(label, selected != nullptr ? selected->name.c_str() : "Select Render operation")) {
+        for (const RenderPass& candidate : stack.passes()) {
+          if (candidate.kind != StackOperationKind::Render &&
+              candidate.kind != StackOperationKind::LegacyRenderComposite) continue;
+          if (ImGui::Selectable(candidate.name.c_str(), candidate.id == sourceId)) {
+            sourceId = candidate.id;
+            changed = true;
+          }
+        }
+        ImGui::EndCombo();
+      }
+      return changed;
+    };
+    const bool leftChanged = renderSourceCombo("Left eye Render", pass.composite.sourceAPassId);
+    animationKeyControl(pass, AnimationProperty::CompositeSourceAPass, timeline, leftChanged);
+    const bool rightChanged = renderSourceCombo("Right eye Render", pass.composite.sourceBPassId);
+    animationKeyControl(pass, AnimationProperty::CompositeSourceBPass, timeline, rightChanged);
+    if (ImGui::Button("Set human-scale eye pair", ImVec2(-1.0f, 0.0f))) {
+      for (RenderPass& candidate : stack.passes()) {
+        if (candidate.id == pass.composite.sourceAPassId) {
+          setRenderPassOverride(candidate, AnimationProperty::CameraLateral, glm::vec4(-0.0325f));
+          setRenderPassOverride(candidate, AnimationProperty::StereoConvergence, glm::vec4(4.0f));
+        }
+        if (candidate.id == pass.composite.sourceBPassId) {
+          setRenderPassOverride(candidate, AnimationProperty::CameraLateral, glm::vec4(0.0325f));
+          setRenderPassOverride(candidate, AnimationProperty::StereoConvergence, glm::vec4(4.0f));
+        }
+      }
+    }
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("Sets 0.065 lab units total separation (6.5 cm if 1 unit = 1 meter) and a 4-unit convergence distance.");
+    description("Both inputs must render the same world through parallel off-axis eye cameras. Their depth buffers are reprojected into one another to measure geometry, not merely pixel-color disagreement.");
+
+    ImGui::SeparatorText("ANALYSIS OUTPUT");
+    constexpr const char* modes[] = {"Red/cyan anaglyph", "Signed disparity", "Absolute disparity",
+      "Correspondence confidence", "Monocular occlusion"};
+    int mode = static_cast<int>(pass.stereoAnalysis);
+    const bool modeChanged = ImGui::Combo("Output", &mode, modes, 5);
+    if (modeChanged) pass.stereoAnalysis = static_cast<StereoAnalysisMode>(mode);
+    animationKeyControl(pass, AnimationProperty::StereoAnalysisMode, timeline, modeChanged);
+    if (pass.stereoAnalysis == StereoAnalysisMode::SignedDisparity ||
+        pass.stereoAnalysis == StereoAnalysisMode::AbsoluteDisparity) {
+      const bool disparityChanged = ImGui::DragFloat("Maximum displayed disparity",
+        &pass.stereoMaximumDisparityPixels, 0.25f, 1.0f, 512.0f, "%.1f px");
+      animationKeyControl(pass, AnimationProperty::StereoMaximumDisparity, timeline, disparityChanged);
+    }
+    if (pass.stereoAnalysis == StereoAnalysisMode::Correspondence ||
+        pass.stereoAnalysis == StereoAnalysisMode::MonocularOcclusion) {
+      const bool toleranceChanged = ImGui::DragFloat("Depth agreement tolerance",
+        &pass.stereoOcclusionTolerance, 0.00005f, 0.00001f, 0.05f, "%.5f");
+      animationKeyControl(pass, AnimationProperty::StereoOcclusionTolerance, timeline, toleranceChanged);
+    }
+    if (pass.stereoAnalysis == StereoAnalysisMode::SignedDisparity)
+      description("Red and cyan retain disparity direction. Zero disparity is black at the convergence plane.");
+    else if (pass.stereoAnalysis == StereoAnalysisMode::AbsoluteDisparity)
+      description("Brightness is horizontal displacement between corresponding projections. Larger disparity generally means greater distance from the convergence plane.");
+    else if (pass.stereoAnalysis == StereoAnalysisMode::Correspondence)
+      description("White means the visible point reprojects to matching depth in the other eye. Black includes empty, occluded, and non-corresponding regions.");
+    else if (pass.stereoAnalysis == StereoAnalysisMode::MonocularOcclusion)
+      description("Red is visible only to the left eye; cyan is visible only to the right eye; white means both directional tests fail.");
+    else
+      description("Red comes from the left eye and cyan from the right. With red/cyan glasses, matching features fuse while disparity creates stereoscopic depth.");
+    return;
+  }
+
   std::size_t firstEnabled = stack.passes().size();
   for (std::size_t index = 0; index < stack.passes().size(); ++index) {
     if (stack.passes()[index].enabled) {

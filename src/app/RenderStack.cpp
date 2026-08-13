@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <iomanip>
+#include <iterator>
 #include <sstream>
 #include <utility>
 
@@ -87,7 +88,10 @@ bool animationPropertyIsPassLocal(const AnimationProperty property) {
   case AnimationProperty::CompositeColorSpace:
   case AnimationProperty::CompositeRange:
   case AnimationProperty::CompositeMask:
-  case AnimationProperty::CompositeMaskInverted: return true;
+  case AnimationProperty::CompositeMaskInverted:
+  case AnimationProperty::StereoAnalysisMode:
+  case AnimationProperty::StereoMaximumDisparity:
+  case AnimationProperty::StereoOcclusionTolerance: return true;
   default: return false;
   }
 }
@@ -136,6 +140,9 @@ void applyPassDefinition(RenderPass& materialized, const RenderPass& definition)
   materialized.kind = definition.kind;
   materialized.output = definition.output;
   materialized.composite = definition.composite;
+  materialized.stereoAnalysis = definition.stereoAnalysis;
+  materialized.stereoMaximumDisparityPixels = definition.stereoMaximumDisparityPixels;
+  materialized.stereoOcclusionTolerance = definition.stereoOcclusionTolerance;
   materialized.animation = definition.animation;
   materialized.overrides = definition.overrides;
   materialized.importedTextureOverride = definition.importedTextureOverride;
@@ -197,6 +204,10 @@ bool RenderStack::addOperation(const StackOperationKind kind) {
   } else if (kind == StackOperationKind::Composite) {
     operation.composite.sourceA = CompositeSource::Accumulator;
     operation.composite.sourceB = CompositeSource::RenderPass;
+  } else if (kind == StackOperationKind::StereoAnalysis) {
+    operation.composite.sourceA = CompositeSource::RenderPass;
+    operation.composite.sourceB = CompositeSource::RenderPass;
+    operation.composite.gain = 1.0f;
   }
   const auto firstRender = std::find_if(passes_.begin(), passes_.end(), [](const RenderPass& candidate) {
     return candidate.kind == StackOperationKind::Render ||
@@ -205,6 +216,13 @@ bool RenderStack::addOperation(const StackOperationKind kind) {
   if (firstRender != passes_.end()) {
     operation.composite.sourceAPassId = firstRender->id;
     operation.composite.sourceBPassId = firstRender->id;
+    if (kind == StackOperationKind::StereoAnalysis) {
+      const auto secondRender = std::find_if(std::next(firstRender), passes_.end(), [](const RenderPass& candidate) {
+        return candidate.kind == StackOperationKind::Render ||
+          candidate.kind == StackOperationKind::LegacyRenderComposite;
+      });
+      if (secondRender != passes_.end()) operation.composite.sourceBPassId = secondRender->id;
+    }
   }
   passes_.insert(passes_.begin() + static_cast<std::ptrdiff_t>(selected_ + 1), std::move(operation));
   ++selected_;
@@ -287,6 +305,7 @@ const char* stackOperationKindLabel(const StackOperationKind kind) {
     case StackOperationKind::Render: return "Render";
     case StackOperationKind::Interpret: return "Interpret";
     case StackOperationKind::Composite: return "Composite";
+    case StackOperationKind::StereoAnalysis: return "Stereo analysis";
     case StackOperationKind::LegacyRenderComposite: return "Render + composite (legacy)";
   }
   return "Operation";
@@ -297,6 +316,7 @@ const char* stackOperationKindId(const StackOperationKind kind) {
     case StackOperationKind::Render: return "render";
     case StackOperationKind::Interpret: return "interpret";
     case StackOperationKind::Composite: return "composite";
+    case StackOperationKind::StereoAnalysis: return "stereo_analysis";
     case StackOperationKind::LegacyRenderComposite: return "legacy_render_composite";
   }
   return "render";
@@ -516,6 +536,12 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
          << "\", \"range_behavior\": \"" << rangeIds[static_cast<int>(c.range)]
          << "\", \"mask\": \"" << maskIds[static_cast<int>(c.mask)]
          << "\", \"invert_mask\": " << c.invertMask << "},\n";
+    constexpr std::array<const char*, 5> stereoAnalysisIds = {"anaglyph", "signed_disparity",
+      "absolute_disparity", "correspondence_confidence", "monocular_occlusion"};
+    json << "      \"stereo_analysis\": {\"mode\": \""
+         << stereoAnalysisIds[static_cast<int>(pass.stereoAnalysis)]
+         << "\", \"maximum_disparity_pixels\": " << pass.stereoMaximumDisparityPixels
+         << ", \"occlusion_depth_tolerance\": " << pass.stereoOcclusionTolerance << "},\n";
     json << "      \"animation\": {\"enabled\": " << pass.animation.enabled << ", \"property_tracks\": [";
     for (std::size_t trackIndex = 0; trackIndex < pass.animation.tracks.size(); ++trackIndex) {
       const PropertyAnimationTrack& track = pass.animation.tracks[trackIndex];

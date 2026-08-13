@@ -752,6 +752,87 @@ void main() {
 }
 )GLSL";
 
+// Reprojects resolved depth between two off-axis eye cameras. Unlike pixel
+// difference this measures geometry correspondence and visibility directly.
+inline constexpr const char* stereoAnalysisFragmentShader = R"GLSL(
+#version 410 core
+in vec2 vUv;
+uniform sampler2D uLeftColor;
+uniform sampler2D uRightColor;
+uniform sampler2D uLeftDepth;
+uniform sampler2D uRightDepth;
+uniform mat4 uLeftInverseViewProjection;
+uniform mat4 uRightInverseViewProjection;
+uniform mat4 uLeftViewProjection;
+uniform mat4 uRightViewProjection;
+uniform int uMode;
+uniform float uMaximumDisparityPixels;
+uniform float uOcclusionTolerance;
+out vec4 fragColor;
+
+bool reconstructWorld(sampler2D depthTexture, vec2 uv, mat4 inverseViewProjection,
+    out vec3 world, out float depth) {
+  depth = texture(depthTexture, uv).r;
+  if (depth >= 0.999999) return false;
+  vec4 position = inverseViewProjection * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  world = position.xyz / max(abs(position.w), 0.000001);
+  return true;
+}
+
+bool projectWorld(vec3 world, mat4 viewProjection, out vec2 uv, out float depth) {
+  vec4 clip = viewProjection * vec4(world, 1.0);
+  if (clip.w <= 0.000001) return false;
+  vec3 ndc = clip.xyz / clip.w;
+  uv = ndc.xy * 0.5 + 0.5;
+  depth = ndc.z * 0.5 + 0.5;
+  return all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0))) &&
+    depth >= 0.0 && depth <= 1.0;
+}
+
+bool visibleFromOtherEye(vec3 world, sampler2D otherDepth, mat4 otherViewProjection,
+    out vec2 otherUv, out float expectedDepth) {
+  if (!projectWorld(world, otherViewProjection, otherUv, expectedDepth)) return false;
+  float actualDepth = texture(otherDepth, otherUv).r;
+  return actualDepth < 0.999999 && abs(actualDepth - expectedDepth) <= uOcclusionTolerance;
+}
+
+void main() {
+  vec3 leftWorld, rightWorld;
+  float leftDepth, rightDepth;
+  bool hasLeft = reconstructWorld(uLeftDepth, vUv, uLeftInverseViewProjection, leftWorld, leftDepth);
+  bool hasRight = reconstructWorld(uRightDepth, vUv, uRightInverseViewProjection, rightWorld, rightDepth);
+  vec2 rightUv = vUv, leftUv = vUv;
+  float expectedRight = 1.0, expectedLeft = 1.0;
+  bool leftSeenByRight = hasLeft && visibleFromOtherEye(leftWorld, uRightDepth,
+    uRightViewProjection, rightUv, expectedRight);
+  bool rightSeenByLeft = hasRight && visibleFromOtherEye(rightWorld, uLeftDepth,
+    uLeftViewProjection, leftUv, expectedLeft);
+  float widthPixels = float(textureSize(uLeftDepth, 0).x);
+  float disparity = hasLeft ? (vUv.x - rightUv.x) * widthPixels : 0.0;
+  float normalized = clamp(disparity / max(uMaximumDisparityPixels, 1.0), -1.0, 1.0);
+
+  vec3 color;
+  if (uMode == 0) {
+    vec3 left = texture(uLeftColor, vUv).rgb;
+    vec3 right = texture(uRightColor, vUv).rgb;
+    color = vec3(left.r, right.g, right.b);
+  } else if (uMode == 1) {
+    color = normalized >= 0.0 ? vec3(normalized, 0.0, 0.0) : vec3(0.0, -normalized, -normalized);
+  } else if (uMode == 2) {
+    color = vec3(abs(normalized));
+  } else if (uMode == 3) {
+    float confidence = leftSeenByRight && rightSeenByLeft ? 1.0 : 0.0;
+    color = vec3(confidence);
+  } else {
+    bool leftOnly = hasLeft && !leftSeenByRight;
+    bool rightOnly = hasRight && !rightSeenByLeft;
+    color = vec3(leftOnly ? 1.0 : 0.0, rightOnly ? 1.0 : 0.0, rightOnly ? 1.0 : 0.0);
+    if (leftOnly && rightOnly) color = vec3(1.0);
+  }
+  fragColor = vec4(color, 1.0);
+}
+)GLSL";
+
 // Produces a typed scalar resource from scene depth. Unlike the surface shader,
 // this pass does not replace material color: it reconstructs the visible
 // world-space position and writes the selected field signal to an R16F buffer.

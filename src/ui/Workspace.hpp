@@ -54,6 +54,8 @@ struct ViewportImages {
   unsigned int selected = 0;
   unsigned int base = 0;
   unsigned int composite = 0;
+  unsigned int leftEye = 0;
+  unsigned int rightEye = 0;
 };
 
 struct ViewportWindowResult {

@@ -89,6 +89,8 @@ struct RenderTarget {
   int depthPrecision = 0;
   int samples = 0;
   bool packedStencil = false;
+  glm::mat4 viewProjection{1.0f};
+  glm::mat4 inverseViewProjection{1.0f};
 
   void resize(int newWidth, int newHeight, int newDepthPrecision, int newSamples, bool needsStencil) {
     if (width == newWidth && height == newHeight && depthPrecision == newDepthPrecision && samples == newSamples && packedStencil == needsStencil) return;
@@ -233,6 +235,7 @@ public:
     sceneProgram_ = makeProgram(sceneVertexShader, sceneFragmentShader);
     outputProgram_ = makeProgram(outputVertexShader, outputFragmentShader);
     relationProgram_ = makeProgram(outputVertexShader, relationFragmentShader);
+    stereoAnalysisProgram_ = makeProgram(outputVertexShader, stereoAnalysisFragmentShader);
     fieldProgram_ = makeProgram(outputVertexShader, fieldFragmentShader);
     sdfIsoProgram_ = makeProgram(outputVertexShader, sdfIsoSurfaceFragmentShader);
     spectralProgram_ = makeProgram(spectralVertexShader, spectralFragmentShader);
@@ -364,6 +367,7 @@ public:
     glDeleteProgram(sceneProgram_);
     glDeleteProgram(outputProgram_);
     glDeleteProgram(relationProgram_);
+    glDeleteProgram(stereoAnalysisProgram_);
     glDeleteProgram(fieldProgram_);
     glDeleteProgram(sdfIsoProgram_);
     glDeleteProgram(spectralProgram_);
@@ -545,6 +549,8 @@ public:
     const PassCameraMatrices passCamera = buildPassCamera(camera, state, perturbation, aspect);
     const glm::mat4& view = passCamera.view;
     const glm::mat4& projection = passCamera.projection;
+    target.viewProjection = projection * view;
+    target.inverseViewProjection = glm::inverse(target.viewProjection);
     matrix("uModel", model);
     matrix("uView", view);
     matrix("uProjection", projection);
@@ -1183,6 +1189,41 @@ public:
       DisplayReconstructionState{}, 0);
   }
 
+  GLuint analyzeStereo(const RenderTarget& left, const RenderTarget& right, const RenderPass& operation,
+      const std::size_t outputIndex) {
+    glBindFramebuffer(GL_FRAMEBUFFER, relationFbos_[outputIndex]);
+    glViewport(0, 0, relationWidth_, relationHeight_);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glUseProgram(stereoAnalysisProgram_);
+    const GLuint textures[] = {left.outputTexture, right.outputTexture, left.depthTexture, right.depthTexture};
+    const char* names[] = {"uLeftColor", "uRightColor", "uLeftDepth", "uRightDepth"};
+    for (int unit = 0; unit < 4; ++unit) {
+      glActiveTexture(GL_TEXTURE0 + unit);
+      glBindTexture(GL_TEXTURE_2D, textures[unit]);
+      glUniform1i(glGetUniformLocation(stereoAnalysisProgram_, names[unit]), unit);
+    }
+    glUniformMatrix4fv(glGetUniformLocation(stereoAnalysisProgram_, "uLeftInverseViewProjection"),
+      1, GL_FALSE, glm::value_ptr(left.inverseViewProjection));
+    glUniformMatrix4fv(glGetUniformLocation(stereoAnalysisProgram_, "uRightInverseViewProjection"),
+      1, GL_FALSE, glm::value_ptr(right.inverseViewProjection));
+    glUniformMatrix4fv(glGetUniformLocation(stereoAnalysisProgram_, "uLeftViewProjection"),
+      1, GL_FALSE, glm::value_ptr(left.viewProjection));
+    glUniformMatrix4fv(glGetUniformLocation(stereoAnalysisProgram_, "uRightViewProjection"),
+      1, GL_FALSE, glm::value_ptr(right.viewProjection));
+    glUniform1i(glGetUniformLocation(stereoAnalysisProgram_, "uMode"),
+      static_cast<int>(operation.stereoAnalysis));
+    glUniform1f(glGetUniformLocation(stereoAnalysisProgram_, "uMaximumDisparityPixels"),
+      operation.stereoMaximumDisparityPixels);
+    glUniform1f(glGetUniformLocation(stereoAnalysisProgram_, "uOcclusionTolerance"),
+      operation.stereoOcclusionTolerance);
+    glBindVertexArray(fullscreenVao_);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return relationTextures_[outputIndex];
+  }
+
   GLuint composite(const RenderStack& stack) {
     operationTextures_.fill(0);
     GLuint accumulated = 0;
@@ -1226,6 +1267,13 @@ public:
         }
         return passTexture;
       };
+      if (pass.kind == StackOperationKind::StereoAnalysis) {
+        const std::size_t leftIndex = passIndexForId(pass.composite.sourceAPassId);
+        const std::size_t rightIndex = passIndexForId(pass.composite.sourceBPassId);
+        accumulated = analyzeStereo(passTargets_[leftIndex], passTargets_[rightIndex], pass, passIndex);
+        operationTextures_[passIndex] = accumulated;
+        continue;
+      }
       CompositeStep step = pass.composite;
       if (pass.kind == StackOperationKind::Interpret) {
         step.sourceB = step.sourceA;
@@ -1370,7 +1418,7 @@ private:
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 
-  GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0, fieldProgram_ = 0,
+  GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0, stereoAnalysisProgram_ = 0, fieldProgram_ = 0,
     sdfIsoProgram_ = 0, spectralProgram_ = 0,
     copyProgram_ = 0, displayProgram_ = 0,
     shadowProgram_ = 0, overdrawProgram_ = 0;

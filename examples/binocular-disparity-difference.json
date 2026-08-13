@@ -48,9 +48,10 @@
       "id": 1,
       "name": "Left eye",
       "enabled": true,
+      "operation_kind": "render",
       "output_buffer": "color",
       "overrides": [
-        {"property": "camera_lateral", "value": [-0.065]}
+        {"property": "camera_lateral", "value": [-0.0325]}
       ],
       "composite_into_previous": {
         "operation": "absolute_difference",
@@ -68,11 +69,12 @@
     },
     {
       "id": 2,
-      "name": "Right eye / disparity difference",
+      "name": "Right eye",
       "enabled": true,
+      "operation_kind": "render",
       "output_buffer": "color",
       "overrides": [
-        {"property": "camera_lateral", "value": [0.065]}
+        {"property": "camera_lateral", "value": [0.0325]}
       ],
       "composite_into_previous": {
         "operation": "absolute_difference",
@@ -85,6 +87,32 @@
         "range_behavior": "clamp_0_to_1",
         "mask": "none",
         "invert_mask": false
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    },
+    {
+      "id": 3,
+      "name": "Geometry disparity",
+      "enabled": true,
+      "operation_kind": "stereo_analysis",
+      "output_buffer": "color",
+      "overrides": [],
+      "composite_into_previous": {
+        "operation": "absolute_difference",
+        "source_a": {"type": "render_pass", "pass_id": 1},
+        "source_b": {"type": "render_pass", "pass_id": 2},
+        "gain": 1.0,
+        "bias": 0.0,
+        "opacity": 1.0,
+        "arithmetic_color_space": "linear_light",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "stereo_analysis": {
+        "mode": "absolute_disparity",
+        "maximum_disparity_pixels": 64.0,
+        "occlusion_depth_tolerance": 0.0025
       },
       "animation": {"enabled": true, "property_tracks": []}
     }
