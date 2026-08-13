@@ -17,6 +17,7 @@
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
 #include "ui/Inspector.hpp"
+#include "ui/PassInspector.hpp"
 
 #include <algorithm>
 #include <array>
@@ -41,43 +42,6 @@ void glfwError(int, const char* descriptionText) { std::fprintf(stderr, "GLFW: %
 
 bool isNintendo64Example(handbook::Example example) {
   return example >= handbook::Example::N64ThreePoint && example <= handbook::Example::N64VideoInterface;
-}
-
-constexpr std::array<const char*, 12> relationLabels = {
-  "Absolute difference", "Signed A - B", "Positive A - B", "Positive B - A", "Multiply", "Screen",
-  "Exclusion", "Minimum", "Maximum", "A x (1 - B)", "Centered sum", "Relative A / B"
-};
-
-constexpr std::array<const char*, 12> relationEquations = {
-  "|A - B|", "A - B", "max(A - B, 0)", "max(B - A, 0)", "A x B", "1 - (1 - A)(1 - B)",
-  "A + B - 2AB", "min(A, B)", "max(A, B)", "A(1 - B)", "A + B - 1", "A / max(B, 1/255) - 1"
-};
-
-constexpr std::array<const char*, 12> relationMeanings = {
-  "Black means agreement; each RGB channel measures disagreement magnitude.",
-  "Middle gray means agreement; excursions encode which rendering has the larger channel value.",
-  "Shows only channel energy present in A beyond B.",
-  "Shows only channel energy present in B beyond A.",
-  "Keeps color supported by both renderings and darkens disagreement.",
-  "Combines bright contributions from either rendering.",
-  "Dark where equal at black or white; bright where the renderings oppose each other.",
-  "Keeps only the lower channel value shared by the two renderings.",
-  "Keeps the higher channel value supplied by either rendering.",
-  "Shows A where B is absent; black where B fully occupies the channel.",
-  "With 0.5 bias, middle gray means the two channel values sum to one.",
-  "With 0.5 bias, middle gray means A equals B; ratios near black in B clip aggressively."
-};
-
-void resetRelationTransform(RelationOperator operation, float& gain, float& bias) {
-  switch (operation) {
-  case RelationOperator::AbsoluteDifference: gain = 4.0f; bias = 0.0f; break;
-  case RelationOperator::SignedDifference: gain = 2.0f; bias = 0.5f; break;
-  case RelationOperator::PositiveAMinusB:
-  case RelationOperator::PositiveBMinusA: gain = 4.0f; bias = 0.0f; break;
-  case RelationOperator::CenteredSum: gain = 1.0f; bias = 0.5f; break;
-  case RelationOperator::RelativeDifference: gain = 0.5f; bias = 0.5f; break;
-  default: gain = 1.0f; bias = 0.0f; break;
-  }
 }
 
 } // namespace
@@ -113,9 +77,6 @@ int runApplication() {
   TestScene scene = TestScene::Torus;
   CompareMode compare = CompareMode::A;
   HardwareProfile hardwareProfile = HardwareProfile::Unrestricted;
-  RelationOperator relationOperator = RelationOperator::AbsoluteDifference;
-  float relationGain = 4.0f;
-  float relationBias = 0.0f;
   bool viewportHovered = false;
   double configCopiedAt = -10.0;
   handbook::Handbook graphicsHandbook;
@@ -237,6 +198,10 @@ int runApplication() {
     category = Category::Geometry;
   }
 
+  RenderStack renderStack;
+  renderStack.passes()[0].renderer = current;
+  renderStack.passes()[1].renderer = reference;
+
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
     ImGui_ImplOpenGL3_NewFrame();
@@ -275,11 +240,9 @@ int runApplication() {
     if (ImGui::Combo("##hardware-profile", &hardwareProfileIndex, hardwareProfileLabels, 3)) {
       hardwareProfile = static_cast<HardwareProfile>(hardwareProfileIndex);
       if (hardwareProfile == HardwareProfile::Unrestricted) {
-        current.n64.enabled = false;
-        reference.n64.enabled = false;
+        for (RenderPass& pass : renderStack.passes()) pass.renderer.n64.enabled = false;
       }
-      normalizeForHardwareProfile(hardwareProfile, current);
-      normalizeForHardwareProfile(hardwareProfile, reference);
+      for (RenderPass& pass : renderStack.passes()) normalizeForHardwareProfile(hardwareProfile, pass.renderer);
       if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
       if (hardwareProfile != HardwareProfile::Unrestricted && scene == TestScene::StencilMask) scene = TestScene::Torus;
     }
@@ -293,23 +256,14 @@ int runApplication() {
     int sceneIndex = static_cast<int>(scene);
     if (ImGui::Combo("##test-scene", &sceneIndex, sceneLabels, sceneCount)) scene = static_cast<TestScene>(sceneIndex);
     ImGui::SameLine();
-    if (ImGui::Button("Reset neutral")) current = RendererState{};
+    if (ImGui::Button("Reset neutral")) renderStack.selected().renderer = RendererState{};
     ImGui::SameLine();
-    if (ImGui::Button("Reset scene setup")) applyRecommendedSetup(scene, current, camera);
+    if (ImGui::Button("Reset scene setup")) applyRecommendedSetup(scene, renderStack.selected().renderer, camera);
     if (ImGui::IsItemHovered())
       ImGui::SetTooltip("Apply the recommended renderer state and camera framing for the selected scene.");
     ImGui::SameLine();
-    if (ImGui::Button("Copy A to B")) reference = current;
-    ImGui::SameLine();
-    if (ImGui::Button("Swap A/B")) std::swap(current, reference);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Exchange the complete A and B renderer states. Signed operators reverse direction.");
-    ImGui::SameLine();
-    const char* copyLabel = compare == CompareMode::Relation ? "Copy A/B JSON" : "Copy config JSON";
-    if (ImGui::Button(copyLabel)) {
-      const std::string exportedConfig = compare == CompareMode::Relation
-        ? relationConfigJson(current, reference, camera, scene, hardwareProfile,
-            relationOperator, relationGain, relationBias)
-        : configJson(current, camera, scene, hardwareProfile);
+    if (ImGui::Button("Copy pass JSON")) {
+      const std::string exportedConfig = configJson(renderStack.selected().renderer, camera, scene, hardwareProfile);
       ImGui::SetClipboardText(exportedConfig.c_str());
       configCopiedAt = glfwGetTime();
     }
@@ -321,40 +275,41 @@ int runApplication() {
     if (ImGui::Button("Handbook")) graphicsHandbook.open();
     ImGui::TextDisabled("Compare:");
     ImGui::SameLine();
-    if (ImGui::RadioButton("A", compare == CompareMode::A)) compare = CompareMode::A;
+    if (ImGui::RadioButton("Selected pass", compare == CompareMode::A)) compare = CompareMode::A;
     ImGui::SameLine();
-    if (ImGui::RadioButton("B", compare == CompareMode::B)) compare = CompareMode::B;
+    if (ImGui::RadioButton("Base pass", compare == CompareMode::B)) compare = CompareMode::B;
     ImGui::SameLine();
-    if (ImGui::RadioButton("Split A/B", compare == CompareMode::Split)) compare = CompareMode::Split;
+    if (ImGui::RadioButton("Split base/selected", compare == CompareMode::Split)) compare = CompareMode::Split;
     ImGui::SameLine();
-    if (ImGui::RadioButton("Render algebra", compare == CompareMode::Relation)) compare = CompareMode::Relation;
-    if (compare == CompareMode::Relation) {
-      ImGui::SameLine();
-      ImGui::SetNextItemWidth(165.0f);
-      int operatorIndex = static_cast<int>(relationOperator);
-      if (ImGui::Combo("##relation-operator", &operatorIndex, relationLabels.data(), relationLabels.size())) {
-        relationOperator = static_cast<RelationOperator>(operatorIndex);
-        resetRelationTransform(relationOperator, relationGain, relationBias);
-      }
-    }
+    if (ImGui::RadioButton("Composite stack", compare == CompareMode::Relation)) compare = CompareMode::Relation;
     ImGui::SameLine(ImGui::GetWindowWidth() - 260);
     ImGui::TextDisabled("LMB orbit   MMB/RMB pan   Wheel zoom");
-    if (compare == CompareMode::Relation) {
-      const int relationIndex = static_cast<int>(relationOperator);
-      ImGui::TextDisabled("Per-channel: %s", relationEquations[relationIndex]);
-      ImGui::SameLine();
-      ImGui::SetNextItemWidth(110.0f);
-      ImGui::SliderFloat("Gain", &relationGain, 0.1f, 16.0f, "%.2fx", ImGuiSliderFlags_Logarithmic);
-      ImGui::SameLine();
-      ImGui::SetNextItemWidth(110.0f);
-      ImGui::SliderFloat("Bias", &relationBias, -1.0f, 1.0f, "%.2f");
-      ImGui::SameLine();
-      ImGui::TextDisabled("Then clamp to [0, 1]. %s", relationMeanings[relationIndex]);
-    }
     ImGui::Separator();
 
     const float contentHeight = ImGui::GetContentRegionAvail().y;
-    ImGui::BeginChild("Pipeline", ImVec2(145, contentHeight), true);
+    constexpr float pipelineWidth = 200.0f;
+    ImGui::BeginChild("Pipeline", ImVec2(pipelineWidth, contentHeight), true);
+    ImGui::TextDisabled("RENDER PASSES");
+    ImGui::Spacing();
+    for (std::size_t passIndex = 0; passIndex < renderStack.passes().size(); ++passIndex) {
+      RenderPass& pass = renderStack.passes()[passIndex];
+      ImGui::PushID(static_cast<int>(passIndex));
+      ImGui::Checkbox("##enabled", &pass.enabled);
+      ImGui::SameLine();
+      if (ImGui::Selectable(pass.name.c_str(), renderStack.selectedIndex() == passIndex, 0, ImVec2(0, 24)))
+        renderStack.select(passIndex);
+      ImGui::PopID();
+    }
+    if (ImGui::Button("Duplicate pass", ImVec2(-1, 0))) renderStack.duplicateSelected();
+    if (ImGui::Button("Up")) renderStack.moveSelected(-1);
+    ImGui::SameLine();
+    if (ImGui::Button("Down")) renderStack.moveSelected(1);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(renderStack.passes().size() <= 1);
+    if (ImGui::Button("Delete")) renderStack.removeSelected();
+    ImGui::EndDisabled();
+    ImGui::Spacing();
+    ImGui::Separator();
     ImGui::TextDisabled("PIPELINE");
     ImGui::Spacing();
     constexpr std::array<Category, 11> categories = {Category::Geometry, Category::Camera, Category::Rasterization,
@@ -367,7 +322,7 @@ int runApplication() {
     ImGui::EndChild();
     ImGui::SameLine(0, 5);
 
-    const float inspectorWidth = 310;
+    const float inspectorWidth = 340;
     const float viewportWidth = std::max(100.0f, ImGui::GetContentRegionAvail().x - inspectorWidth - 5);
     ImGui::BeginChild("Viewport", ImVec2(viewportWidth, contentHeight), true, ImGuiWindowFlags_NoScrollbar);
     const ImVec2 available = ImGui::GetContentRegionAvail();
@@ -380,30 +335,35 @@ int runApplication() {
       paneOrigin.x + std::floor((available.x - presentationSize.x) * 0.5f),
       paneOrigin.y + std::floor((available.y - presentationSize.y) * 0.5f));
     const ImVec2 end(origin.x + presentationSize.x, origin.y + presentationSize.y);
-    normalizeForHardwareProfile(hardwareProfile, current);
-    normalizeForHardwareProfile(hardwareProfile, reference);
-    const GLuint textureA = renderer.render(current, camera, scene, false);
-    const GLuint textureB = (compare == CompareMode::A) ? 0 : renderer.render(reference, camera, scene, true);
+    std::array<GLuint, RenderStack::maximumPasses> passTextures{};
+    for (std::size_t passIndex = 0; passIndex < renderStack.passes().size(); ++passIndex) {
+      normalizeForHardwareProfile(hardwareProfile, renderStack.passes()[passIndex].renderer);
+      passTextures[passIndex] = renderer.renderPass(renderStack.passes()[passIndex], camera, scene, passIndex);
+    }
+    const GLuint selectedTexture = passTextures[renderStack.selectedIndex()];
+    const GLuint baseTexture = passTextures.front();
+    const GLuint renderedComposite = renderer.composite(renderStack);
+    const GLuint compositeTexture = renderedComposite != 0 ? renderedComposite : selectedTexture;
     ImDrawList* draw = ImGui::GetWindowDrawList();
     draw->AddRectFilled(origin, end, IM_COL32(27, 29, 31, 255));
     if (compare == CompareMode::Split) {
       const float middle = origin.x + std::floor(presentationSize.x * 0.5f);
       draw->PushClipRect(origin, ImVec2(middle, end.y), true);
-      draw->AddImage(static_cast<ImTextureID>(textureA), origin, end, ImVec2(0, 1), ImVec2(1, 0));
+      draw->AddImage(static_cast<ImTextureID>(baseTexture), origin, end, ImVec2(0, 1), ImVec2(1, 0));
       draw->PopClipRect();
       draw->PushClipRect(ImVec2(middle + 1, origin.y), end, true);
-      draw->AddImage(static_cast<ImTextureID>(textureB), origin, end, ImVec2(0, 1), ImVec2(1, 0));
+      draw->AddImage(static_cast<ImTextureID>(selectedTexture), origin, end, ImVec2(0, 1), ImVec2(1, 0));
       draw->PopClipRect();
       draw->AddLine(ImVec2(middle, origin.y), ImVec2(middle, end.y), IM_COL32(225, 225, 225, 210));
-      draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240,240,240,220), "A  CURRENT");
-      draw->AddText(ImVec2(middle + 10, origin.y + 8), IM_COL32(240,240,240,220), "B  REFERENCE");
+      draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240,240,240,220), "BASE PASS");
+      draw->AddText(ImVec2(middle + 10, origin.y + 8), IM_COL32(240,240,240,220),
+        renderStack.selected().name.c_str());
     } else {
-      const GLuint texture = compare == CompareMode::A ? textureA
-        : compare == CompareMode::Relation ? renderer.renderRelation(relationOperator, relationGain, relationBias)
-                                           : textureB;
+      const GLuint texture = compare == CompareMode::A ? selectedTexture
+        : compare == CompareMode::Relation ? compositeTexture : baseTexture;
       draw->AddImage(static_cast<ImTextureID>(texture), origin, end, ImVec2(0, 1), ImVec2(1, 0));
-      const char* label = compare == CompareMode::A ? "A  CURRENT"
-        : compare == CompareMode::B ? "B  REFERENCE" : relationLabels[static_cast<int>(relationOperator)];
+      const char* label = compare == CompareMode::A ? renderStack.selected().name.c_str()
+        : compare == CompareMode::B ? "BASE PASS" : "COMPOSITE STACK";
       draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240,240,240,220), label);
     }
     ImGui::SetCursorScreenPos(origin);
@@ -413,7 +373,10 @@ int runApplication() {
     ImGui::SameLine(0, 5);
 
     ImGui::BeginChild("Inspector", ImVec2(inspectorWidth, contentHeight), true);
-      drawInspector(category, current, hardwareProfile);
+      drawPassInspector(renderStack);
+      ImGui::Spacing();
+      ImGui::Separator();
+      drawInspector(category, renderStack.selected().renderer, hardwareProfile);
     ImGui::EndChild();
     ImGui::End();
 
@@ -421,26 +384,33 @@ int runApplication() {
     if (handbookAction.type != handbook::ActionType::None && isNintendo64Example(handbookAction.example))
       hardwareProfile = HardwareProfile::Nintendo64;
     if (handbookAction.type == handbook::ActionType::ApplyToA) {
-      applyHandbookExample(handbookAction.example, false, current, camera, scene, category);
+      applyHandbookExample(handbookAction.example, false, renderStack.selected().renderer, camera, scene, category);
     } else if (handbookAction.type == handbook::ActionType::ApplyToB) {
       RendererState exampleState;
       applyHandbookExample(handbookAction.example, true, exampleState, camera, scene, category);
-      reference = exampleState;
+      if (renderStack.passes().size() < 2) {
+        renderStack.select(0);
+        renderStack.duplicateSelected();
+      }
+      constexpr std::size_t alternative = 1;
+      renderStack.passes()[alternative].renderer = exampleState;
+      renderStack.select(alternative);
     } else if (handbookAction.type == handbook::ActionType::LoadComparison) {
-      applyHandbookExample(handbookAction.example, false, current, camera, scene, category);
+      renderStack = RenderStack{};
+      applyHandbookExample(handbookAction.example, false, renderStack.passes()[0].renderer, camera, scene, category);
       RendererState comparisonState;
       CameraOrbit comparisonCamera = camera;
       TestScene comparisonScene = scene;
       Category comparisonCategory = category;
       applyHandbookExample(handbookAction.example, true, comparisonState, comparisonCamera, comparisonScene, comparisonCategory);
-      reference = comparisonState;
+      renderStack.passes()[1].renderer = comparisonState;
+      renderStack.select(1);
       camera = comparisonCamera;
       scene = comparisonScene;
       category = comparisonCategory;
       compare = CompareMode::Split;
     }
-    normalizeForHardwareProfile(hardwareProfile, current);
-    normalizeForHardwareProfile(hardwareProfile, reference);
+    for (RenderPass& pass : renderStack.passes()) normalizeForHardwareProfile(hardwareProfile, pass.renderer);
 
     ImGui::Render();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

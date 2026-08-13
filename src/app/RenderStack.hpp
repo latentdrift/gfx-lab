@@ -70,4 +70,9 @@ private:
   unsigned int nextPassNumber_ = 3;
 };
 
+[[nodiscard]] const char* relationOperatorLabel(RelationOperator operation);
+[[nodiscard]] const char* relationOperatorEquation(RelationOperator operation);
+[[nodiscard]] const char* relationOperatorMeaning(RelationOperator operation);
+void resetCompositeTransform(CompositeStep& step);
+
 } // namespace gfxlab
