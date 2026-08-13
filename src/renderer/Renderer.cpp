@@ -370,10 +370,6 @@ public:
       const TextureAsset* importedTexture = nullptr, const bool importedTextureSrgb = true) {
     if (targetIndex >= passTargets_.size()) return 0;
     RenderTarget& target = passTargets_[targetIndex];
-    CameraOrbit passCamera = camera;
-    passCamera.yaw += perturbation.cameraYaw;
-    passCamera.pitch = std::clamp(passCamera.pitch + perturbation.cameraPitch, -1.45f, 1.45f);
-    passCamera.distance = std::clamp(passCamera.distance + perturbation.cameraDistance, 1.4f, 14.0f);
     const glm::mat4 passTransform = glm::translate(glm::mat4(1.0f), perturbation.modelTranslation) *
       glm::scale(glm::mat4(1.0f), glm::vec3(std::max(0.01f, perturbation.modelScale)));
     const float azimuth = glm::radians(state.lighting.azimuth);
@@ -508,13 +504,10 @@ public:
 
     glUseProgram(sceneProgram_);
     const glm::mat4 model = glm::rotate(glm::mat4(1.0f), glm::radians(-14.0f), glm::vec3(1, 0, 0));
-    const glm::mat4 view = passCamera.view();
     const float aspect = static_cast<float>(target.width) / static_cast<float>(target.height);
-    const float halfHeight = state.camera.orthographicSize * 0.5f;
-    const glm::mat4 projection = state.camera.orthographic
-      ? glm::ortho(-halfHeight * aspect, halfHeight * aspect, -halfHeight, halfHeight, state.camera.nearPlane, 100.0f)
-      : glm::perspective(glm::radians(std::clamp(state.camera.fieldOfView + perturbation.fieldOfView,
-          5.0f, 150.0f)), aspect, state.camera.nearPlane, 100.0f);
+    const PassCameraMatrices passCamera = buildPassCamera(camera, state, perturbation, aspect);
+    const glm::mat4& view = passCamera.view;
+    const glm::mat4& projection = passCamera.projection;
     matrix("uModel", model);
     matrix("uView", view);
     matrix("uProjection", projection);
@@ -567,7 +560,7 @@ public:
     glUniform2i(location("uN64Shift"), state.n64.shiftS, state.n64.shiftT);
     glUniform1i(location("uN64AlphaCompare"), state.n64.alphaCompare);
     glUniform1f(location("uN64AlphaThreshold"), state.n64.alphaThreshold);
-    glUniform3fv(location("uCameraPosition"), 1, glm::value_ptr(passCamera.eye()));
+    glUniform3fv(location("uCameraPosition"), 1, glm::value_ptr(passCamera.eye));
     glUniform2fv(location("uUvOffset"), 1, glm::value_ptr(perturbation.uvOffset));
     glUniform2fv(location("uUvScale"), 1, glm::value_ptr(perturbation.uvScale));
     glUniform1f(location("uUvRotation"), perturbation.uvRotation);
@@ -802,7 +795,7 @@ public:
       glUniformMatrix4fv(glGetUniformLocation(sdfIsoProgram_, "uViewProjection"), 1, GL_FALSE,
         glm::value_ptr(viewProjection));
       glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uCameraPosition"), 1,
-        glm::value_ptr(passCamera.eye()));
+        glm::value_ptr(passCamera.eye));
       glUniform1i(glGetUniformLocation(sdfIsoProgram_, "uOrthographic"), state.camera.orthographic);
       glUniform1i(glGetUniformLocation(sdfIsoProgram_, "uSdfAType"), state.field.sdfA.type);
       glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uSdfAPosition"), 1,

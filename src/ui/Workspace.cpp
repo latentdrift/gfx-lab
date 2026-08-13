@@ -341,20 +341,11 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   const bool gizmoVisible = compare == CompareMode::A && tool != Tool::Orbit;
   result.acceptsCameraInput = result.hovered && !gizmoVisible;
   if (gizmoVisible) {
-    CameraOrbit passCamera = camera;
-    passCamera.yaw += displayedPass.perturbation.cameraYaw;
-    passCamera.pitch = std::clamp(passCamera.pitch + displayedPass.perturbation.cameraPitch, -1.45f, 1.45f);
-    passCamera.distance = std::clamp(passCamera.distance + displayedPass.perturbation.cameraDistance, 1.4f, 14.0f);
-    const glm::mat4 view = passCamera.view();
     const RendererState& state = displayedPass.renderer;
     constexpr float aspect = cameraWidth / cameraHeight;
-    const float halfHeight = state.camera.orthographicSize * 0.5f;
-    const glm::mat4 projection = state.camera.orthographic
-      ? glm::ortho(-halfHeight * aspect, halfHeight * aspect, -halfHeight, halfHeight,
-          state.camera.nearPlane, 100.0f)
-      : glm::perspective(glm::radians(std::clamp(state.camera.fieldOfView +
-          displayedPass.perturbation.fieldOfView, 5.0f, 150.0f)), aspect,
-          state.camera.nearPlane, 100.0f);
+    const PassCameraMatrices passCamera = buildPassCamera(camera, state, displayedPass.perturbation, aspect);
+    const glm::mat4& view = passCamera.view;
+    const glm::mat4& projection = passCamera.projection;
     glm::mat4 transform = glm::translate(glm::mat4(1.0f), displayedPass.perturbation.modelTranslation) *
       glm::scale(glm::mat4(1.0f), glm::vec3(std::max(0.01f, displayedPass.perturbation.modelScale)));
     const glm::vec3 previousTranslation = displayedPass.perturbation.modelTranslation;

@@ -162,6 +162,13 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
     ImGui::SliderAngle("Camera pitch offset", &pass.perturbation.cameraPitch, -5.0f, 5.0f, "%.2f deg"));
   animationKeyControl(pass, AnimationProperty::CameraDistance, timeline,
     ImGui::DragFloat("Camera distance offset", &pass.perturbation.cameraDistance, 0.005f, -2.0f, 2.0f, "%.3f unit"));
+  animationKeyControl(pass, AnimationProperty::CameraLateral, timeline,
+    ImGui::DragFloat("Camera lateral (eye) offset", &pass.perturbation.cameraLateral,
+      0.001f, -1.0f, 1.0f, "%.3f unit"));
+  animationKeyControl(pass, AnimationProperty::StereoConvergence, timeline,
+    ImGui::DragFloat("Stereo convergence distance", &pass.perturbation.stereoConvergence,
+      0.01f, 0.05f, 100.0f, "%.2f units"));
+  description("Lateral offset translates an eye camera without rotating it. Perspective projection uses an off-axis frustum so points at the convergence distance have zero disparity.");
   animationKeyControl(pass, AnimationProperty::FieldOfViewOffset, timeline,
     ImGui::DragFloat("Field-of-view offset", &pass.perturbation.fieldOfView, 0.05f, -20.0f, 20.0f, "%.2f deg"));
 

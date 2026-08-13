@@ -83,6 +83,14 @@ The [`examples`](examples) directory contains loadable stack documents. Start wi
 the result through the quantized rod/cone observer comparison. Its parameters remain ordinary editable lab
 state after loading.
 
+[`binocular-disparity-difference.json`](examples/binocular-disparity-difference.json) renders the same scene
+from parallel left- and right-eye cameras and displays `|L - R|`. The eye cameras use opposite lateral offsets
+and asymmetric off-axis frusta that meet at a shared convergence distance; they are translated, never toed in.
+Black regions agree between the eyes, while bright paired contours expose disparity, depth discontinuities,
+specular disagreement, and monocular occlusion. Reduce composite gain to inspect subtle disagreement, change
+the convergence distance to move the zero-disparity plane, or switch the second pass to signed difference with
+a `0.5` bias to retain disparity direction.
+
 Graphics Lab uses a persistent dockable workspace rather than one fixed application page. **Scene**, **Render Passes**, **Pass Properties**, **Viewport**, every rendering-pipeline category, **Texture Mapping**, **Display Reconstruction**, **Animation Timeline**, and **Pass Differences** are independent tool windows. The pipeline, mapping, and final-display tools begin as tabs in one dock node; tear out or rearrange the tools needed for an experiment and manage them under **Window**. **Window → Restore Default Layout** rebuilds the supplied compact workspace. ImGui saves subsequent window and docking changes between runs.
 
 Use **View → UI Scale** to resize text, controls, spacing, tabs, and interaction targets together from 75% to

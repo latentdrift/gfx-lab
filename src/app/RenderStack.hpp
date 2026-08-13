@@ -60,8 +60,19 @@ struct PassPerturbation {
   float cameraYaw = 0.0f;
   float cameraPitch = 0.0f;
   float cameraDistance = 0.0f;
+  float cameraLateral = 0.0f;
+  float stereoConvergence = 4.0f;
   float fieldOfView = 0.0f;
 };
+
+struct PassCameraMatrices {
+  glm::vec3 eye{0.0f};
+  glm::mat4 view{1.0f};
+  glm::mat4 projection{1.0f};
+};
+
+[[nodiscard]] PassCameraMatrices buildPassCamera(const CameraOrbit& camera, const RendererState& state,
+  const PassPerturbation& perturbation, float aspect);
 
 struct CompositeStep {
   RelationOperator operation = RelationOperator::AbsoluteDifference;

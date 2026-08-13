@@ -1,0 +1,92 @@
+{
+  "schema": "graphics-lab.render-stack.v8",
+  "hardware_target": "unrestricted",
+  "test_scene": "lighting_comparison",
+  "view": {
+    "orbit_yaw_radians": 0.66,
+    "orbit_pitch_radians": 0.34,
+    "distance_units": 5.6,
+    "target": [0.0, 0.0, 0.0]
+  },
+  "display_reconstruction": {
+    "enabled": false,
+    "signal": "direct_rgb",
+    "chroma_bleed": 0.0,
+    "luma_chroma_crosstalk": 0.0,
+    "scanline_strength": 0.0,
+    "phosphor_mask_strength": 0.0,
+    "bloom_strength": 0.0,
+    "bloom_radius_pixels": 2.0
+  },
+  "animation_timeline": {
+    "duration_seconds": 4.0,
+    "playback_rate": 1.0,
+    "loop": true,
+    "auto_key": false,
+    "show_all_passes": false,
+    "snap_to_frames": true,
+    "frames_per_second": 24,
+    "current_time_seconds": 0.0
+  },
+  "global_base": {
+    "properties": {
+      "texture_source": [1.0],
+      "smooth_shading": [1.0],
+      "lighting_model": [4.0],
+      "ambient": [0.16],
+      "shininess": [28.0],
+      "camera_lateral": [0.0],
+      "stereo_convergence": [4.0],
+      "bits_per_channel": [8.0],
+      "linear_light": [1.0],
+      "internal_resolution": [640.0, 480.0]
+    },
+    "property_tracks": []
+  },
+  "passes": [
+    {
+      "id": 1,
+      "name": "Left eye",
+      "enabled": true,
+      "output_buffer": "color",
+      "overrides": [
+        {"property": "camera_lateral", "value": [-0.065]}
+      ],
+      "composite_into_previous": {
+        "operation": "absolute_difference",
+        "source_a": {"type": "accumulated_result", "pass_id": 1},
+        "source_b": {"type": "current_pass", "pass_id": 1},
+        "gain": 1.0,
+        "bias": 0.0,
+        "opacity": 1.0,
+        "arithmetic_color_space": "encoded_rgb",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    },
+    {
+      "id": 2,
+      "name": "Right eye / disparity difference",
+      "enabled": true,
+      "output_buffer": "color",
+      "overrides": [
+        {"property": "camera_lateral", "value": [0.065]}
+      ],
+      "composite_into_previous": {
+        "operation": "absolute_difference",
+        "source_a": {"type": "accumulated_result", "pass_id": 1},
+        "source_b": {"type": "current_pass", "pass_id": 2},
+        "gain": 8.0,
+        "bias": 0.0,
+        "opacity": 1.0,
+        "arithmetic_color_space": "encoded_rgb",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    }
+  ]
+}

@@ -31,6 +31,8 @@ enum class AnimationProperty {
   CameraYaw,
   CameraPitch,
   CameraDistance,
+  CameraLateral,
+  StereoConvergence,
   FieldOfViewOffset,
   CompositeGain,
   CompositeBias,

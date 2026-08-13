@@ -336,6 +336,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         stackConfig.find("\"perturbation\"") == std::string::npos ||
         stackConfig.find("\"coordinate_source\"") == std::string::npos ||
         stackConfig.find("\"uv_rotation_radians\"") == std::string::npos ||
+        stackConfig.find("\"camera_lateral_offset_units\"") == std::string::npos ||
+        stackConfig.find("\"stereo_convergence_distance_units\"") == std::string::npos ||
         stackConfig.find("\"composite_into_previous\"") == std::string::npos ||
         stackConfig.find("\"source_a\"") == std::string::npos ||
         stackConfig.find("\"pass_id\"") == std::string::npos ||
@@ -380,6 +382,44 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         roundTripDocument.document->renderStack.passes()[1].composite.operation != RelationOperator::BitwiseXor ||
         std::abs(roundTripDocument.document->camera.yaw - exampleDocument.document->camera.yaw) > 0.0001f)
       fail("stack document save/load round trip failed validation");
+    const StackDocumentLoadResult binocularDocument =
+      loadStackDocumentFile("examples/binocular-disparity-difference.json");
+    if (!binocularDocument || binocularDocument.document->scene != TestScene::Lighting ||
+        binocularDocument.document->renderStack.passes().size() != 2 ||
+        std::abs(materializeRenderPass(binocularDocument.document->renderStack, 0).perturbation.cameraLateral +
+          0.065f) > 0.0001f ||
+        std::abs(materializeRenderPass(binocularDocument.document->renderStack, 1).perturbation.cameraLateral -
+          0.065f) > 0.0001f ||
+        std::abs(materializeRenderPass(binocularDocument.document->renderStack, 1).perturbation.stereoConvergence -
+          4.0f) > 0.0001f ||
+        binocularDocument.document->renderStack.passes()[1].composite.operation !=
+          RelationOperator::AbsoluteDifference)
+      fail("binocular disparity example failed document loading validation");
+    CameraOrbit stereoCamera;
+    stereoCamera.yaw = 0.0f;
+    stereoCamera.pitch = 0.0f;
+    stereoCamera.distance = 5.0f;
+    RendererState stereoState;
+    PassPerturbation leftEye;
+    leftEye.cameraLateral = -0.1f;
+    leftEye.stereoConvergence = 4.0f;
+    PassPerturbation rightEye = leftEye;
+    rightEye.cameraLateral = 0.1f;
+    const PassCameraMatrices leftCamera = buildPassCamera(stereoCamera, stereoState, leftEye, 4.0f / 3.0f);
+    const PassCameraMatrices rightCamera = buildPassCamera(stereoCamera, stereoState, rightEye, 4.0f / 3.0f);
+    const glm::vec3 convergencePoint = stereoCamera.eye() +
+      glm::normalize(stereoCamera.target - stereoCamera.eye()) * leftEye.stereoConvergence;
+    const glm::vec4 leftClip = leftCamera.projection * leftCamera.view * glm::vec4(convergencePoint, 1.0f);
+    const glm::vec4 rightClip = rightCamera.projection * rightCamera.view * glm::vec4(convergencePoint, 1.0f);
+    if (std::abs(leftClip.x / leftClip.w) > 0.0001f || std::abs(rightClip.x / rightClip.w) > 0.0001f ||
+        std::abs(glm::distance(leftCamera.eye, rightCamera.eye) - 0.2f) > 0.0001f)
+      fail("off-axis stereo camera convergence failed validation");
+    for (std::size_t passIndex = 0;
+         passIndex < binocularDocument.document->renderStack.passes().size(); ++passIndex)
+      renderer.renderPass(materializeRenderPass(binocularDocument.document->renderStack, passIndex),
+        binocularDocument.document->camera, binocularDocument.document->scene, passIndex);
+    if (renderer.composite(binocularDocument.document->renderStack) == 0)
+      fail("binocular disparity example failed render validation");
     constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,
       handbook::Example::AffineMapping, handbook::Example::TextureMinification, handbook::Example::NormalMapping,
       handbook::Example::LightingInterpolation, handbook::Example::DepthPrecision, handbook::Example::Transparency,

@@ -152,6 +152,8 @@ void parsePerturbation(const Json& source, PassPerturbation& perturbation) {
   perturbation.cameraYaw = source.value("camera_yaw_offset_radians", perturbation.cameraYaw);
   perturbation.cameraPitch = source.value("camera_pitch_offset_radians", perturbation.cameraPitch);
   perturbation.cameraDistance = source.value("camera_distance_offset_units", perturbation.cameraDistance);
+  perturbation.cameraLateral = source.value("camera_lateral_offset_units", perturbation.cameraLateral);
+  perturbation.stereoConvergence = source.value("stereo_convergence_distance_units", perturbation.stereoConvergence);
   perturbation.fieldOfView = source.value("field_of_view_offset_degrees", perturbation.fieldOfView);
 }
 

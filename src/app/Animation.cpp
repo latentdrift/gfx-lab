@@ -44,6 +44,8 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   CONT("camera_yaw", "Camera yaw offset", "View perturbation", 1, K::Angle, -6.283f, 6.283f),
   CONT("camera_pitch", "Camera pitch offset", "View perturbation", 1, K::Angle, -1.45f, 1.45f),
   CONT("camera_distance", "Camera distance offset", "View perturbation", 1, K::Float, -10, 10),
+  CONT("camera_lateral", "Camera lateral (eye) offset", "View perturbation", 1, K::Float, -2, 2),
+  CONT("stereo_convergence", "Stereo convergence distance", "View perturbation", 1, K::Float, 0.05f, 100),
   CONT("field_of_view_offset", "Field-of-view offset", "View perturbation", 1, K::Float, -100, 100),
   CONT("composite_gain", "Composite gain", "Composite", 1, K::Float, 0, 16),
   CONT("composite_bias", "Composite bias", "Composite", 1, K::Float, -1, 1),
@@ -302,6 +304,8 @@ glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty
   case AnimationProperty::CameraYaw: return glm::vec4(pass.perturbation.cameraYaw);
   case AnimationProperty::CameraPitch: return glm::vec4(pass.perturbation.cameraPitch);
   case AnimationProperty::CameraDistance: return glm::vec4(pass.perturbation.cameraDistance);
+  case AnimationProperty::CameraLateral: return glm::vec4(pass.perturbation.cameraLateral);
+  case AnimationProperty::StereoConvergence: return glm::vec4(pass.perturbation.stereoConvergence);
   case AnimationProperty::FieldOfViewOffset: return glm::vec4(pass.perturbation.fieldOfView);
   case AnimationProperty::CompositeGain: return glm::vec4(pass.composite.gain);
   case AnimationProperty::CompositeBias: return glm::vec4(pass.composite.bias);
@@ -468,6 +472,8 @@ void setAnimationPropertyValue(RenderPass& pass, const AnimationProperty propert
   case AnimationProperty::CameraYaw: pass.perturbation.cameraYaw = value.x; break;
   case AnimationProperty::CameraPitch: pass.perturbation.cameraPitch = value.x; break;
   case AnimationProperty::CameraDistance: pass.perturbation.cameraDistance = value.x; break;
+  case AnimationProperty::CameraLateral: pass.perturbation.cameraLateral = value.x; break;
+  case AnimationProperty::StereoConvergence: pass.perturbation.stereoConvergence = value.x; break;
   case AnimationProperty::FieldOfViewOffset: pass.perturbation.fieldOfView = value.x; break;
   case AnimationProperty::CompositeGain: pass.composite.gain = value.x; break;
   case AnimationProperty::CompositeBias: pass.composite.bias = value.x; break;
