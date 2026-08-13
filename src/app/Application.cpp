@@ -60,6 +60,9 @@ namespace gfxlab {
 
 int runApplication() {
   glfwSetErrorCallback(glfwError);
+#if defined(GLFW_PLATFORM) && defined(GLFW_PLATFORM_X11)
+  if (std::getenv("DISPLAY") != nullptr) glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+#endif
   if (!glfwInit()) fail("GLFW initialization failed");
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
@@ -76,6 +79,10 @@ int runApplication() {
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+#if defined(GLFW_PLATFORM) && defined(GLFW_PLATFORM_WAYLAND)
+  if (glfwGetPlatform() != GLFW_PLATFORM_WAYLAND)
+#endif
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
   setStyle();
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init("#version 410 core");
@@ -342,6 +349,12 @@ int runApplication() {
     glClearColor(0.08f, 0.085f, 0.09f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    if ((ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) != 0) {
+      GLFWwindow* primaryContext = glfwGetCurrentContext();
+      ImGui::UpdatePlatformWindows();
+      ImGui::RenderPlatformWindowsDefault();
+      glfwMakeContextCurrent(primaryContext);
+    }
     glfwSwapBuffers(window);
   }
 
