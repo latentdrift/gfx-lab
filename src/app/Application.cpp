@@ -80,7 +80,8 @@ void applyEditedPass(RenderPass& authored, const RenderPass& displayedBefore, Re
   }
 }
 
-void applyEditedLocalPass(RenderStack& stack, const RenderPass& displayedBefore, const RenderPass& edited) {
+void applyEditedLocalPass(RenderStack& stack, const RenderPass& displayedBefore, const RenderPass& edited,
+    const float timeSeconds = 0.0f) {
   RenderPass& definition = stack.selected();
   const RenderPass definitionBefore = definition;
   definition.name = edited.name;
@@ -88,6 +89,7 @@ void applyEditedLocalPass(RenderStack& stack, const RenderPass& displayedBefore,
   definition.output = edited.output;
   definition.composite = edited.composite;
   definition.animation = edited.animation;
+  const RenderPass evaluatedGlobal = evaluateRenderPass(stack.global(), timeSeconds);
   for (int index = 0; index < static_cast<int>(AnimationProperty::Count); ++index) {
     const AnimationProperty property = static_cast<AnimationProperty>(index);
     const glm::vec4 displayedValue = animationPropertyValue(displayedBefore, property);
@@ -98,7 +100,7 @@ void applyEditedLocalPass(RenderStack& stack, const RenderPass& displayedBefore,
       setAnimationPropertyValue(definition, property, editedValue);
       continue;
     }
-    const glm::vec4 globalValue = animationPropertyValue(stack.global(), property);
+    const glm::vec4 globalValue = animationPropertyValue(evaluatedGlobal, property);
     if (animationPropertyValuesEqual(property, globalValue, editedValue))
       static_cast<void>(clearRenderPassOverride(definition, property));
     else
@@ -201,14 +203,28 @@ int runApplication() {
     setPropertyKeyframe(validationStack.global(), AnimationProperty::FogStart, 0.0f);
     validationStack.global().renderer.post.fogStart = 6.0f;
     setPropertyKeyframe(validationStack.global(), AnimationProperty::FogStart, 2.0f);
+    validationStack.global().renderer.lighting.ambient = 0.0f;
+    setPropertyKeyframe(validationStack.global(), AnimationProperty::Ambient, 0.0f);
+    validationStack.global().renderer.lighting.ambient = 1.0f;
+    setPropertyKeyframe(validationStack.global(), AnimationProperty::Ambient, 2.0f);
+    validationStack.selected().renderer.lighting.ambient = 0.6f;
+    setPropertyKeyframe(validationStack.selected(), AnimationProperty::Ambient, 0.0f);
+    validationStack.selected().renderer.lighting.ambient = 0.8f;
+    setPropertyKeyframe(validationStack.selected(), AnimationProperty::Ambient, 2.0f);
     const RenderPass hierarchicalPass = materializeRenderPass(validationStack,
       validationStack.selectedIndex(), 1.0f);
-    if (std::abs(hierarchicalPass.renderer.lighting.ambient - 0.77f) > 0.0001f ||
+    const RenderPass staticallyResolvedPass = resolveRenderPass(validationStack, validationStack.selectedIndex());
+    if (std::abs(hierarchicalPass.renderer.lighting.ambient - 0.7f) > 0.0001f ||
         std::abs(hierarchicalPass.perturbation.modelTranslation.x - 0.2f) > 0.0001f ||
         std::abs(hierarchicalPass.perturbation.uvOffset.x - 0.125f) > 0.0001f ||
         std::abs(hierarchicalPass.renderer.post.fogStart - 4.0f) > 0.0001f ||
+        std::abs(staticallyResolvedPass.renderer.post.fogStart - 6.0f) > 0.0001f ||
         validationStack.selected().overrides.size() != 2)
-      fail("global base, sparse override, or hierarchical animation evaluation failed validation");
+      fail("global base, sparse override, or hierarchical animation precedence failed validation");
+    validationStack.duplicateSelected();
+    if (validationStack.selected().overrides.size() != 2 ||
+        findPropertyTrack(validationStack.selected(), AnimationProperty::Ambient) == nullptr)
+      fail("pass duplication did not preserve only its authored local deviations");
     RenderStack editScopeValidation;
     editScopeValidation.global().renderer.lighting.ambient = 0.2f;
     const RenderPass inheritedBefore = materializeRenderPass(editScopeValidation, 1, 0.0f);
@@ -373,7 +389,8 @@ int runApplication() {
     }
     const std::string stackConfig = renderStackConfigJson(compositeValidation, camera, scene,
       HardwareProfile::Unrestricted, nullptr, importedFixture.asset.get());
-    if (stackConfig.find("graphics-lab.render-stack.v1") == std::string::npos ||
+    if (stackConfig.find("graphics-lab.render-stack.v2") == std::string::npos ||
+        stackConfig.find("global base, global track, local override, local track") == std::string::npos ||
         stackConfig.find("\"passes\"") == std::string::npos ||
         stackConfig.find("\"global_base\"") == std::string::npos ||
         stackConfig.find("\"overrides\"") == std::string::npos ||
@@ -495,7 +512,7 @@ int runApplication() {
     if (profile == HardwareProfile::Unrestricted) renderStack.global().renderer.n64.enabled = false;
     normalizeForHardwareProfile(profile, renderStack.global().renderer);
     for (std::size_t passIndex = 0; passIndex < renderStack.passes().size(); ++passIndex) {
-      RenderPass normalized = materializeRenderPass(renderStack, passIndex, 0.0f);
+      RenderPass normalized = resolveRenderPass(renderStack, passIndex);
       normalizeForHardwareProfile(profile, normalized.renderer);
       replaceRenderPassOverrides(renderStack.passes()[passIndex], renderStack.global(), normalized);
     }
@@ -633,7 +650,7 @@ int runApplication() {
     if (ImGui::RadioButton("Selected pass", !inspectorGlobalScope)) inspectorGlobalScope = false;
     ImGui::SameLine();
     if (inspectorGlobalScope) {
-      if (ImGui::Button("Reset global neutral")) renderStack.global().renderer = RendererState{};
+      if (ImGui::Button("Reset global renderer")) renderStack.global().renderer = RendererState{};
     } else {
       if (ImGui::Button("Clear pass overrides")) {
         renderStack.selected().overrides.clear();
@@ -692,7 +709,7 @@ int runApplication() {
     constexpr float pipelineWidth = 200.0f;
     ImGui::BeginChild("Pipeline", ImVec2(pipelineWidth, contentHeight), true);
     if (importedModel != nullptr) {
-      ImGui::TextDisabled("IMPORTED MODEL");
+      ImGui::TextDisabled("GLOBAL SCENE MODEL");
       ImGui::TextWrapped("%s", importedModel->name.c_str());
       ImGui::TextDisabled("%zu triangles  %zu meshes", importedModel->triangleCount,
         importedModel->sourceMeshCount);
@@ -832,7 +849,7 @@ int runApplication() {
       if (inspectorGlobalScope)
         applyEditedPass(renderStack.global(), displayedBefore, inspectorStack.selected());
       else
-        applyEditedLocalPass(renderStack, displayedBefore, inspectorStack.selected());
+        applyEditedLocalPass(renderStack, displayedBefore, inspectorStack.selected(), inspectorTime);
     ImGui::EndChild();
     ImGui::End();
 

@@ -70,10 +70,8 @@ void replaceRenderPassOverrides(RenderPass& pass, const RenderPass& global, cons
   else pass.importedTexture.reset();
 }
 
-RenderPass materializeRenderPass(const RenderStack& stack, const std::size_t passIndex,
-    const float timeSeconds) {
-  const RenderPass& definition = stack.passes()[passIndex];
-  RenderPass materialized = evaluateRenderPass(stack.global(), timeSeconds);
+namespace {
+void applyPassDefinition(RenderPass& materialized, const RenderPass& definition) {
   materialized.name = definition.name;
   materialized.enabled = definition.enabled;
   materialized.output = definition.output;
@@ -84,6 +82,21 @@ RenderPass materializeRenderPass(const RenderStack& stack, const std::size_t pas
   for (const PropertyOverride& overrideValue : definition.overrides)
     setAnimationPropertyValue(materialized, overrideValue.property, overrideValue.value);
   if (definition.importedTextureOverride) materialized.importedTexture = definition.importedTexture;
+}
+} // namespace
+
+RenderPass resolveRenderPass(const RenderStack& stack, const std::size_t passIndex) {
+  const RenderPass& definition = stack.passes()[passIndex];
+  RenderPass materialized = stack.global();
+  applyPassDefinition(materialized, definition);
+  return materialized;
+}
+
+RenderPass materializeRenderPass(const RenderStack& stack, const std::size_t passIndex,
+    const float timeSeconds) {
+  const RenderPass& definition = stack.passes()[passIndex];
+  RenderPass materialized = evaluateRenderPass(stack.global(), timeSeconds);
+  applyPassDefinition(materialized, definition);
   for (const PropertyAnimationTrack& track : definition.animation.tracks)
     if (!track.keyframes.empty())
       setAnimationPropertyValue(materialized, track.property, samplePropertyTrack(track, timeSeconds));
@@ -203,8 +216,9 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   std::ostringstream json;
   json << std::boolalpha << std::fixed << std::setprecision(5);
   json << "{\n";
-  json << "  \"schema\": \"graphics-lab.render-stack.v1\",\n";
+  json << "  \"schema\": \"graphics-lab.render-stack.v2\",\n";
   json << "  \"evaluation\": \"bottom_to_top_sequential_compositing\",\n";
+  json << "  \"property_precedence\": \"global base, global track, local override, local track\",\n";
   json << "  \"seed_rule\": \"the first enabled pass becomes the accumulator; every later enabled pass applies its composite step\",\n";
   json << "  \"test_scene\": \"" << testSceneName(scene) << "\",\n";
   if (importedModel != nullptr) {
@@ -326,7 +340,7 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
       json << "\n        {\"property\": \"" << info.id << "\", \"components\": " << info.components
            << ", \"value_kind\": \"" << valueKindIds[static_cast<int>(info.kind)]
            << "\", \"animation_behavior\": \"" << behaviorIds[static_cast<int>(info.behavior)]
-           << ", \"interpolation\": \"" << interpolationIds[static_cast<int>(track.interpolation)]
+           << "\", \"interpolation\": \"" << interpolationIds[static_cast<int>(track.interpolation)]
            << "\", \"keys\": [";
       for (std::size_t keyIndex = 0; keyIndex < track.keyframes.size(); ++keyIndex) {
         const PropertyKeyframe& key = track.keyframes[keyIndex];

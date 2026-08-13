@@ -95,6 +95,7 @@ private:
 void setRenderPassOverride(RenderPass& pass, AnimationProperty property, const glm::vec4& value);
 [[nodiscard]] bool clearRenderPassOverride(RenderPass& pass, AnimationProperty property);
 void replaceRenderPassOverrides(RenderPass& pass, const RenderPass& global, const RenderPass& materialized);
+[[nodiscard]] RenderPass resolveRenderPass(const RenderStack& stack, std::size_t passIndex);
 [[nodiscard]] RenderPass materializeRenderPass(const RenderStack& stack, std::size_t passIndex,
   float timeSeconds = 0.0f);
 
