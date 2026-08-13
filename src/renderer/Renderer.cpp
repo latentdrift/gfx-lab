@@ -78,6 +78,8 @@ struct RenderTarget {
   GLuint multisampleDepth = 0;
   GLuint outputFbo = 0;
   GLuint outputTexture = 0;
+  GLuint fieldFbo = 0;
+  GLuint fieldTexture = 0;
   GLuint overdrawFbo = 0;
   GLuint overdrawTexture = 0;
   int width = 0;
@@ -102,6 +104,8 @@ struct RenderTarget {
       glGenRenderbuffers(1, &multisampleDepth);
       glGenFramebuffers(1, &outputFbo);
       glGenTextures(1, &outputTexture);
+      glGenFramebuffers(1, &fieldFbo);
+      glGenTextures(1, &fieldTexture);
       glGenFramebuffers(1, &overdrawFbo);
       glGenTextures(1, &overdrawTexture);
     }
@@ -156,6 +160,17 @@ struct RenderTarget {
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
       failRenderer("could not create output render target");
 
+    glBindTexture(GL_TEXTURE_2D, fieldTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, width, height, 0, GL_RED, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindFramebuffer(GL_FRAMEBUFFER, fieldFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fieldTexture, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+      failRenderer("could not create field-signal render target");
+
     glBindTexture(GL_TEXTURE_2D, overdrawTexture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, width, height, 0, GL_RED, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -176,6 +191,8 @@ struct RenderTarget {
     glDeleteRenderbuffers(1, &multisampleDepth);
     glDeleteFramebuffers(1, &outputFbo);
     glDeleteTextures(1, &outputTexture);
+    glDeleteFramebuffers(1, &fieldFbo);
+    glDeleteTextures(1, &fieldTexture);
     glDeleteFramebuffers(1, &overdrawFbo);
     glDeleteTextures(1, &overdrawTexture);
   }
@@ -187,6 +204,7 @@ public:
     sceneProgram_ = makeProgram(sceneVertexShader, sceneFragmentShader);
     outputProgram_ = makeProgram(outputVertexShader, outputFragmentShader);
     relationProgram_ = makeProgram(outputVertexShader, relationFragmentShader);
+    fieldProgram_ = makeProgram(outputVertexShader, fieldFragmentShader);
     copyProgram_ = makeProgram(outputVertexShader, copyFragmentShader);
     displayProgram_ = makeProgram(outputVertexShader, displayReconstructionFragmentShader);
     shadowProgram_ = makeProgram(shadowVertexShader, shadowFragmentShader);
@@ -314,6 +332,7 @@ public:
     glDeleteProgram(sceneProgram_);
     glDeleteProgram(outputProgram_);
     glDeleteProgram(relationProgram_);
+    glDeleteProgram(fieldProgram_);
     glDeleteProgram(copyProgram_);
     glDeleteProgram(displayProgram_);
     glDeleteProgram(shadowProgram_);
@@ -521,18 +540,6 @@ public:
     glUniform2fv(location("uUvScale"), 1, glm::value_ptr(perturbation.uvScale));
     glUniform1f(location("uUvRotation"), perturbation.uvRotation);
     glUniform2fv(location("uUvPivot"), 1, glm::value_ptr(perturbation.uvPivot));
-    glUniform1i(location("uFieldEnabled"), state.field.enabled);
-    glUniform3fv(location("uFieldSourceA"), 1, glm::value_ptr(state.field.sourceA));
-    glUniform3fv(location("uFieldSourceB"), 1, glm::value_ptr(state.field.sourceB));
-    glUniform1f(location("uFieldWavelength"), state.field.wavelength);
-    glUniform1f(location("uFieldPhaseOffset"), state.field.phaseOffset);
-    glUniform1f(location("uFieldAmplitudeA"), state.field.amplitudeA);
-    glUniform1f(location("uFieldAmplitudeB"), state.field.amplitudeB);
-    glUniform1f(location("uFieldFalloff"), state.field.falloff);
-    glUniform1f(location("uFieldBandSharpness"), state.field.bandSharpness);
-    glUniform1i(location("uFieldVisualization"), state.field.visualization);
-    glUniform3fv(location("uFieldLowColor"), 1, glm::value_ptr(state.field.lowColor));
-    glUniform3fv(location("uFieldHighColor"), 1, glm::value_ptr(state.field.highColor));
     GLint minificationFilter = state.texture.nearestFiltering ? GL_NEAREST : GL_LINEAR;
     if (state.texture.mipmapping) {
       if (state.texture.nearestFiltering) minificationFilter = GL_NEAREST_MIPMAP_NEAREST;
@@ -580,13 +587,11 @@ public:
     else
       bindSurfaceTexture(checkerTexture_, true, true);
     glBindVertexArray(vao_);
-    glUniform1i(location("uFieldAffects"), true);
     auto drawMesh = [this, &passTransform](const MeshRange& mesh, const glm::mat4& modelMatrix,
-        const glm::vec3& tint, const bool fieldAffects = true) {
+        const glm::vec3& tint) {
       matrix("uModel", passTransform * modelMatrix);
       const glm::vec4 tintWithAlpha(tint, 1.0f);
       glUniform4fv(location("uObjectTint"), 1, glm::value_ptr(tintWithAlpha));
-      glUniform1i(location("uFieldAffects"), fieldAffects);
       glDrawArrays(GL_TRIANGLES, mesh.first, mesh.count);
     };
     const glm::mat4 identity(1.0f);
@@ -665,7 +670,6 @@ public:
           matrix("uModel", glm::translate(glm::mat4(1.0f), position) *
             glm::scale(glm::mat4(1.0f), glm::vec3(0.11f)));
           glUniform4fv(location("uObjectTint"), 1, glm::value_ptr(glm::vec4(tint, 1.0f)));
-          glUniform1i(location("uFieldAffects"), false);
           glDrawArrays(GL_TRIANGLES, smoothSphere_.first, smoothSphere_.count);
         };
         drawSource(state.field.sourceA, glm::vec3(0.18f, 0.82f, 1.0f));
@@ -713,6 +717,36 @@ public:
       glBlitFramebuffer(0, 0, target.width, target.height, 0, 0, target.width, target.height,
         resolveBuffers, GL_NEAREST);
     }
+
+    // Material rendering and field generation are deliberately separate. The
+    // field pass reconstructs visible world positions from depth and writes a
+    // scalar resource that later passes may preview, composite, or use as a mask.
+    glBindFramebuffer(GL_FRAMEBUFFER, target.fieldFbo);
+    glViewport(0, 0, target.width, target.height);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(fieldProgram_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, target.depthTexture);
+    glUniform1i(glGetUniformLocation(fieldProgram_, "uDepth"), 0);
+    const glm::mat4 inverseViewProjection = glm::inverse(projection * view);
+    glUniformMatrix4fv(glGetUniformLocation(fieldProgram_, "uInverseViewProjection"), 1, GL_FALSE,
+      glm::value_ptr(inverseViewProjection));
+    glUniform1i(glGetUniformLocation(fieldProgram_, "uEnabled"), state.field.enabled);
+    glUniform3fv(glGetUniformLocation(fieldProgram_, "uSourceA"), 1, glm::value_ptr(state.field.sourceA));
+    glUniform3fv(glGetUniformLocation(fieldProgram_, "uSourceB"), 1, glm::value_ptr(state.field.sourceB));
+    glUniform1f(glGetUniformLocation(fieldProgram_, "uWavelength"), state.field.wavelength);
+    glUniform1f(glGetUniformLocation(fieldProgram_, "uPhaseOffset"), state.field.phaseOffset);
+    glUniform1f(glGetUniformLocation(fieldProgram_, "uAmplitudeA"), state.field.amplitudeA);
+    glUniform1f(glGetUniformLocation(fieldProgram_, "uAmplitudeB"), state.field.amplitudeB);
+    glUniform1f(glGetUniformLocation(fieldProgram_, "uFalloff"), state.field.falloff);
+    glUniform1f(glGetUniformLocation(fieldProgram_, "uBandSharpness"), state.field.bandSharpness);
+    glUniform1i(glGetUniformLocation(fieldProgram_, "uVisualization"), state.field.visualization);
+    glBindVertexArray(fullscreenVao_);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
 
     if (state.post.overdraw) {
       glBindFramebuffer(GL_FRAMEBUFFER, target.overdrawFbo);
@@ -812,6 +846,14 @@ public:
     glUniform1i(glGetUniformLocation(outputProgram_, "uOverdraw"), 3);
     glUniform1i(glGetUniformLocation(outputProgram_, "uVisualizeOverdraw"), state.post.overdraw);
     glUniform1f(glGetUniformLocation(outputProgram_, "uOverdrawRange"), state.post.overdrawRange);
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_2D, target.fieldTexture);
+    glUniform1i(glGetUniformLocation(outputProgram_, "uField"), 4);
+    glUniform1i(glGetUniformLocation(outputProgram_, "uFieldOutput"), output == PassOutput::FieldSignal);
+    glUniform3fv(glGetUniformLocation(outputProgram_, "uFieldLowColor"), 1,
+      glm::value_ptr(state.field.lowColor));
+    glUniform3fv(glGetUniformLocation(outputProgram_, "uFieldHighColor"), 1,
+      glm::value_ptr(state.field.highColor));
     glUniform1i(glGetUniformLocation(outputProgram_, "uN64Enabled"), state.n64.enabled);
     glUniform1i(glGetUniformLocation(outputProgram_, "uN64ColorDither"), state.n64.colorDither);
     glUniform1i(glGetUniformLocation(outputProgram_, "uN64ViReconstruction"), state.n64.viReconstruction);
@@ -827,6 +869,7 @@ public:
   }
 
   GLuint compositeTextures(const GLuint imageA, const GLuint imageB, const GLuint maskDepth,
+      const GLuint maskField,
       const RendererState& maskState, const CompositeStep& step, const std::size_t outputIndex) {
     const std::size_t pingPong = outputIndex % relationFbos_.size();
     glBindFramebuffer(GL_FRAMEBUFFER, relationFbos_[pingPong]);
@@ -853,6 +896,9 @@ public:
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, maskDepth);
     glUniform1i(glGetUniformLocation(relationProgram_, "uMaskDepth"), 2);
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, maskField);
+    glUniform1i(glGetUniformLocation(relationProgram_, "uMaskField"), 3);
     glUniform1i(glGetUniformLocation(relationProgram_, "uOperator"), static_cast<int>(step.operation));
     glUniform1f(glGetUniformLocation(relationProgram_, "uGain"), step.gain);
     glUniform1f(glGetUniformLocation(relationProgram_, "uBias"), step.bias);
@@ -875,7 +921,7 @@ public:
     step.gain = gain;
     step.bias = bias;
     return compositeTextures(passTargets_[0].outputTexture, passTargets_[1].outputTexture,
-      passTargets_[1].depthTexture, RendererState{}, step, 0);
+      passTargets_[1].depthTexture, passTargets_[1].fieldTexture, RendererState{}, step, 0);
   }
 
   GLuint composite(const RenderStack& stack) {
@@ -902,16 +948,19 @@ public:
         case CompositeSource::RenderPass: return passTargets_[passIndexForId(sourcePassId)].outputTexture;
         case CompositeSource::FixedColor: return passTexture;
         case CompositeSource::PreviousFrame: return historyTexture_;
+        case CompositeSource::RenderPassField:
+          return passTargets_[passIndexForId(sourcePassId)].fieldTexture;
         }
         return passTexture;
       };
       const GLuint imageA = sourceTexture(pass.composite.sourceA, pass.composite.sourceAPassId);
       const GLuint imageB = sourceTexture(pass.composite.sourceB, pass.composite.sourceBPassId);
       std::size_t maskPassIndex = passIndex;
-      if (pass.composite.sourceB == CompositeSource::RenderPass)
+      if (pass.composite.sourceB == CompositeSource::RenderPass ||
+          pass.composite.sourceB == CompositeSource::RenderPassField)
         maskPassIndex = passIndexForId(pass.composite.sourceBPassId);
       accumulated = compositeTextures(imageA, imageB, passTargets_[maskPassIndex].depthTexture,
-        pass.renderer, pass.composite, compositeIndex++);
+        passTargets_[maskPassIndex].fieldTexture, pass.renderer, pass.composite, compositeIndex++);
     }
     if (accumulated != 0) copyToFrameHistory(accumulated);
     return accumulated;
@@ -1022,7 +1071,8 @@ private:
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 
-  GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0, copyProgram_ = 0, displayProgram_ = 0,
+  GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0, fieldProgram_ = 0,
+    copyProgram_ = 0, displayProgram_ = 0,
     shadowProgram_ = 0, overdrawProgram_ = 0;
   GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, indexedTexture_ = 0,
     clutTexture_ = 0, normalTexture_ = 0, detailTexture_ = 0, whiteTexture_ = 0;

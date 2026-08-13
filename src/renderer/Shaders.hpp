@@ -130,19 +130,6 @@ uniform vec2 uUvOffset;
 uniform vec2 uUvScale;
 uniform float uUvRotation;
 uniform vec2 uUvPivot;
-uniform bool uFieldEnabled;
-uniform bool uFieldAffects;
-uniform vec3 uFieldSourceA;
-uniform vec3 uFieldSourceB;
-uniform float uFieldWavelength;
-uniform float uFieldPhaseOffset;
-uniform float uFieldAmplitudeA;
-uniform float uFieldAmplitudeB;
-uniform float uFieldFalloff;
-uniform float uFieldBandSharpness;
-uniform int uFieldVisualization;
-uniform vec3 uFieldLowColor;
-uniform vec3 uFieldHighColor;
 out vec4 fragColor;
 
 vec4 sampleSurfaceTexture(vec2 uv) {
@@ -262,37 +249,6 @@ float shadowAmount() {
   return shadow / 9.0;
 }
 
-vec3 fieldColor() {
-  float distanceA = length(vWorldPosition - uFieldSourceA);
-  float distanceB = length(vWorldPosition - uFieldSourceB);
-  float wavelength = max(uFieldWavelength, 0.001);
-  float waveNumber = 6.28318530718 / wavelength;
-  float phaseA = waveNumber * distanceA;
-  float phaseB = waveNumber * distanceB + uFieldPhaseOffset;
-  float envelopeA = uFieldAmplitudeA * exp(-uFieldFalloff * distanceA);
-  float envelopeB = uFieldAmplitudeB * exp(-uFieldFalloff * distanceB);
-  float waveA = envelopeA * cos(phaseA);
-  float waveB = envelopeB * cos(phaseB);
-  float value = 0.0;
-  if (uFieldVisualization == 0) value = 0.5 + 0.5 * cos(phaseA);
-  else if (uFieldVisualization == 1) value = 0.5 + 0.5 * cos(phaseB);
-  else if (uFieldVisualization == 2)
-    value = 0.5 + 0.5 * cos(phaseA - phaseB);
-  else if (uFieldVisualization == 3) {
-    float maximumAmplitude = max(uFieldAmplitudeA + uFieldAmplitudeB, 0.001);
-    value = (waveA + waveB) * (waveA + waveB) / (maximumAmplitude * maximumAmplitude);
-  } else if (uFieldVisualization == 4) {
-    value = clamp(abs(distanceA - distanceB) / (4.0 * wavelength), 0.0, 1.0);
-  } else {
-    float contour = abs(fract(abs(distanceA - distanceB) / wavelength) - 0.5) * 2.0;
-    value = 1.0 - contour;
-  }
-  value = pow(clamp(value, 0.0, 1.0), max(uFieldBandSharpness, 0.01));
-  vec3 middleColor = mix(vec3(0.10, 0.42, 0.88), uFieldHighColor, 0.28);
-  return value < 0.5 ? mix(uFieldLowColor, middleColor, value * 2.0)
-    : mix(middleColor, uFieldHighColor, value * 2.0 - 1.0);
-}
-
 void main() {
   vec2 uv = (uAffineMapping ? vUvAffine : vUvPerspective);
   float uvCos = cos(uUvRotation);
@@ -355,8 +311,6 @@ void main() {
     if (uN64AlphaCompare == 2 && alpha < n64AlphaNoise(ivec2(gl_FragCoord.xy))) discard;
   }
 
-  if (uFieldEnabled && uFieldAffects) color = fieldColor();
-
   if (uWireframe) {
     vec3 width = fwidth(vBarycentric);
     vec3 edge = smoothstep(vec3(0.0), width * 1.15, vBarycentric);
@@ -401,6 +355,10 @@ uniform bool uOrthographic;
 uniform sampler2D uShadowMap;
 uniform bool uVisualizeShadowMap;
 uniform sampler2D uOverdraw;
+uniform sampler2D uField;
+uniform bool uFieldOutput;
+uniform vec3 uFieldLowColor;
+uniform vec3 uFieldHighColor;
 uniform bool uVisualizeOverdraw;
 uniform float uOverdrawRange;
 uniform bool uN64Enabled;
@@ -439,7 +397,13 @@ vec3 median3(vec3 a, vec3 b, vec3 c) {
 
 void main() {
   vec3 color = texture(uScene, vUv).rgb;
-  if (uN64Enabled && uN64ViReconstruction) {
+  if (uFieldOutput) {
+    float signal = texture(uField, vUv).r;
+    vec3 middle = mix(vec3(0.10, 0.42, 0.88), uFieldHighColor, 0.28);
+    color = signal < 0.5 ? mix(uFieldLowColor, middle, signal * 2.0)
+      : mix(middle, uFieldHighColor, signal * 2.0 - 1.0);
+  }
+  if (!uFieldOutput && uN64Enabled && uN64ViReconstruction) {
     vec2 texel = 1.0 / vec2(textureSize(uScene, 0));
     vec3 horizontal = texture(uScene, vUv - vec2(texel.x, 0.0)).rgb + texture(uScene, vUv + vec2(texel.x, 0.0)).rgb;
     vec3 vertical = texture(uScene, vUv - vec2(0.0, texel.y)).rgb + texture(uScene, vUv + vec2(0.0, texel.y)).rgb;
@@ -450,7 +414,10 @@ void main() {
       color = median3(left, color, right);
     }
   }
-  if (uVisualizeOverdraw) {
+  if (uFieldOutput) {
+    // A field output is scalar data. Preserve its literal 0..1 value instead of
+    // applying display gamma or the pass's material color quantization.
+  } else if (uVisualizeOverdraw) {
     float count = texture(uOverdraw, vUv).r;
     float t = clamp(count / max(uOverdrawRange, 1.0), 0.0, 1.0);
     color = clamp(vec3(1.5 * t, 1.5 - abs(4.0 * t - 2.0), 1.5 * (1.0 - t)), 0.0, 1.0);
@@ -476,7 +443,10 @@ void main() {
     color = pow(max(color, vec3(0.0)), vec3(1.0 / 2.2));
   }
   float levels = exp2(float(uBitsPerChannel)) - 1.0;
-  if (uN64Enabled && uN64ColorDither != 0 && uBitsPerChannel < 8) {
+  if (uFieldOutput) {
+    fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+    return;
+  } else if (uN64Enabled && uN64ColorDither != 0 && uBitsPerChannel < 8) {
     float offset = uN64ColorDither == 1 ? magic4(ivec2(gl_FragCoord.xy))
       : uN64ColorDither == 2 ? bayer4(ivec2(gl_FragCoord.xy)) : noiseDither(ivec2(gl_FragCoord.xy));
     color += offset / levels;
@@ -507,6 +477,7 @@ uniform float uOpacity;
 uniform int uColorSpace;
 uniform int uRangeMode;
 uniform sampler2D uMaskDepth;
+uniform sampler2D uMaskField;
 uniform int uMaskMode;
 uniform bool uInvertMask;
 uniform float uMaskNearPlane;
@@ -533,6 +504,8 @@ void main() {
     texture(uImageA, uSourceAMode == 4 ? historyUv : vUv).rgb;
   vec3 storedB = uSourceBMode == 3 ? uFixedColor.rgb :
     texture(uImageB, uSourceBMode == 4 ? historyUv : vUv).rgb;
+  if (uSourceAMode == 5) storedA = storedA.rrr;
+  if (uSourceBMode == 5) storedB = storedB.rrr;
   storedA = finiteColor(storedA);
   storedB = finiteColor(storedB);
   if (uSourceAMode == 4) storedA *= uHistoryDecay;
@@ -584,11 +557,65 @@ void main() {
   } else if (uMaskMode == 3) {
     vec3 change = abs(dFdx(storedB)) + abs(dFdy(storedB));
     mask = smoothstep(0.025, 0.20, max(change.r, max(change.g, change.b)));
+  } else if (uMaskMode == 4) {
+    mask = clamp(texture(uMaskField, vUv).r, 0.0, 1.0);
   }
   if (uInvertMask) mask = 1.0 - mask;
   vec3 composed = finiteColor(mix(a, relation, uOpacity * mask));
   if (uColorSpace == 1) composed = signedPow(composed, 1.0 / 2.2);
   fragColor = vec4(composed, 1.0);
+}
+)GLSL";
+
+// Produces a typed scalar resource from scene depth. Unlike the surface shader,
+// this pass does not replace material color: it reconstructs the visible
+// world-space position and writes the selected field signal to an R16F buffer.
+inline constexpr const char* fieldFragmentShader = R"GLSL(
+#version 410 core
+in vec2 vUv;
+uniform sampler2D uDepth;
+uniform mat4 uInverseViewProjection;
+uniform bool uEnabled;
+uniform vec3 uSourceA;
+uniform vec3 uSourceB;
+uniform float uWavelength;
+uniform float uPhaseOffset;
+uniform float uAmplitudeA;
+uniform float uAmplitudeB;
+uniform float uFalloff;
+uniform float uBandSharpness;
+uniform int uVisualization;
+out float fieldSignal;
+
+void main() {
+  float depth = texture(uDepth, vUv).r;
+  if (!uEnabled || depth >= 0.999999) { fieldSignal = 0.0; return; }
+  vec4 world = uInverseViewProjection * vec4(vUv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  vec3 position = world.xyz / max(abs(world.w), 0.000001);
+  float distanceA = length(position - uSourceA);
+  float distanceB = length(position - uSourceB);
+  float wavelength = max(uWavelength, 0.001);
+  float waveNumber = 6.28318530718 / wavelength;
+  float phaseA = waveNumber * distanceA;
+  float phaseB = waveNumber * distanceB + uPhaseOffset;
+  float envelopeA = uAmplitudeA * exp(-uFalloff * distanceA);
+  float envelopeB = uAmplitudeB * exp(-uFalloff * distanceB);
+  float waveA = envelopeA * cos(phaseA);
+  float waveB = envelopeB * cos(phaseB);
+  float value;
+  if (uVisualization == 0) value = 0.5 + 0.5 * cos(phaseA);
+  else if (uVisualization == 1) value = 0.5 + 0.5 * cos(phaseB);
+  else if (uVisualization == 2) value = 0.5 + 0.5 * cos(phaseA - phaseB);
+  else if (uVisualization == 3) {
+    float maximumAmplitude = max(uAmplitudeA + uAmplitudeB, 0.001);
+    value = (waveA + waveB) * (waveA + waveB) / (maximumAmplitude * maximumAmplitude);
+  } else if (uVisualization == 4) {
+    value = clamp(abs(distanceA - distanceB) / (4.0 * wavelength), 0.0, 1.0);
+  } else {
+    float contour = abs(fract(abs(distanceA - distanceB) / wavelength) - 0.5) * 2.0;
+    value = 1.0 - contour;
+  }
+  fieldSignal = pow(clamp(value, 0.0, 1.0), max(uBandSharpness, 0.01));
 }
 )GLSL";
 

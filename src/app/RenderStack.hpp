@@ -17,9 +17,11 @@ struct TextureAsset;
 
 enum class CompositeColorSpace { EncodedRgb, LinearLight };
 enum class CompositeRange { Clamp, Preserve, Wrap };
-enum class PassOutput { Color, Depth, Normals, VertexColor };
-enum class CompositeMask { None, PassLuminance, PassDepth, PassEdges };
-enum class CompositeSource { Accumulator, CurrentPass, RenderPass, FixedColor, PreviousFrame };
+enum class PassOutput { Color, Depth, Normals, VertexColor, FieldSignal };
+enum class CompositeMask { None, PassLuminance, PassDepth, PassEdges, PassField };
+enum class CompositeSource {
+  Accumulator, CurrentPass, RenderPass, FixedColor, PreviousFrame, RenderPassField
+};
 enum class TextureSource { SceneMaterial, BuiltInChecker, ImportedOverride, White };
 enum class UvMapping { MeshUv0, PlanarXy, PlanarXz, PlanarYz };
 enum class DisplaySignal { DirectRgb, CompositeNtsc };

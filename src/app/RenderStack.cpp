@@ -210,11 +210,11 @@ void resetCompositeTransform(CompositeStep& step) {
 
 std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& camera, const TestScene scene,
     const HardwareProfile profile, const AnimationTimeline* timeline, const ModelAsset* importedModel) {
-  constexpr const char* outputIds[] = {"color", "linear_depth_0_to_10_units", "normals", "vertex_colors"};
+  constexpr const char* outputIds[] = {"color", "linear_depth_0_to_10_units", "normals", "vertex_colors", "field_signal"};
   constexpr const char* colorSpaceIds[] = {"encoded_rgb", "linear_light"};
   constexpr const char* rangeIds[] = {"clamp_0_to_1", "preserve_signed_hdr", "wrap_fractional_part"};
-  constexpr const char* maskIds[] = {"none", "pass_luminance", "pass_depth_0_to_10_units", "pass_image_edges"};
-  constexpr const char* sourceIds[] = {"accumulated_result", "current_pass", "render_pass", "fixed_color", "previous_frame"};
+  constexpr const char* maskIds[] = {"none", "pass_luminance", "pass_depth_0_to_10_units", "pass_image_edges", "pass_field"};
+  constexpr const char* sourceIds[] = {"accumulated_result", "current_pass", "render_pass", "fixed_color", "previous_frame", "render_pass_field"};
   constexpr const char* interpolationIds[] = {"step", "linear", "smooth_step"};
   constexpr const char* valueKindIds[] = {"float", "vec2", "vec3", "color3", "color4", "angle",
     "boolean", "integer", "enumeration"};
@@ -243,7 +243,8 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   std::ostringstream json;
   json << std::boolalpha << std::fixed << std::setprecision(5);
   json << "{\n";
-  json << "  \"schema\": \"graphics-lab.render-stack.v7\",\n";
+  json << "  \"schema\": \"graphics-lab.render-stack.v8\",\n";
+  json << "  \"field_resources\": \"each pass produces an R16F scalar field buffer from reconstructed world position; named field sources and field masks consume it independently of pass color\",\n";
   json << "  \"evaluation\": \"bottom_to_top_sequential_compositing\",\n";
   json << "  \"property_precedence\": \"global base, global track, local override, local track\",\n";
   json << "  \"seed_rule\": \"the first enabled pass becomes the accumulator; every later enabled pass applies its composite step\",\n";

@@ -277,13 +277,13 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       renderer.renderPass(materializedCompositeValidation.passes()[passIndex], camera, scene, passIndex);
     if (renderer.composite(compositeValidation) == 0)
       fail("sequential render-pass compositing failed validation");
-    for (int mask = static_cast<int>(CompositeMask::None); mask <= static_cast<int>(CompositeMask::PassEdges); ++mask) {
+    for (int mask = static_cast<int>(CompositeMask::None); mask <= static_cast<int>(CompositeMask::PassField); ++mask) {
       compositeValidation.passes()[2].composite.mask = static_cast<CompositeMask>(mask);
       compositeValidation.passes()[2].composite.invertMask = mask != static_cast<int>(CompositeMask::None);
       if (renderer.composite(compositeValidation) == 0) fail("render-pass composite mask failed validation");
     }
     for (int source = static_cast<int>(CompositeSource::Accumulator);
-         source <= static_cast<int>(CompositeSource::PreviousFrame); ++source) {
+         source <= static_cast<int>(CompositeSource::RenderPassField); ++source) {
       compositeValidation.passes()[2].composite.sourceA = static_cast<CompositeSource>(source);
       compositeValidation.passes()[2].composite.sourceB = static_cast<CompositeSource>(source);
       compositeValidation.passes()[2].composite.sourceAPassId = compositeValidation.passes()[0].id;
@@ -318,9 +318,15 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         fail("display reconstruction failed validation");
     }
     if (glGetError() != GL_NO_ERROR) fail("display reconstruction produced an OpenGL error");
+    compositeValidation.passes()[2].composite.sourceA = CompositeSource::RenderPassField;
+    compositeValidation.passes()[2].composite.sourceAPassId = compositeValidation.passes()[0].id;
+    compositeValidation.passes()[2].output = PassOutput::FieldSignal;
     const std::string stackConfig = renderStackConfigJson(compositeValidation, camera, scene,
       HardwareProfile::Unrestricted, &timelineValidation, importedFixture.asset.get());
-    if (stackConfig.find("graphics-lab.render-stack.v7") == std::string::npos ||
+    if (stackConfig.find("graphics-lab.render-stack.v8") == std::string::npos ||
+        stackConfig.find("\"field_resources\"") == std::string::npos ||
+        stackConfig.find("render_pass_field") == std::string::npos ||
+        stackConfig.find("pass_field") == std::string::npos ||
         stackConfig.find("global base, global track, local override, local track") == std::string::npos ||
         stackConfig.find("\"passes\"") == std::string::npos ||
         stackConfig.find("\"global_base\"") == std::string::npos ||

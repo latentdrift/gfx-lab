@@ -224,15 +224,15 @@ const char* animationPropertyDiscreteValueLabel(const AnimationProperty property
     return index >= 0 && index < static_cast<int>(labels.size()) ? labels[static_cast<std::size_t>(index)] : nullptr;
   };
   switch (property) {
-  case AnimationProperty::PassOutput: { constexpr std::array labels = {"Color", "Linear depth", "Normals", "Vertex colors"}; return label(labels); }
+  case AnimationProperty::PassOutput: { constexpr std::array labels = {"Color", "Linear depth", "Normals", "Vertex colors", "Field signal preview"}; return label(labels); }
   case AnimationProperty::TextureSource: { constexpr std::array labels = {"Scene material", "Built-in checker", "Imported override", "White texel"}; return label(labels); }
   case AnimationProperty::UvMapping: { constexpr std::array labels = {"Mesh UV0", "Planar XY", "Planar XZ", "Planar YZ"}; return label(labels); }
   case AnimationProperty::CompositeOperation: return value >= 0 && value <= 18 ? relationOperatorLabel(static_cast<RelationOperator>(value)) : nullptr;
   case AnimationProperty::CompositeSourceA:
-  case AnimationProperty::CompositeSourceB: { constexpr std::array labels = {"Accumulated result", "Current pass", "Render pass", "Fixed color", "Previous frame"}; return label(labels); }
+  case AnimationProperty::CompositeSourceB: { constexpr std::array labels = {"Accumulated result", "Current pass", "Render pass", "Fixed color", "Previous frame", "Render-pass field"}; return label(labels); }
   case AnimationProperty::CompositeColorSpace: { constexpr std::array labels = {"Encoded RGB", "Linear light"}; return label(labels); }
   case AnimationProperty::CompositeRange: { constexpr std::array labels = {"Clamp 0..1", "Preserve signed/HDR", "Wrap fractional"}; return label(labels); }
-  case AnimationProperty::CompositeMask: { constexpr std::array labels = {"None", "Pass luminance", "Pass depth", "Pass edges"}; return label(labels); }
+  case AnimationProperty::CompositeMask: { constexpr std::array labels = {"None", "Pass luminance", "Pass depth", "Pass edges", "Pass field"}; return label(labels); }
   case AnimationProperty::CullMode: { constexpr std::array labels = {"None", "Back faces", "Front faces"}; return label(labels); }
   case AnimationProperty::SurfaceVisualization: { constexpr std::array labels = {"Texture", "UV coordinates", "Normals", "Vertex colors", "Tangents", "Bitangents"}; return label(labels); }
   case AnimationProperty::TransparencyOperation: { constexpr std::array labels = {"Opaque", "Alpha test", "Straight alpha", "Premultiplied alpha", "Additive", "Multiply", "PS1 average", "PS1 additive", "PS1 subtractive", "PS1 quarter-add"}; return label(labels); }

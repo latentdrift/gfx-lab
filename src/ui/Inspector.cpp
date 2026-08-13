@@ -596,10 +596,10 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       animationKeyControl(pass, AnimationProperty::FieldBandSharpness, timeline,
         ImGui::DragFloat("Band sharpness", &state.field.bandSharpness, 0.01f, 0.1f, 8.0f, "%.2f"));
       animationKeyControl(pass, AnimationProperty::FieldLowColor, timeline,
-        ImGui::ColorEdit3("Low / destructive color", &state.field.lowColor.x));
+        ImGui::ColorEdit3("Preview low color", &state.field.lowColor.x));
       animationKeyControl(pass, AnimationProperty::FieldHighColor, timeline,
-        ImGui::ColorEdit3("High / constructive color", &state.field.highColor.x));
-      description("Interference intensity evaluates |E_A + E_B| squared. Phase-difference views expose the relationship directly.");
+        ImGui::ColorEdit3("Preview high color", &state.field.highColor.x));
+      description("Interference intensity evaluates |E_A + E_B| squared. Preview colors do not alter the scalar field consumed by compositing.");
       ImGui::EndDisabled();
       break;
     }

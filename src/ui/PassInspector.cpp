@@ -34,6 +34,7 @@ const char* compactSourceLabel(const CompositeSource source) {
     case CompositeSource::RenderPass: return "Named render pass";
     case CompositeSource::FixedColor: return "Fixed RGBA color";
     case CompositeSource::PreviousFrame: return "Previous frame";
+    case CompositeSource::RenderPassField: return "Named pass field";
   }
   return "Unknown source";
 }
@@ -68,6 +69,17 @@ SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& 
         result.sourceChanged = source != CompositeSource::RenderPass;
         result.passChanged = sourcePassId != candidate.id;
         source = CompositeSource::RenderPass;
+        sourcePassId = candidate.id;
+      }
+    }
+    ImGui::SeparatorText("FIELD BUFFER");
+    for (const RenderPass& candidate : stack.passes()) {
+      const bool selected = source == CompositeSource::RenderPassField && sourcePassId == candidate.id;
+      const std::string fieldLabel = candidate.name + " field";
+      if (ImGui::Selectable(fieldLabel.c_str(), selected)) {
+        result.sourceChanged = source != CompositeSource::RenderPassField;
+        result.passChanged = sourcePassId != candidate.id;
+        source = CompositeSource::RenderPassField;
         sourcePassId = candidate.id;
       }
     }
@@ -117,9 +129,9 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
     std::snprintf(name.data(), name.size(), "%s", pass.name.c_str());
     if (ImGui::InputText("Name", name.data(), name.size())) pass.name = name.data();
 
-    const char* outputLabels[] = {"Color", "Linear depth", "Normals", "Vertex colors"};
+    const char* outputLabels[] = {"Color", "Linear depth", "Normals", "Vertex colors", "Field signal preview"};
     int output = static_cast<int>(pass.output);
-    const bool outputChanged = ImGui::Combo("Output buffer", &output, outputLabels, 4);
+    const bool outputChanged = ImGui::Combo("Output buffer", &output, outputLabels, 5);
     if (outputChanged) pass.output = static_cast<PassOutput>(output);
     animationKeyControl(pass, AnimationProperty::PassOutput, timeline, outputChanged);
   }
@@ -217,7 +229,7 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
         0.25f, 4.0f, "%.4f"));
     description("Previous frame reads the last completed composite. Decay is applied before color arithmetic.");
   }
-  description("A and B are independent inputs. A render-pass source reads that pass's raw output, not its composited result.");
+  description("A and B are independent inputs. A render-pass source reads that pass's raw output. A named pass field reads its dedicated scalar field buffer, not its color image.");
 
   ImGui::Spacing();
   ImGui::TextDisabled("COLOR ARITHMETIC PARAMETERS");
@@ -245,9 +257,9 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
   const bool rangeChanged = ImGui::Combo("Range behavior", &range, ranges, 3);
   if (rangeChanged) pass.composite.range = static_cast<CompositeRange>(range);
   animationKeyControl(pass, AnimationProperty::CompositeRange, timeline, rangeChanged);
-  const char* masks[] = {"None", "Pass luminance", "Pass depth (0..10 units)", "Pass image edges"};
+  const char* masks[] = {"None", "Pass luminance", "Pass depth (0..10 units)", "Pass image edges", "Pass field signal"};
   int mask = static_cast<int>(pass.composite.mask);
-  const bool maskChanged = ImGui::Combo("Mask", &mask, masks, 4);
+  const bool maskChanged = ImGui::Combo("Mask", &mask, masks, 5);
   if (maskChanged) pass.composite.mask = static_cast<CompositeMask>(mask);
   animationKeyControl(pass, AnimationProperty::CompositeMask, timeline, maskChanged);
   if (pass.composite.mask != CompositeMask::None) {
@@ -255,6 +267,8 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
     animationKeyControl(pass, AnimationProperty::CompositeMaskInverted, timeline,
       ImGui::Checkbox("Invert", &pass.composite.invertMask));
   }
+  if (pass.composite.mask == CompositeMask::PassField)
+    description("The mask reads B's named pass field when B is a named pass source; otherwise it reads the current pass field.");
 }
 
 } // namespace gfxlab::ui
