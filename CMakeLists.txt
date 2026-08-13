@@ -34,6 +34,7 @@ add_executable(graphics-lab
   src/ui/AnimationControls.cpp
   src/ui/DisplayInspector.cpp
   src/ui/Inspector.cpp
+  src/ui/InstrumentWidgets.cpp
   src/ui/PassInspector.cpp
   src/ui/PassDifferenceAudit.cpp
   src/ui/PipelineTools.cpp

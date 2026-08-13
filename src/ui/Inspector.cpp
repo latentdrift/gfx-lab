@@ -3,6 +3,7 @@
 #include "app/RenderStack.hpp"
 #include "assets/ModelAsset.hpp"
 #include "ui/AnimationControls.hpp"
+#include "ui/InstrumentWidgets.hpp"
 
 #include <imgui.h>
 
@@ -474,10 +475,20 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
         animationKeyControl(pass, AnimationProperty::Shininess, timeline,
           ImGui::SliderFloat("Specular exponent", &state.lighting.shininess, 2.0f, 128.0f, "%.0f", ImGuiSliderFlags_Logarithmic));
       }
-      animationKeyControl(pass, AnimationProperty::LightAzimuth, timeline,
-        ImGui::SliderFloat("Light azimuth", &state.lighting.azimuth, -180.0f, 180.0f, "%.0f deg"));
-      animationKeyControl(pass, AnimationProperty::LightElevation, timeline,
-        ImGui::SliderFloat("Light elevation", &state.lighting.elevation, -90.0f, 90.0f, "%.0f deg"));
+      ImGui::TextUnformatted("Directional light orientation");
+      const DirectionFieldResult directionChanged = directionField("##light-direction",
+        state.lighting.azimuth, state.lighting.elevation);
+      animationKeyControl(pass, AnimationProperty::LightAzimuth, timeline, directionChanged.azimuthChanged);
+      animationKeyControl(pass, AnimationProperty::LightElevation, timeline, directionChanged.elevationChanged);
+      ImGui::SetNextItemWidth(std::max(90.0f, ImGui::GetContentRegionAvail().x * 0.5f - 5.0f));
+      const bool azimuthChanged = ImGui::DragFloat("##light-azimuth", &state.lighting.azimuth,
+        0.25f, -180.0f, 180.0f, "Azimuth %.1f deg");
+      animationKeyControl(pass, AnimationProperty::LightAzimuth, timeline, azimuthChanged);
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(-1.0f);
+      const bool elevationChanged = ImGui::DragFloat("##light-elevation", &state.lighting.elevation,
+        0.25f, -90.0f, 90.0f, "Elevation %.1f deg");
+      animationKeyControl(pass, AnimationProperty::LightElevation, timeline, elevationChanged);
       description("Azimuth rotates around the vertical axis; elevation moves above or below the horizon.");
       if (capabilities.shadowMapping) {
         animationKeyControl(pass, AnimationProperty::ShadowsEnabled, timeline,
@@ -506,10 +517,22 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       animationKeyControl(pass, AnimationProperty::DepthCueEnabled, timeline,
         ImGui::Checkbox(profile == HardwareProfile::Nintendo64 ? "RSP vertex fog" : "Vertex depth cueing", &state.lighting.depthCue));
       ImGui::BeginDisabled(!state.lighting.depthCue);
-      animationKeyControl(pass, AnimationProperty::DepthCueStart, timeline,
-        ImGui::SliderFloat("Cue start", &state.lighting.depthCueStart, 0.0f, 15.0f, "%.2f units"));
-      animationKeyControl(pass, AnimationProperty::DepthCueEnd, timeline,
-        ImGui::SliderFloat("Cue end", &state.lighting.depthCueEnd, 0.1f, 30.0f, "%.2f units"));
+      ImGui::TextUnformatted("Depth-cue interval");
+      const float cueMaximum = std::max(30.0f, state.lighting.depthCueEnd * 1.2f);
+      const IntervalFieldResult cueChanged = intervalField("##depth-cue-range",
+        state.lighting.depthCueStart, state.lighting.depthCueEnd, 0.0f, cueMaximum,
+        "surface color", "far color");
+      animationKeyControl(pass, AnimationProperty::DepthCueStart, timeline, cueChanged.startChanged);
+      animationKeyControl(pass, AnimationProperty::DepthCueEnd, timeline, cueChanged.endChanged);
+      ImGui::SetNextItemWidth(std::max(90.0f, ImGui::GetContentRegionAvail().x * 0.5f - 5.0f));
+      const bool cueStartChanged = ImGui::DragFloat("##cue-start", &state.lighting.depthCueStart,
+        0.01f, 0.0f, state.lighting.depthCueEnd, "Start %.2f units");
+      animationKeyControl(pass, AnimationProperty::DepthCueStart, timeline, cueStartChanged);
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(-1.0f);
+      const bool cueEndChanged = ImGui::DragFloat("##cue-end", &state.lighting.depthCueEnd,
+        0.01f, state.lighting.depthCueStart, 30.0f, "End %.2f units");
+      animationKeyControl(pass, AnimationProperty::DepthCueEnd, timeline, cueEndChanged);
       animationKeyControl(pass, AnimationProperty::FarColor, timeline,
         ImGui::ColorEdit3("Far color", &state.lighting.farColor.x, ImGuiColorEditFlags_NoInputs));
       ImGui::EndDisabled();
@@ -618,15 +641,28 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       }
       break;
     }
-    case Category::Post:
+    case Category::Post: {
       ImGui::TextUnformatted("POST"); ImGui::Separator();
       animationKeyControl(pass, AnimationProperty::FogEnabled, timeline,
         ImGui::Checkbox("Linear distance fog", &state.post.fog));
       description("Blends shaded fragments toward the background according to camera distance.");
-      animationKeyControl(pass, AnimationProperty::FogStart, timeline,
-        ImGui::SliderFloat("Fog start", &state.post.fogStart, 0.0f, 12.0f, "%.2f units"));
-      animationKeyControl(pass, AnimationProperty::FogEnd, timeline,
-        ImGui::SliderFloat("Fog end", &state.post.fogEnd, 0.0f, 12.0f, "%.2f units"));
+      ImGui::BeginDisabled(!state.post.fog);
+      ImGui::TextUnformatted("Fog interval");
+      const float fogMaximum = std::max(12.0f, state.post.fogEnd * 1.2f);
+      const IntervalFieldResult fogChanged = intervalField("##fog-range", state.post.fogStart,
+        state.post.fogEnd, 0.0f, fogMaximum, "clear", "fully fogged");
+      animationKeyControl(pass, AnimationProperty::FogStart, timeline, fogChanged.startChanged);
+      animationKeyControl(pass, AnimationProperty::FogEnd, timeline, fogChanged.endChanged);
+      ImGui::SetNextItemWidth(std::max(90.0f, ImGui::GetContentRegionAvail().x * 0.5f - 5.0f));
+      const bool fogStartChanged = ImGui::DragFloat("##fog-start", &state.post.fogStart,
+        0.01f, 0.0f, state.post.fogEnd, "Start %.2f units");
+      animationKeyControl(pass, AnimationProperty::FogStart, timeline, fogStartChanged);
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(-1.0f);
+      const bool fogEndChanged = ImGui::DragFloat("##fog-end", &state.post.fogEnd,
+        0.01f, state.post.fogStart, 100.0f, "End %.2f units");
+      animationKeyControl(pass, AnimationProperty::FogEnd, timeline, fogEndChanged);
+      ImGui::EndDisabled();
       description("Start is fully clear; end is fully fogged.");
       animationKeyControl(pass, AnimationProperty::OverdrawEnabled, timeline,
         ImGui::Checkbox("Overdraw visualization", &state.post.overdraw));
@@ -636,6 +672,7 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       ImGui::EndDisabled();
       description("An additive floating-point pass counts rasterized fragments with depth testing disabled.");
       break;
+    }
     case Category::Output: {
       ImGui::TextUnformatted("OUTPUT"); ImGui::Separator();
       ImGui::TextUnformatted("Internal render resolution");

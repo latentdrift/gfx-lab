@@ -6,6 +6,7 @@
 #include "app/RenderStack.hpp"
 #include "assets/ModelAsset.hpp"
 #include "ui/AnimationControls.hpp"
+#include "ui/InstrumentWidgets.hpp"
 #include "ui/Windowing.hpp"
 
 #include <imgui.h>
@@ -125,6 +126,15 @@ void drawTextureMappingEditor(bool& open, RenderStack& stack, AnimationTimeline&
     description("Projects normalized model-space vertex positions onto the selected axis pair. Useful for unwrapped or diagnostic geometry.");
   }
 
+  ImGui::TextUnformatted("UV transform");
+  const UvCanvasResult canvasChanged = uvTransformCanvas("##uv-transform-canvas",
+    edited.perturbation.uvOffset, edited.perturbation.uvScale,
+    edited.perturbation.uvRotation, edited.perturbation.uvPivot, texturePreview);
+  animationKeyControl(edited, AnimationProperty::UvOffset, timeline, canvasChanged.offsetChanged);
+  animationKeyControl(edited, AnimationProperty::UvScale, timeline, canvasChanged.scaleChanged);
+  animationKeyControl(edited, AnimationProperty::UvRotation, timeline, canvasChanged.rotationChanged);
+
+  ImGui::TextUnformatted("Exact transform");
   ImGui::TextUnformatted("Scale / tiling");
   animationKeyControl(edited, AnimationProperty::UvScale, timeline,
     ImGui::DragFloat2("##mapping-scale", &edited.perturbation.uvScale.x, 0.005f, -16.0f, 16.0f, "%.4f"));
