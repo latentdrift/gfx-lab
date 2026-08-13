@@ -12,6 +12,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "app/State.hpp"
+#include "app/EditorHistory.hpp"
 #include "app/HardwareProfile.hpp"
 #include "app/RenderStack.hpp"
 #include "handbook/Handbook.hpp"
@@ -112,6 +113,33 @@ int runApplication() {
     timelineValidation.advance(1.0f);
     if (std::abs(timelineValidation.timeSeconds - 0.5f) > 0.0001f)
       fail("animation timeline looping failed validation");
+    RenderStack historyStack;
+    AnimationTimeline historyTimeline;
+    CameraOrbit historyCamera;
+    TestScene historyScene = TestScene::Torus;
+    HardwareProfile historyProfile = HardwareProfile::Unrestricted;
+    const EditorSnapshot historyInitial = captureEditorSnapshot(historyStack, historyCamera, historyScene,
+      historyProfile, historyTimeline);
+    EditorHistory historyValidation(historyInitial);
+    historyStack.selected().renderer.lighting.ambient = 0.4f;
+    historyValidation.observe(captureEditorSnapshot(historyStack, historyCamera, historyScene, historyProfile,
+      historyTimeline), true);
+    historyStack.selected().renderer.lighting.ambient = 0.7f;
+    historyStack.selected().perturbation.cameraYaw = 0.2f;
+    historyValidation.observe(captureEditorSnapshot(historyStack, historyCamera, historyScene, historyProfile,
+      historyTimeline), true);
+    const EditorSnapshot historyChanged = captureEditorSnapshot(historyStack, historyCamera, historyScene,
+      historyProfile, historyTimeline);
+    historyValidation.observe(historyChanged, false);
+    EditorSnapshot historyRestored;
+    if (!historyValidation.undo(historyChanged, historyRestored) ||
+        std::abs(historyRestored.renderStack.selected().renderer.lighting.ambient - 0.22f) > 0.0001f ||
+        historyValidation.canUndo() || !historyValidation.canRedo())
+      fail("editor history undo or interaction coalescing failed validation");
+    if (!historyValidation.redo(historyRestored, historyRestored) ||
+        std::abs(historyRestored.renderStack.selected().renderer.lighting.ambient - 0.7f) > 0.0001f ||
+        std::abs(historyRestored.renderStack.selected().perturbation.cameraYaw - 0.2f) > 0.0001f)
+      fail("editor history redo failed validation");
     RenderStack compositeValidation;
     compositeValidation.select(1);
     compositeValidation.duplicateSelected();
