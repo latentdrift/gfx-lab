@@ -549,8 +549,13 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       ImGui::TextUnformatted("FIELD"); ImGui::Separator();
       animationKeyControl(pass, AnimationProperty::FieldEnabled, timeline,
         ImGui::Checkbox("Evaluate world-space field", &state.field.enabled));
-      description("Evaluates two distance-derived wave fields at each visible world-space surface point.");
+      const char* producerKinds[] = {"Wave interference", "Signed distance field"};
+      bool producerKindChanged = ImGui::Combo("Producer family", &state.field.producerKind,
+        producerKinds, 2);
+      animationKeyControl(pass, AnimationProperty::FieldProducerKind, timeline, producerKindChanged);
+      description("Selects what scalar quantity the pass field buffer stores. SDF mode preserves signed distance in world units.");
       ImGui::BeginDisabled(!state.field.enabled);
+      ImGui::BeginDisabled(state.field.producerKind != 0);
       ImGui::TextUnformatted("Source positions and interference preview");
       const FieldSourceCanvasResult sourceCanvas = fieldSourceCanvas("##field-sources",
         state.field.sourceA, state.field.sourceB, state.field.wavelength, state.field.phaseOffset,
@@ -595,11 +600,78 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       animationKeyControl(pass, AnimationProperty::FieldVisualization, timeline, fieldVisualizationChanged);
       animationKeyControl(pass, AnimationProperty::FieldBandSharpness, timeline,
         ImGui::DragFloat("Band sharpness", &state.field.bandSharpness, 0.01f, 0.1f, 8.0f, "%.2f"));
+      description("Interference intensity evaluates |E_A + E_B| squared.");
+      ImGui::EndDisabled();
+      ImGui::SeparatorText("SIGNED DISTANCE PRODUCERS");
+      ImGui::BeginDisabled(state.field.producerKind != 1);
+      constexpr const char* sdfTypes[] = {"Sphere", "Box", "Torus"};
+      const auto sdfParameterControls = [&](const char* id, RendererState::Field::SdfProducer& producer,
+          const AnimationProperty property) {
+        ImGui::PushID(id);
+        bool changed = false;
+        if (producer.type == 0) {
+          changed = ImGui::DragFloat("Radius", &producer.parameters.x, 0.01f, 0.01f, 8.0f, "%.2f units");
+        } else if (producer.type == 1) {
+          changed = ImGui::DragFloat3("Half-extents XYZ", &producer.parameters.x,
+            0.01f, 0.01f, 8.0f, "%.2f units");
+        } else {
+          changed = ImGui::DragFloat("Major radius", &producer.parameters.x,
+            0.01f, 0.01f, 8.0f, "%.2f units");
+          changed |= ImGui::DragFloat("Tube radius", &producer.parameters.y,
+            0.01f, 0.01f, 8.0f, "%.2f units");
+        }
+        animationKeyControl(pass, property, timeline, changed);
+        ImGui::PopID();
+      };
+      bool sdfATypeChanged = ImGui::Combo("Producer A", &state.field.sdfA.type, sdfTypes, 3);
+      animationKeyControl(pass, AnimationProperty::SdfAType, timeline, sdfATypeChanged);
+      animationKeyControl(pass, AnimationProperty::SdfAPosition, timeline,
+        ImGui::DragFloat3("A position", &state.field.sdfA.position.x, 0.01f, -8.0f, 8.0f, "%.2f"));
+      sdfParameterControls("producer-a-parameters", state.field.sdfA, AnimationProperty::SdfAParameters);
+      bool sdfBTypeChanged = ImGui::Combo("Producer B", &state.field.sdfB.type, sdfTypes, 3);
+      animationKeyControl(pass, AnimationProperty::SdfBType, timeline, sdfBTypeChanged);
+      animationKeyControl(pass, AnimationProperty::SdfBPosition, timeline,
+        ImGui::DragFloat3("B position", &state.field.sdfB.position.x, 0.01f, -8.0f, 8.0f, "%.2f"));
+      sdfParameterControls("producer-b-parameters", state.field.sdfB, AnimationProperty::SdfBParameters);
+      constexpr const char* sdfOperations[] = {"Union: min(A, B)", "Intersection: max(A, B)",
+        "Difference: max(A, -B)", "Smooth union"};
+      bool sdfOperationChanged = ImGui::Combo("Combination", &state.field.sdfOperation,
+        sdfOperations, 4);
+      animationKeyControl(pass, AnimationProperty::SdfOperation, timeline, sdfOperationChanged);
+      ImGui::BeginDisabled(state.field.sdfOperation != 3);
+      animationKeyControl(pass, AnimationProperty::SdfSmoothness, timeline,
+        ImGui::DragFloat("Smooth-union radius", &state.field.sdfSmoothness,
+          0.005f, 0.001f, 4.0f, "%.3f units"));
+      ImGui::EndDisabled();
+      animationKeyControl(pass, AnimationProperty::SdfPreviewRange, timeline,
+        ImGui::DragFloat("Signed preview range", &state.field.sdfPreviewRange,
+          0.01f, 0.01f, 10.0f, "%.2f units"));
+      description("Each producer evaluates signed distance in world space: negative inside, zero at its boundary, positive outside.");
+      ImGui::SeparatorText("ISO-SURFACE");
+      animationKeyControl(pass, AnimationProperty::IsoSurfaceEnabled, timeline,
+        ImGui::Checkbox("Ray-march iso-surface", &state.field.isoSurfaceEnabled));
+      animationKeyControl(pass, AnimationProperty::IsoLevel, timeline,
+        ImGui::DragFloat("Iso level", &state.field.isoLevel, 0.005f, -4.0f, 4.0f, "%.3f units"));
+      animationKeyControl(pass, AnimationProperty::IsoColor, timeline,
+        ImGui::ColorEdit3("Iso-surface color", &state.field.isoColor.x));
+      animationKeyControl(pass, AnimationProperty::IsoMaximumSteps, timeline,
+        ImGui::DragInt("Maximum march steps", &state.field.isoMaxSteps, 1.0f, 8, 512));
+      animationKeyControl(pass, AnimationProperty::IsoHitEpsilon, timeline,
+        ImGui::DragFloat("Hit epsilon", &state.field.isoEpsilon,
+          0.0001f, 0.0001f, 0.1f, "%.4f units"));
+      animationKeyControl(pass, AnimationProperty::IsoMaximumDistance, timeline,
+        ImGui::DragFloat("Maximum ray distance", &state.field.isoMaxDistance,
+          0.1f, 1.0f, 100.0f, "%.1f units"));
+      description("The zero crossing is a real implicit surface. Ray marching writes window depth, so raster geometry and iso-surfaces occlude one another.");
+      ImGui::EndDisabled();
+      ImGui::SeparatorText("FIELD PREVIEW");
       animationKeyControl(pass, AnimationProperty::FieldLowColor, timeline,
-        ImGui::ColorEdit3("Preview low color", &state.field.lowColor.x));
+        ImGui::ColorEdit3(state.field.producerKind == 1 ? "Negative-distance color" : "Low-value color",
+          &state.field.lowColor.x));
       animationKeyControl(pass, AnimationProperty::FieldHighColor, timeline,
-        ImGui::ColorEdit3("Preview high color", &state.field.highColor.x));
-      description("Interference intensity evaluates |E_A + E_B| squared. Preview colors do not alter the scalar field consumed by compositing.");
+        ImGui::ColorEdit3(state.field.producerKind == 1 ? "Positive-distance color" : "High-value color",
+          &state.field.highColor.x));
+      description("These colors affect only Field signal preview. Named pass-field inputs retain the raw scalar value, including negative SDF distances.");
       ImGui::SeparatorText("CONSUMERS");
       animationKeyControl(pass, AnimationProperty::FieldVertexDisplacement, timeline,
         ImGui::DragFloat("Vertex normal displacement", &state.field.vertexDisplacement,
@@ -607,7 +679,9 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       animationKeyControl(pass, AnimationProperty::FieldSignedDisplacement, timeline,
         ImGui::Checkbox("Signed displacement (-1..1)", &state.field.signedDisplacement));
       description("Samples the field once per mesh vertex, then moves that vertex along its transformed normal. Mesh density therefore changes the result.");
-      description("The Field interference scene places a 16x8 torus beside a 64x32 torus so the sampling difference is directly visible.");
+      description(state.field.producerKind == 0
+        ? "The Field interference scene places a 16x8 torus beside a 64x32 torus so the sampling difference is directly visible."
+        : "SDF consumers convert distance to proximity around the selected iso-level. Mesh density still controls how finely vertex deformation can follow that field.");
       animationKeyControl(pass, AnimationProperty::FieldDiscardEnabled, timeline,
         ImGui::Checkbox("Discard below field threshold", &state.field.discardBelowEnabled));
       ImGui::BeginDisabled(!state.field.discardBelowEnabled);

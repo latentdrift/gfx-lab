@@ -170,10 +170,10 @@ SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile&
 
   ImGui::Spacing();
   ImGui::TextDisabled("SCENE");
-  constexpr std::array<const char*, 7> sceneLabels = {"Torus", "Texture minification", "Depth precision",
-    "Transparency", "Lighting comparison", "Stencil mask", "Field interference"};
+  constexpr std::array<const char*, 8> sceneLabels = {"Torus", "Texture minification", "Depth precision",
+    "Transparency", "Lighting comparison", "Stencil mask", "Field interference", "SDF iso-surface"};
   const char* currentLabel = scene == TestScene::ImportedModel && importedModel != nullptr
-    ? importedModel->name.c_str() : sceneLabels[std::clamp(static_cast<int>(scene), 0, 6)];
+    ? importedModel->name.c_str() : sceneLabels[std::clamp(static_cast<int>(scene), 0, 7)];
   ImGui::SetNextItemWidth(-1.0f);
   if (ImGui::BeginCombo("##scene", currentLabel)) {
     for (int option = 0; option < 5; ++option) {
@@ -186,6 +186,9 @@ SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile&
     if (profile == HardwareProfile::Unrestricted &&
         ImGui::Selectable(sceneLabels[6], scene == TestScene::FieldInterference))
       scene = TestScene::FieldInterference;
+    if (profile == HardwareProfile::Unrestricted &&
+        ImGui::Selectable(sceneLabels[7], scene == TestScene::SdfIsoSurface))
+      scene = TestScene::SdfIsoSurface;
     if (importedModel != nullptr &&
         ImGui::Selectable(importedModel->name.c_str(), scene == TestScene::ImportedModel))
       scene = TestScene::ImportedModel;

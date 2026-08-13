@@ -111,6 +111,8 @@ The Scene window's **Hardware Target** selector defaults to **Unrestricted**. **
 
 The Nintendo 64 target exposes the standard RSP/RDP/VI model: one- or two-cycle `(A - B) x C + D` color combiners, named combiner sources, primitive/environment registers, RDP surface and alpha-compare modes, point/three-point/box texture filters, mip/trilinear/sharpen/detail modes, nine texture formats, tile addressing and calculated 4096-byte TMEM use, RSP texture generation and vertex fog, Z compare/update, coverage antialiasing, RGBA16/RGBA32 framebuffer state, color dithering, and VI reconstruction/divot filters. Coverage and VI behavior are explicitly labelled approximations; the combiner, format quantization, three-point filter, alpha comparison, and TMEM accounting are modeled directly.
 
+The unrestricted **Field** tool can produce either wave interference or a genuine signed-distance field. SDF producers currently include sphere, box, and torus primitives with union, intersection, A-minus-B, and smooth-union operations. The pass field attachment stores signed world-unit distance in `R16F`; preview colors are only a display mapping, while named pass-field operands retain negative and positive values for composite arithmetic. A proximity mapping lets the same field drive mesh-vertex displacement, fragment discard, surface color, emission, and pass masks. **Ray-march iso-surface** renders the selected level as implicit geometry and writes fragment depth, so it participates in ordinary occlusion with rasterized meshes. Producer transforms, dimensions, combination, smoothing, iso level, and iso color are animatable.
+
 Use **File > Copy Stack JSON** to place a human-readable `graphics-lab.render-stack.v7` document on the clipboard. It records the global base, sparse local overrides, global and local property tracks, effective time-zero renderers, texture mapping, pass perturbations, selected output buffers, composite equations, masks, color spaces, range behavior, scene, and camera. Evaluation order is explicit: global base, global track, local override, then local track.
 
 Use **Help > Graphics Handbook** to open the built-in technical reference. Start with **From mesh to pixel**, then follow its related-concept links or browse the knowledge map. Every article begins with a plain causal **Quick read** before preserving the precise definition, pipeline location, visible results, interactions, engine vocabulary, and technical diagram. The map groups the pipeline, shading, visibility and output, engine systems, animation, and ray tracing. Reading never changes renderer state; example buttons apply configurations deliberately.
@@ -125,6 +127,8 @@ Changing the selected scene preserves the current renderer state and camera. **R
 - Transparency: straight-alpha blending, depth testing, and disabled depth writes
 - Lighting comparison: linear-light Blinn-Phong, mipmapping, and filtered directional shadows
 - Stencil mask: unlit two-pass equal-reference masking
+- Field interference: two world-space wave sources sampled by coarse and dense meshes
+- SDF iso-surface: smooth sphere/torus union above a rasterized depth-test floor
 
 The camera presentation has a fixed 4:3 aspect ratio. It expands to the maximum size that fits the viewport pane, then letterboxes the remaining width or height instead of stretching the rendered image.
 

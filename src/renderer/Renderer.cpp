@@ -205,6 +205,7 @@ public:
     outputProgram_ = makeProgram(outputVertexShader, outputFragmentShader);
     relationProgram_ = makeProgram(outputVertexShader, relationFragmentShader);
     fieldProgram_ = makeProgram(outputVertexShader, fieldFragmentShader);
+    sdfIsoProgram_ = makeProgram(outputVertexShader, sdfIsoSurfaceFragmentShader);
     copyProgram_ = makeProgram(outputVertexShader, copyFragmentShader);
     displayProgram_ = makeProgram(outputVertexShader, displayReconstructionFragmentShader);
     shadowProgram_ = makeProgram(shadowVertexShader, shadowFragmentShader);
@@ -334,6 +335,7 @@ public:
     glDeleteProgram(outputProgram_);
     glDeleteProgram(relationProgram_);
     glDeleteProgram(fieldProgram_);
+    glDeleteProgram(sdfIsoProgram_);
     glDeleteProgram(copyProgram_);
     glDeleteProgram(displayProgram_);
     glDeleteProgram(shadowProgram_);
@@ -412,6 +414,21 @@ public:
       glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldVisualization"), state.field.visualization);
       glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldVertexDisplacement"), state.field.vertexDisplacement);
       glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldSignedDisplacement"), state.field.signedDisplacement);
+      glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldProducerKind"), state.field.producerKind);
+      glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldSdfAType"), state.field.sdfA.type);
+      glUniform3fv(glGetUniformLocation(shadowProgram_, "uFieldSdfAPosition"), 1,
+        glm::value_ptr(state.field.sdfA.position));
+      glUniform3fv(glGetUniformLocation(shadowProgram_, "uFieldSdfAParameters"), 1,
+        glm::value_ptr(state.field.sdfA.parameters));
+      glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldSdfBType"), state.field.sdfB.type);
+      glUniform3fv(glGetUniformLocation(shadowProgram_, "uFieldSdfBPosition"), 1,
+        glm::value_ptr(state.field.sdfB.position));
+      glUniform3fv(glGetUniformLocation(shadowProgram_, "uFieldSdfBParameters"), 1,
+        glm::value_ptr(state.field.sdfB.parameters));
+      glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldSdfOperation"), state.field.sdfOperation);
+      glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldSdfSmoothness"), state.field.sdfSmoothness);
+      glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldSdfPreviewRange"), state.field.sdfPreviewRange);
+      glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldIsoLevel"), state.field.isoLevel);
       glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldDiscardEnabled"), state.field.discardBelowEnabled);
       glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldDiscardThreshold"), state.field.discardThreshold);
       glBindVertexArray(vao_);
@@ -567,6 +584,17 @@ public:
     glUniform1i(location("uFieldVisualization"), state.field.visualization);
     glUniform1f(location("uFieldVertexDisplacement"), state.field.vertexDisplacement);
     glUniform1i(location("uFieldSignedDisplacement"), state.field.signedDisplacement);
+    glUniform1i(location("uFieldProducerKind"), state.field.producerKind);
+    glUniform1i(location("uFieldSdfAType"), state.field.sdfA.type);
+    glUniform3fv(location("uFieldSdfAPosition"), 1, glm::value_ptr(state.field.sdfA.position));
+    glUniform3fv(location("uFieldSdfAParameters"), 1, glm::value_ptr(state.field.sdfA.parameters));
+    glUniform1i(location("uFieldSdfBType"), state.field.sdfB.type);
+    glUniform3fv(location("uFieldSdfBPosition"), 1, glm::value_ptr(state.field.sdfB.position));
+    glUniform3fv(location("uFieldSdfBParameters"), 1, glm::value_ptr(state.field.sdfB.parameters));
+    glUniform1i(location("uFieldSdfOperation"), state.field.sdfOperation);
+    glUniform1f(location("uFieldSdfSmoothness"), state.field.sdfSmoothness);
+    glUniform1f(location("uFieldSdfPreviewRange"), state.field.sdfPreviewRange);
+    glUniform1f(location("uFieldIsoLevel"), state.field.isoLevel);
     glUniform1i(location("uFieldDiscardEnabled"), state.field.discardBelowEnabled);
     glUniform1f(location("uFieldDiscardThreshold"), state.field.discardThreshold);
     glUniform1f(location("uFieldSurfaceColorInfluence"), state.field.surfaceColorInfluence);
@@ -712,6 +740,10 @@ public:
         drawSource(state.field.sourceB, glm::vec3(1.0f, 0.28f, 0.68f));
         break;
       }
+      case TestScene::SdfIsoSurface:
+        drawMesh(plane_, glm::translate(glm::scale(identity, glm::vec3(0.80f, 1.0f, 0.42f)),
+          glm::vec3(0.0f, -1.55f, 0.0f)), glm::vec3(0.18f, 0.22f, 0.28f));
+        break;
       case TestScene::ImportedModel:
         for (const ImportedSubmeshGpu& submesh : importedSubmeshes_) {
           const ImportedMaterialGpu* material = submesh.materialIndex < importedMaterials_.size()
@@ -754,6 +786,52 @@ public:
         resolveBuffers, GL_NEAREST);
     }
 
+    if (state.field.enabled && state.field.producerKind == 1 && state.field.isoSurfaceEnabled) {
+      glBindFramebuffer(GL_FRAMEBUFFER, target.sceneFbo);
+      glViewport(0, 0, target.width, target.height);
+      if (state.depth.testing) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+      glDepthMask(state.depth.writing ? GL_TRUE : GL_FALSE);
+      glDepthFunc(depthFunctions[std::clamp(state.depth.function, 0, 3)]);
+      glDisable(GL_CULL_FACE);
+      glDisable(GL_BLEND);
+      glUseProgram(sdfIsoProgram_);
+      const glm::mat4 viewProjection = projection * view;
+      const glm::mat4 inverseViewProjection = glm::inverse(viewProjection);
+      glUniformMatrix4fv(glGetUniformLocation(sdfIsoProgram_, "uInverseViewProjection"), 1, GL_FALSE,
+        glm::value_ptr(inverseViewProjection));
+      glUniformMatrix4fv(glGetUniformLocation(sdfIsoProgram_, "uViewProjection"), 1, GL_FALSE,
+        glm::value_ptr(viewProjection));
+      glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uCameraPosition"), 1,
+        glm::value_ptr(passCamera.eye()));
+      glUniform1i(glGetUniformLocation(sdfIsoProgram_, "uOrthographic"), state.camera.orthographic);
+      glUniform1i(glGetUniformLocation(sdfIsoProgram_, "uSdfAType"), state.field.sdfA.type);
+      glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uSdfAPosition"), 1,
+        glm::value_ptr(state.field.sdfA.position));
+      glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uSdfAParameters"), 1,
+        glm::value_ptr(state.field.sdfA.parameters));
+      glUniform1i(glGetUniformLocation(sdfIsoProgram_, "uSdfBType"), state.field.sdfB.type);
+      glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uSdfBPosition"), 1,
+        glm::value_ptr(state.field.sdfB.position));
+      glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uSdfBParameters"), 1,
+        glm::value_ptr(state.field.sdfB.parameters));
+      glUniform1i(glGetUniformLocation(sdfIsoProgram_, "uSdfOperation"), state.field.sdfOperation);
+      glUniform1f(glGetUniformLocation(sdfIsoProgram_, "uSdfSmoothness"), state.field.sdfSmoothness);
+      glUniform1f(glGetUniformLocation(sdfIsoProgram_, "uIsoLevel"), state.field.isoLevel);
+      glUniform1i(glGetUniformLocation(sdfIsoProgram_, "uMaximumSteps"),
+        std::clamp(state.field.isoMaxSteps, 8, 512));
+      glUniform1f(glGetUniformLocation(sdfIsoProgram_, "uHitEpsilon"),
+        std::max(state.field.isoEpsilon, 0.0001f));
+      glUniform1f(glGetUniformLocation(sdfIsoProgram_, "uMaximumDistance"),
+        std::max(state.field.isoMaxDistance, 1.0f));
+      glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uSurfaceColor"), 1,
+        glm::value_ptr(state.field.isoColor));
+      glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uLightDirection"), 1,
+        glm::value_ptr(lightDirection));
+      glUniform1f(glGetUniformLocation(sdfIsoProgram_, "uAmbient"), state.lighting.ambient);
+      glBindVertexArray(fullscreenVao_);
+      glDrawArrays(GL_TRIANGLES, 0, 3);
+    }
+
     // Material rendering and field generation are deliberately separate. The
     // field pass reconstructs visible world positions from depth and writes a
     // scalar resource that later passes may preview, composite, or use as a mask.
@@ -781,6 +859,19 @@ public:
     glUniform1f(glGetUniformLocation(fieldProgram_, "uFalloff"), state.field.falloff);
     glUniform1f(glGetUniformLocation(fieldProgram_, "uBandSharpness"), state.field.bandSharpness);
     glUniform1i(glGetUniformLocation(fieldProgram_, "uVisualization"), state.field.visualization);
+    glUniform1i(glGetUniformLocation(fieldProgram_, "uProducerKind"), state.field.producerKind);
+    glUniform1i(glGetUniformLocation(fieldProgram_, "uSdfAType"), state.field.sdfA.type);
+    glUniform3fv(glGetUniformLocation(fieldProgram_, "uSdfAPosition"), 1,
+      glm::value_ptr(state.field.sdfA.position));
+    glUniform3fv(glGetUniformLocation(fieldProgram_, "uSdfAParameters"), 1,
+      glm::value_ptr(state.field.sdfA.parameters));
+    glUniform1i(glGetUniformLocation(fieldProgram_, "uSdfBType"), state.field.sdfB.type);
+    glUniform3fv(glGetUniformLocation(fieldProgram_, "uSdfBPosition"), 1,
+      glm::value_ptr(state.field.sdfB.position));
+    glUniform3fv(glGetUniformLocation(fieldProgram_, "uSdfBParameters"), 1,
+      glm::value_ptr(state.field.sdfB.parameters));
+    glUniform1i(glGetUniformLocation(fieldProgram_, "uSdfOperation"), state.field.sdfOperation);
+    glUniform1f(glGetUniformLocation(fieldProgram_, "uSdfSmoothness"), state.field.sdfSmoothness);
     glBindVertexArray(fullscreenVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
@@ -846,6 +937,10 @@ public:
           countMesh(denseTorus_, glm::translate(identity, glm::vec3(1.35f, -0.05f, 0.0f)) *
             glm::scale(identity, glm::vec3(0.58f)));
           break;
+        case TestScene::SdfIsoSurface:
+          countMesh(plane_, glm::translate(glm::scale(identity, glm::vec3(0.80f, 1.0f, 0.42f)),
+            glm::vec3(0.0f, -1.55f, 0.0f)));
+          break;
         case TestScene::ImportedModel:
           countMesh(imported_, identity);
           break;
@@ -890,6 +985,10 @@ public:
       glm::value_ptr(state.field.lowColor));
     glUniform3fv(glGetUniformLocation(outputProgram_, "uFieldHighColor"), 1,
       glm::value_ptr(state.field.highColor));
+    glUniform1i(glGetUniformLocation(outputProgram_, "uFieldSignedDistance"),
+      state.field.producerKind == 1);
+    glUniform1f(glGetUniformLocation(outputProgram_, "uFieldSdfPreviewRange"),
+      state.field.sdfPreviewRange);
     glUniform1i(glGetUniformLocation(outputProgram_, "uN64Enabled"), state.n64.enabled);
     glUniform1i(glGetUniformLocation(outputProgram_, "uN64ColorDither"), state.n64.colorDither);
     glUniform1i(glGetUniformLocation(outputProgram_, "uN64ViReconstruction"), state.n64.viReconstruction);
@@ -945,6 +1044,10 @@ public:
     glUniform1i(glGetUniformLocation(relationProgram_, "uInvertMask"), step.invertMask);
     glUniform1f(glGetUniformLocation(relationProgram_, "uMaskNearPlane"), maskState.camera.nearPlane);
     glUniform1i(glGetUniformLocation(relationProgram_, "uMaskOrthographic"), maskState.camera.orthographic);
+    glUniform1i(glGetUniformLocation(relationProgram_, "uMaskFieldSignedDistance"),
+      maskState.field.producerKind == 1);
+    glUniform1f(glGetUniformLocation(relationProgram_, "uMaskSdfPreviewRange"),
+      maskState.field.sdfPreviewRange);
     glBindVertexArray(fullscreenVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1108,6 +1211,7 @@ private:
   }
 
   GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0, fieldProgram_ = 0,
+    sdfIsoProgram_ = 0,
     copyProgram_ = 0, displayProgram_ = 0,
     shadowProgram_ = 0, overdrawProgram_ = 0;
   GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, indexedTexture_ = 0,

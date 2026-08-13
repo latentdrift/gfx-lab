@@ -27,6 +27,7 @@ const char* testSceneName(TestScene scene) {
     case TestScene::Lighting: return "lighting_comparison";
     case TestScene::StencilMask: return "stencil_mask";
     case TestScene::FieldInterference: return "field_interference";
+    case TestScene::SdfIsoSurface: return "sdf_iso_surface";
     case TestScene::ImportedModel: return "imported_model";
   }
   return "unknown";
@@ -107,6 +108,17 @@ void applyRecommendedSetup(TestScene scene, RendererState& state, CameraOrbit& c
       camera.pitch = 0.56f;
       camera.distance = 7.4f;
       camera.target = glm::vec3(0.0f, -0.35f, 0.0f);
+      break;
+    case TestScene::SdfIsoSurface:
+      state.field.enabled = true;
+      state.field.producerKind = 1;
+      state.field.isoSurfaceEnabled = true;
+      state.field.isoColor = {0.64f, 0.78f, 1.0f};
+      state.lighting.model = 2;
+      state.lighting.ambient = 0.12f;
+      camera.yaw = 0.68f;
+      camera.pitch = 0.32f;
+      camera.distance = 6.4f;
       break;
     case TestScene::ImportedModel:
       camera.distance = 5.2f;
@@ -376,6 +388,8 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
   json << "  },\n";
   constexpr const char* fieldViews[] = {"source_a_phase", "source_b_phase", "phase_difference",
     "interference_intensity", "absolute_distance_difference", "distance_difference_contours"};
+  constexpr const char* sdfTypes[] = {"sphere", "box", "torus"};
+  constexpr const char* sdfOperations[] = {"union", "intersection", "a_subtract_b", "smooth_union"};
   json << "  \"field\": {\n";
   json << "    \"enabled\": " << boolean(state.field.enabled) << ",\n";
   json << "    \"source_a_position_units\": [" << state.field.sourceA.x << ", " << state.field.sourceA.y << ", " << state.field.sourceA.z << "],\n";
@@ -393,7 +407,23 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
        << ", \"discard_below\": {\"enabled\": " << boolean(state.field.discardBelowEnabled)
        << ", \"threshold\": " << state.field.discardThreshold << "}"
        << ", \"surface_color_influence\": " << state.field.surfaceColorInfluence
-       << ", \"emission_influence\": " << state.field.emissionInfluence << "}\n";
+       << ", \"emission_influence\": " << state.field.emissionInfluence << "},\n";
+  json << "    \"producer_kind\": \"" << (state.field.producerKind == 0 ? "wave_interference" : "signed_distance_field") << "\",\n";
+  json << "    \"sdf\": {\"producer_a\": {\"type\": \""
+       << sdfTypes[std::clamp(state.field.sdfA.type, 0, 2)] << "\""
+       << ", \"position\": [" << state.field.sdfA.position.x << ", " << state.field.sdfA.position.y << ", " << state.field.sdfA.position.z
+       << "], \"parameters\": [" << state.field.sdfA.parameters.x << ", " << state.field.sdfA.parameters.y << ", " << state.field.sdfA.parameters.z
+       << "]}, \"producer_b\": {\"type\": \""
+       << sdfTypes[std::clamp(state.field.sdfB.type, 0, 2)] << "\""
+       << ", \"position\": [" << state.field.sdfB.position.x << ", " << state.field.sdfB.position.y << ", " << state.field.sdfB.position.z
+       << "], \"parameters\": [" << state.field.sdfB.parameters.x << ", " << state.field.sdfB.parameters.y << ", " << state.field.sdfB.parameters.z
+       << "]}, \"operation\": \"" << sdfOperations[std::clamp(state.field.sdfOperation, 0, 3)]
+       << "\", \"smoothness\": " << state.field.sdfSmoothness
+       << ", \"preview_range\": " << state.field.sdfPreviewRange << "},\n";
+  json << "    \"iso_surface\": {\"enabled\": " << boolean(state.field.isoSurfaceEnabled)
+       << ", \"level\": " << state.field.isoLevel << ", \"maximum_steps\": " << state.field.isoMaxSteps
+       << ", \"epsilon\": " << state.field.isoEpsilon << ", \"maximum_distance\": " << state.field.isoMaxDistance
+       << ", \"color_rgb\": [" << state.field.isoColor.r << ", " << state.field.isoColor.g << ", " << state.field.isoColor.b << "]}\n";
   json << "  },\n";
   json << "  \"depth\": {\n";
   json << "    \"test_enabled\": " << boolean(state.depth.testing) << ",\n";

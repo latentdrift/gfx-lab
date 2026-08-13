@@ -39,6 +39,17 @@ uniform float uFieldBandSharpness;
 uniform int uFieldVisualization;
 uniform float uFieldVertexDisplacement;
 uniform bool uFieldSignedDisplacement;
+uniform int uFieldProducerKind;
+uniform int uFieldSdfAType;
+uniform vec3 uFieldSdfAPosition;
+uniform vec3 uFieldSdfAParameters;
+uniform int uFieldSdfBType;
+uniform vec3 uFieldSdfBPosition;
+uniform vec3 uFieldSdfBParameters;
+uniform int uFieldSdfOperation;
+uniform float uFieldSdfSmoothness;
+uniform float uFieldSdfPreviewRange;
+uniform float uFieldIsoLevel;
 
 out vec3 vWorldPosition;
 out vec3 vNormal;
@@ -53,7 +64,32 @@ out vec4 vLightPosition;
 out float vFieldSignal;
 flat out int vFieldConsumerAffects;
 
+float sdfPrimitive(vec3 p, int type, vec3 parameters) {
+  if (type == 0) return length(p) - max(parameters.x, 0.001);
+  if (type == 1) {
+    vec3 q = abs(p) - max(parameters, vec3(0.001));
+    return length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+  }
+  vec2 q = vec2(length(p.xz) - max(parameters.x, 0.001), p.y);
+  return length(q) - max(parameters.y, 0.001);
+}
+
+float sdfScene(vec3 p) {
+  float a = sdfPrimitive(p - uFieldSdfAPosition, uFieldSdfAType, uFieldSdfAParameters);
+  float b = sdfPrimitive(p - uFieldSdfBPosition, uFieldSdfBType, uFieldSdfBParameters);
+  if (uFieldSdfOperation == 0) return min(a, b);
+  if (uFieldSdfOperation == 1) return max(a, b);
+  if (uFieldSdfOperation == 2) return max(a, -b);
+  float k = max(uFieldSdfSmoothness, 0.0001);
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+
 float evaluateField(vec3 worldPosition) {
+  if (uFieldProducerKind == 1) {
+    float distanceToSurface = sdfScene(worldPosition) - uFieldIsoLevel;
+    return clamp(1.0 - abs(distanceToSurface) / max(uFieldSdfPreviewRange, 0.001), 0.0, 1.0);
+  }
   float distanceA = length(worldPosition - uFieldSourceA);
   float distanceB = length(worldPosition - uFieldSourceB);
   float wavelength = max(uFieldWavelength, 0.001);
@@ -423,6 +459,8 @@ uniform sampler2D uField;
 uniform bool uFieldOutput;
 uniform vec3 uFieldLowColor;
 uniform vec3 uFieldHighColor;
+uniform bool uFieldSignedDistance;
+uniform float uFieldSdfPreviewRange;
 uniform bool uVisualizeOverdraw;
 uniform float uOverdrawRange;
 uniform bool uN64Enabled;
@@ -463,9 +501,14 @@ void main() {
   vec3 color = texture(uScene, vUv).rgb;
   if (uFieldOutput) {
     float signal = texture(uField, vUv).r;
-    vec3 middle = mix(vec3(0.10, 0.42, 0.88), uFieldHighColor, 0.28);
-    color = signal < 0.5 ? mix(uFieldLowColor, middle, signal * 2.0)
-      : mix(middle, uFieldHighColor, signal * 2.0 - 1.0);
+    if (texture(uDepth, vUv).r >= 0.999999) color = vec3(0.0);
+    else {
+      if (uFieldSignedDistance)
+        signal = 0.5 + 0.5 * clamp(signal / max(uFieldSdfPreviewRange, 0.001), -1.0, 1.0);
+      vec3 middle = mix(vec3(0.10, 0.42, 0.88), uFieldHighColor, 0.28);
+      color = signal < 0.5 ? mix(uFieldLowColor, middle, signal * 2.0)
+        : mix(middle, uFieldHighColor, signal * 2.0 - 1.0);
+    }
   }
   if (!uFieldOutput && uN64Enabled && uN64ViReconstruction) {
     vec2 texel = 1.0 / vec2(textureSize(uScene, 0));
@@ -546,6 +589,8 @@ uniform int uMaskMode;
 uniform bool uInvertMask;
 uniform float uMaskNearPlane;
 uniform bool uMaskOrthographic;
+uniform bool uMaskFieldSignedDistance;
+uniform float uMaskSdfPreviewRange;
 out vec4 fragColor;
 
 vec3 signedPow(vec3 value, float exponent) {
@@ -622,7 +667,11 @@ void main() {
     vec3 change = abs(dFdx(storedB)) + abs(dFdy(storedB));
     mask = smoothstep(0.025, 0.20, max(change.r, max(change.g, change.b)));
   } else if (uMaskMode == 4) {
-    mask = clamp(texture(uMaskField, vUv).r, 0.0, 1.0);
+    float fieldValue = texture(uMaskField, vUv).r;
+    mask = uMaskFieldSignedDistance
+      ? 1.0 - smoothstep(0.0, max(uMaskSdfPreviewRange, 0.001), abs(fieldValue))
+      : clamp(fieldValue, 0.0, 1.0);
+    if (texture(uMaskDepth, vUv).r >= 0.999999) mask = 0.0;
   }
   if (uInvertMask) mask = 1.0 - mask;
   vec3 composed = finiteColor(mix(a, relation, uOpacity * mask));
@@ -649,13 +698,44 @@ uniform float uAmplitudeB;
 uniform float uFalloff;
 uniform float uBandSharpness;
 uniform int uVisualization;
+uniform int uProducerKind;
+uniform int uSdfAType;
+uniform vec3 uSdfAPosition;
+uniform vec3 uSdfAParameters;
+uniform int uSdfBType;
+uniform vec3 uSdfBPosition;
+uniform vec3 uSdfBParameters;
+uniform int uSdfOperation;
+uniform float uSdfSmoothness;
 out float fieldSignal;
+
+float sdfPrimitive(vec3 p, int type, vec3 parameters) {
+  if (type == 0) return length(p) - parameters.x;
+  if (type == 1) {
+    vec3 q = abs(p) - parameters;
+    return length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+  }
+  vec2 q = vec2(length(p.xz) - parameters.x, p.y);
+  return length(q) - parameters.y;
+}
+
+float sdfScene(vec3 p) {
+  float a = sdfPrimitive(p - uSdfAPosition, uSdfAType, uSdfAParameters);
+  float b = sdfPrimitive(p - uSdfBPosition, uSdfBType, uSdfBParameters);
+  if (uSdfOperation == 0) return min(a, b);
+  if (uSdfOperation == 1) return max(a, b);
+  if (uSdfOperation == 2) return max(a, -b);
+  float k = max(uSdfSmoothness, 0.0001);
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
 
 void main() {
   float depth = texture(uDepth, vUv).r;
   if (!uEnabled || depth >= 0.999999) { fieldSignal = 0.0; return; }
   vec4 world = uInverseViewProjection * vec4(vUv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
   vec3 position = world.xyz / max(abs(world.w), 0.000001);
+  if (uProducerKind == 1) { fieldSignal = sdfScene(position); return; }
   float distanceA = length(position - uSourceA);
   float distanceB = length(position - uSourceB);
   float wavelength = max(uWavelength, 0.001);
@@ -680,6 +760,94 @@ void main() {
     value = 1.0 - contour;
   }
   fieldSignal = pow(clamp(value, 0.0, 1.0), max(uBandSharpness, 0.01));
+}
+)GLSL";
+
+inline constexpr const char* sdfIsoSurfaceFragmentShader = R"GLSL(
+#version 410 core
+in vec2 vUv;
+uniform mat4 uInverseViewProjection;
+uniform mat4 uViewProjection;
+uniform vec3 uCameraPosition;
+uniform bool uOrthographic;
+uniform int uSdfAType;
+uniform vec3 uSdfAPosition;
+uniform vec3 uSdfAParameters;
+uniform int uSdfBType;
+uniform vec3 uSdfBPosition;
+uniform vec3 uSdfBParameters;
+uniform int uSdfOperation;
+uniform float uSdfSmoothness;
+uniform float uIsoLevel;
+uniform int uMaximumSteps;
+uniform float uHitEpsilon;
+uniform float uMaximumDistance;
+uniform vec3 uSurfaceColor;
+uniform vec3 uLightDirection;
+uniform float uAmbient;
+out vec4 fragColor;
+
+float sdfPrimitive(vec3 p, int type, vec3 parameters) {
+  if (type == 0) return length(p) - parameters.x;
+  if (type == 1) {
+    vec3 q = abs(p) - parameters;
+    return length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+  }
+  vec2 q = vec2(length(p.xz) - parameters.x, p.y);
+  return length(q) - parameters.y;
+}
+
+float sceneDistance(vec3 p) {
+  float a = sdfPrimitive(p - uSdfAPosition, uSdfAType, uSdfAParameters);
+  float b = sdfPrimitive(p - uSdfBPosition, uSdfBType, uSdfBParameters);
+  float distance;
+  if (uSdfOperation == 0) distance = min(a, b);
+  else if (uSdfOperation == 1) distance = max(a, b);
+  else if (uSdfOperation == 2) distance = max(a, -b);
+  else {
+    float k = max(uSdfSmoothness, 0.0001);
+    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    distance = mix(b, a, h) - k * h * (1.0 - h);
+  }
+  return distance - uIsoLevel;
+}
+
+vec3 normalAt(vec3 p) {
+  float e = max(uHitEpsilon * 2.0, 0.0002);
+  vec2 h = vec2(e, 0.0);
+  return normalize(vec3(sceneDistance(p + h.xyy) - sceneDistance(p - h.xyy),
+    sceneDistance(p + h.yxy) - sceneDistance(p - h.yxy),
+    sceneDistance(p + h.yyx) - sceneDistance(p - h.yyx)));
+}
+
+void main() {
+  vec2 ndc = vUv * 2.0 - 1.0;
+  vec4 nearH = uInverseViewProjection * vec4(ndc, -1.0, 1.0);
+  vec4 farH = uInverseViewProjection * vec4(ndc, 1.0, 1.0);
+  vec3 nearPoint = nearH.xyz / nearH.w;
+  vec3 farPoint = farH.xyz / farH.w;
+  vec3 origin = uOrthographic ? nearPoint : uCameraPosition;
+  vec3 direction = normalize(farPoint - nearPoint);
+  float travel = 0.0;
+  vec3 position = origin;
+  bool hit = false;
+  for (int step = 0; step < 512; ++step) {
+    if (step >= uMaximumSteps || travel > uMaximumDistance) break;
+    position = origin + direction * travel;
+    float distance = sceneDistance(position);
+    if (abs(distance) < uHitEpsilon) { hit = true; break; }
+    travel += max(abs(distance), uHitEpsilon * 0.5);
+  }
+  if (!hit) discard;
+  vec4 clip = uViewProjection * vec4(position, 1.0);
+  float depth = clip.z / clip.w * 0.5 + 0.5;
+  if (depth < 0.0 || depth > 1.0) discard;
+  gl_FragDepth = depth;
+  vec3 normal = normalAt(position);
+  float diffuse = max(dot(normal, normalize(uLightDirection)), 0.0);
+  float lighting = uAmbient + (1.0 - uAmbient) * diffuse;
+  float rim = pow(1.0 - max(dot(normal, -direction), 0.0), 3.0);
+  fragColor = vec4(uSurfaceColor * lighting + uSurfaceColor * rim * 0.35, 1.0);
 }
 )GLSL";
 
@@ -771,9 +939,45 @@ uniform float uFieldBandSharpness;
 uniform int uFieldVisualization;
 uniform float uFieldVertexDisplacement;
 uniform bool uFieldSignedDisplacement;
+uniform int uFieldProducerKind;
+uniform int uFieldSdfAType;
+uniform vec3 uFieldSdfAPosition;
+uniform vec3 uFieldSdfAParameters;
+uniform int uFieldSdfBType;
+uniform vec3 uFieldSdfBPosition;
+uniform vec3 uFieldSdfBParameters;
+uniform int uFieldSdfOperation;
+uniform float uFieldSdfSmoothness;
+uniform float uFieldSdfPreviewRange;
+uniform float uFieldIsoLevel;
 out float vShadowFieldSignal;
 
+float sdfPrimitive(vec3 p, int type, vec3 parameters) {
+  if (type == 0) return length(p) - max(parameters.x, 0.001);
+  if (type == 1) {
+    vec3 q = abs(p) - max(parameters, vec3(0.001));
+    return length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+  }
+  vec2 q = vec2(length(p.xz) - max(parameters.x, 0.001), p.y);
+  return length(q) - max(parameters.y, 0.001);
+}
+
+float sdfScene(vec3 p) {
+  float a = sdfPrimitive(p - uFieldSdfAPosition, uFieldSdfAType, uFieldSdfAParameters);
+  float b = sdfPrimitive(p - uFieldSdfBPosition, uFieldSdfBType, uFieldSdfBParameters);
+  if (uFieldSdfOperation == 0) return min(a, b);
+  if (uFieldSdfOperation == 1) return max(a, b);
+  if (uFieldSdfOperation == 2) return max(a, -b);
+  float k = max(uFieldSdfSmoothness, 0.0001);
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+
 float evaluateField(vec3 worldPosition) {
+  if (uFieldProducerKind == 1) {
+    float distanceToSurface = sdfScene(worldPosition) - uFieldIsoLevel;
+    return clamp(1.0 - abs(distanceToSurface) / max(uFieldSdfPreviewRange, 0.001), 0.0, 1.0);
+  }
   float distanceA = length(worldPosition - uFieldSourceA);
   float distanceB = length(worldPosition - uFieldSourceB);
   float wavelength = max(uFieldWavelength, 0.001);

@@ -105,6 +105,7 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   CONT("depth_cue_end", "Depth cue end", "Lighting", 1, K::Float, 0, 100),
   CONT("far_color", "Depth cue far color", "Lighting", 3, K::Color3, 0, 1),
   STEP("field_enabled", "Field enabled", "Field", K::Boolean, 0, 1),
+  STEP("field_producer_kind", "Field producer kind", "Field", K::Enumeration, 0, 1),
   CONT("field_source_a", "Field source A", "Field sources", 3, K::Vec3, -8, 8),
   CONT("field_source_b", "Field source B", "Field sources", 3, K::Vec3, -8, 8),
   CONT("field_wavelength", "Field wavelength", "Field waves", 1, K::Float, 0.05f, 8),
@@ -122,6 +123,21 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   CONT("field_discard_threshold", "Field discard threshold", "Field consumers", 1, K::Float, 0, 1),
   CONT("field_surface_color_influence", "Field surface color influence", "Field consumers", 1, K::Float, 0, 1),
   CONT("field_emission_influence", "Field emission influence", "Field consumers", 1, K::Float, 0, 8),
+  STEP("sdf_a_type", "SDF producer A type", "SDF producers", K::Enumeration, 0, 2),
+  CONT("sdf_a_position", "SDF producer A position", "SDF producers", 3, K::Vec3, -8, 8),
+  CONT("sdf_a_parameters", "SDF producer A parameters", "SDF producers", 3, K::Vec3, 0.01f, 8),
+  STEP("sdf_b_type", "SDF producer B type", "SDF producers", K::Enumeration, 0, 2),
+  CONT("sdf_b_position", "SDF producer B position", "SDF producers", 3, K::Vec3, -8, 8),
+  CONT("sdf_b_parameters", "SDF producer B parameters", "SDF producers", 3, K::Vec3, 0.01f, 8),
+  STEP("sdf_operation", "SDF combination", "SDF combination", K::Enumeration, 0, 3),
+  CONT("sdf_smoothness", "SDF smooth-union radius", "SDF combination", 1, K::Float, 0.001f, 4),
+  CONT("sdf_preview_range", "SDF preview range", "SDF display", 1, K::Float, 0.01f, 10),
+  STEP("iso_surface_enabled", "Iso-surface enabled", "Iso-surface", K::Boolean, 0, 1),
+  CONT("iso_level", "Iso-surface level", "Iso-surface", 1, K::Float, -4, 4),
+  CONT("iso_color", "Iso-surface color", "Iso-surface", 3, K::Color3, 0, 1),
+  STEP("iso_maximum_steps", "Iso-surface maximum steps", "Iso-surface", K::Integer, 8, 512),
+  CONT("iso_hit_epsilon", "Iso-surface hit epsilon", "Iso-surface", 1, K::Float, 0.0001f, 0.1f),
+  CONT("iso_maximum_distance", "Iso-surface maximum distance", "Iso-surface", 1, K::Float, 1, 100),
   STEP("depth_test_enabled", "Depth test enabled", "Depth", K::Boolean, 0, 1),
   STEP("depth_write_enabled", "Depth writes enabled", "Depth", K::Boolean, 0, 1),
   FIXED("depth_precision", "Depth-buffer precision", "Depth", 1, K::Integer, 16, 24),
@@ -245,6 +261,10 @@ const char* animationPropertyDiscreteValueLabel(const AnimationProperty property
   case AnimationProperty::TextureColorStorage: { constexpr std::array labels = {"Direct color", "Indexed 8-bit", "Indexed 4-bit"}; return label(labels); }
   case AnimationProperty::LightingModel: { constexpr std::array labels = {"Unlit", "Gouraud Lambert", "Phong-shaded Lambert", "Phong reflection", "Blinn-Phong reflection"}; return label(labels); }
   case AnimationProperty::FieldVisualization: { constexpr std::array labels = {"Source A phase", "Source B phase", "Phase difference", "Interference intensity", "Absolute distance difference", "Distance-difference contours"}; return label(labels); }
+  case AnimationProperty::FieldProducerKind: { constexpr std::array labels = {"Wave interference", "Signed distance field"}; return label(labels); }
+  case AnimationProperty::SdfAType:
+  case AnimationProperty::SdfBType: { constexpr std::array labels = {"Sphere", "Box", "Torus"}; return label(labels); }
+  case AnimationProperty::SdfOperation: { constexpr std::array labels = {"Union", "Intersection", "A subtract B", "Smooth union"}; return label(labels); }
   case AnimationProperty::DepthComparison: { constexpr std::array labels = {"Less", "Less or equal", "Greater", "Always"}; return label(labels); }
   case AnimationProperty::DepthVisualization: { constexpr std::array labels = {"Off", "Raw window depth", "Linear camera depth"}; return label(labels); }
   case AnimationProperty::N64CycleType: { constexpr std::array labels = {"1-cycle", "2-cycle"}; return label(labels, 1); }
@@ -343,6 +363,7 @@ glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty
   case AnimationProperty::DepthCueEnd: return glm::vec4(pass.renderer.lighting.depthCueEnd);
   case AnimationProperty::FarColor: return glm::vec4(pass.renderer.lighting.farColor, 1.0f);
   case AnimationProperty::FieldEnabled: return glm::vec4(pass.renderer.field.enabled ? 1.0f : 0.0f);
+  case AnimationProperty::FieldProducerKind: return glm::vec4(pass.renderer.field.producerKind);
   case AnimationProperty::FieldSourceA: return glm::vec4(pass.renderer.field.sourceA, 0.0f);
   case AnimationProperty::FieldSourceB: return glm::vec4(pass.renderer.field.sourceB, 0.0f);
   case AnimationProperty::FieldWavelength: return glm::vec4(pass.renderer.field.wavelength);
@@ -360,6 +381,21 @@ glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty
   case AnimationProperty::FieldDiscardThreshold: return glm::vec4(pass.renderer.field.discardThreshold);
   case AnimationProperty::FieldSurfaceColorInfluence: return glm::vec4(pass.renderer.field.surfaceColorInfluence);
   case AnimationProperty::FieldEmissionInfluence: return glm::vec4(pass.renderer.field.emissionInfluence);
+  case AnimationProperty::SdfAType: return glm::vec4(pass.renderer.field.sdfA.type);
+  case AnimationProperty::SdfAPosition: return glm::vec4(pass.renderer.field.sdfA.position, 0.0f);
+  case AnimationProperty::SdfAParameters: return glm::vec4(pass.renderer.field.sdfA.parameters, 0.0f);
+  case AnimationProperty::SdfBType: return glm::vec4(pass.renderer.field.sdfB.type);
+  case AnimationProperty::SdfBPosition: return glm::vec4(pass.renderer.field.sdfB.position, 0.0f);
+  case AnimationProperty::SdfBParameters: return glm::vec4(pass.renderer.field.sdfB.parameters, 0.0f);
+  case AnimationProperty::SdfOperation: return glm::vec4(pass.renderer.field.sdfOperation);
+  case AnimationProperty::SdfSmoothness: return glm::vec4(pass.renderer.field.sdfSmoothness);
+  case AnimationProperty::SdfPreviewRange: return glm::vec4(pass.renderer.field.sdfPreviewRange);
+  case AnimationProperty::IsoSurfaceEnabled: return glm::vec4(pass.renderer.field.isoSurfaceEnabled ? 1.0f : 0.0f);
+  case AnimationProperty::IsoLevel: return glm::vec4(pass.renderer.field.isoLevel);
+  case AnimationProperty::IsoColor: return glm::vec4(pass.renderer.field.isoColor, 1.0f);
+  case AnimationProperty::IsoMaximumSteps: return glm::vec4(pass.renderer.field.isoMaxSteps);
+  case AnimationProperty::IsoHitEpsilon: return glm::vec4(pass.renderer.field.isoEpsilon);
+  case AnimationProperty::IsoMaximumDistance: return glm::vec4(pass.renderer.field.isoMaxDistance);
   case AnimationProperty::DepthTestEnabled: return glm::vec4(pass.renderer.depth.testing ? 1.0f : 0.0f);
   case AnimationProperty::DepthWriteEnabled: return glm::vec4(pass.renderer.depth.writing ? 1.0f : 0.0f);
   case AnimationProperty::DepthPrecision: return glm::vec4(pass.renderer.depth.precision);
@@ -493,6 +529,7 @@ void setAnimationPropertyValue(RenderPass& pass, const AnimationProperty propert
   case AnimationProperty::DepthCueEnd: pass.renderer.lighting.depthCueEnd = value.x; break;
   case AnimationProperty::FarColor: pass.renderer.lighting.farColor = glm::vec3(value); break;
   case AnimationProperty::FieldEnabled: pass.renderer.field.enabled = value.x >= 0.5f; break;
+  case AnimationProperty::FieldProducerKind: pass.renderer.field.producerKind = static_cast<int>(std::round(value.x)); break;
   case AnimationProperty::FieldSourceA: pass.renderer.field.sourceA = glm::vec3(value); break;
   case AnimationProperty::FieldSourceB: pass.renderer.field.sourceB = glm::vec3(value); break;
   case AnimationProperty::FieldWavelength: pass.renderer.field.wavelength = value.x; break;
@@ -510,6 +547,21 @@ void setAnimationPropertyValue(RenderPass& pass, const AnimationProperty propert
   case AnimationProperty::FieldDiscardThreshold: pass.renderer.field.discardThreshold = value.x; break;
   case AnimationProperty::FieldSurfaceColorInfluence: pass.renderer.field.surfaceColorInfluence = value.x; break;
   case AnimationProperty::FieldEmissionInfluence: pass.renderer.field.emissionInfluence = value.x; break;
+  case AnimationProperty::SdfAType: pass.renderer.field.sdfA.type = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::SdfAPosition: pass.renderer.field.sdfA.position = glm::vec3(value); break;
+  case AnimationProperty::SdfAParameters: pass.renderer.field.sdfA.parameters = glm::vec3(value); break;
+  case AnimationProperty::SdfBType: pass.renderer.field.sdfB.type = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::SdfBPosition: pass.renderer.field.sdfB.position = glm::vec3(value); break;
+  case AnimationProperty::SdfBParameters: pass.renderer.field.sdfB.parameters = glm::vec3(value); break;
+  case AnimationProperty::SdfOperation: pass.renderer.field.sdfOperation = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::SdfSmoothness: pass.renderer.field.sdfSmoothness = value.x; break;
+  case AnimationProperty::SdfPreviewRange: pass.renderer.field.sdfPreviewRange = value.x; break;
+  case AnimationProperty::IsoSurfaceEnabled: pass.renderer.field.isoSurfaceEnabled = value.x >= 0.5f; break;
+  case AnimationProperty::IsoLevel: pass.renderer.field.isoLevel = value.x; break;
+  case AnimationProperty::IsoColor: pass.renderer.field.isoColor = glm::vec3(value); break;
+  case AnimationProperty::IsoMaximumSteps: pass.renderer.field.isoMaxSteps = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::IsoHitEpsilon: pass.renderer.field.isoEpsilon = value.x; break;
+  case AnimationProperty::IsoMaximumDistance: pass.renderer.field.isoMaxDistance = value.x; break;
   case AnimationProperty::DepthTestEnabled: pass.renderer.depth.testing = value.x >= 0.5f; break;
   case AnimationProperty::DepthWriteEnabled: pass.renderer.depth.writing = value.x >= 0.5f; break;
   case AnimationProperty::DepthPrecision: pass.renderer.depth.precision = static_cast<int>(std::round(value.x)); break;

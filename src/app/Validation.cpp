@@ -413,6 +413,42 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         configJson(fieldValidation, fieldCamera, TestScene::FieldInterference,
           HardwareProfile::Unrestricted).find("\"consumers\"") == std::string::npos)
       fail("field animation or renderer-state export failed validation");
+    RendererState sdfValidation;
+    CameraOrbit sdfCamera;
+    applyRecommendedSetup(TestScene::SdfIsoSurface, sdfValidation, sdfCamera);
+    if (!sdfValidation.field.enabled || sdfValidation.field.producerKind != 1 ||
+        !sdfValidation.field.isoSurfaceEnabled)
+      fail("SDF iso-surface recommended setup failed validation");
+    while (glGetError() != GL_NO_ERROR) {}
+    for (int producerType = 0; producerType <= 2; ++producerType) {
+      sdfValidation.field.sdfA.type = producerType;
+      sdfValidation.field.sdfB.type = 2 - producerType;
+      for (int operation = 0; operation <= 3; ++operation) {
+        sdfValidation.field.sdfOperation = operation;
+        if (renderer.render(sdfValidation, sdfCamera, TestScene::SdfIsoSurface, false) == 0)
+          fail("analytic SDF producer or iso-surface render failed validation");
+      }
+    }
+    if (glGetError() != GL_NO_ERROR)
+      fail("analytic SDF producer or depth-writing iso-surface produced an OpenGL error");
+    RenderPass animatedSdf;
+    animatedSdf.renderer = sdfValidation;
+    animatedSdf.renderer.field.sdfA.position = {-1.0f, 0.0f, 0.0f};
+    setPropertyKeyframe(animatedSdf, AnimationProperty::SdfAPosition, 0.0f);
+    animatedSdf.renderer.field.sdfA.position = {1.0f, 0.5f, 0.0f};
+    setPropertyKeyframe(animatedSdf, AnimationProperty::SdfAPosition, 2.0f);
+    animatedSdf.renderer.field.isoLevel = -0.2f;
+    setPropertyKeyframe(animatedSdf, AnimationProperty::IsoLevel, 0.0f);
+    animatedSdf.renderer.field.isoLevel = 0.2f;
+    setPropertyKeyframe(animatedSdf, AnimationProperty::IsoLevel, 2.0f);
+    const RenderPass evaluatedSdf = evaluateRenderPass(animatedSdf, 1.0f);
+    const std::string sdfConfig = configJson(sdfValidation, sdfCamera, TestScene::SdfIsoSurface,
+      HardwareProfile::Unrestricted);
+    if (glm::distance(evaluatedSdf.renderer.field.sdfA.position, glm::vec3(0.0f, 0.25f, 0.0f)) > 0.0001f ||
+        std::abs(evaluatedSdf.renderer.field.isoLevel) > 0.0001f ||
+        sdfConfig.find("\"producer_kind\": \"signed_distance_field\"") == std::string::npos ||
+        sdfConfig.find("\"iso_surface\"") == std::string::npos)
+      fail("SDF animation or renderer-state export failed validation");
     current.lighting.depthCue = true;
     for (int textureColorMode = 0; textureColorMode <= 2; ++textureColorMode) {
       current.texture.colorMode = textureColorMode;

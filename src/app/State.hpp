@@ -18,7 +18,13 @@ struct RendererState {
   struct Texture { bool nearestFiltering = false; bool repeat = true; bool mipmapping = false; bool trilinear = false; float anisotropy = 1.0f; int colorMode = 0; } texture;
   struct Lighting { int model = 2; float ambient = 0.22f; float azimuth = 34.0f; float elevation = 52.0f; float shininess = 32.0f; bool shadows = false; int shadowResolution = 1024; float shadowBias = 0.002f; bool shadowPcf = true; bool visualizeShadowMap = false; bool depthCue = false; float depthCueStart = 3.0f; float depthCueEnd = 7.0f; glm::vec3 farColor{0.12f, 0.16f, 0.22f}; } lighting;
   struct Field {
+    struct SdfProducer {
+      int type = 0;
+      glm::vec3 position{0.0f};
+      glm::vec3 parameters{1.0f, 0.35f, 0.35f};
+    };
     bool enabled = false;
+    int producerKind = 0;
     glm::vec3 sourceA{-1.35f, 0.0f, 0.0f};
     glm::vec3 sourceB{1.35f, 0.0f, 0.0f};
     float wavelength = 0.72f;
@@ -36,6 +42,17 @@ struct RendererState {
     float discardThreshold = 0.5f;
     float surfaceColorInfluence = 0.0f;
     float emissionInfluence = 0.0f;
+    SdfProducer sdfA{0, {-0.85f, 0.0f, 0.0f}, {1.15f, 0.35f, 0.35f}};
+    SdfProducer sdfB{2, {0.85f, 0.0f, 0.0f}, {0.85f, 0.28f, 0.28f}};
+    int sdfOperation = 3;
+    float sdfSmoothness = 0.45f;
+    float sdfPreviewRange = 1.5f;
+    bool isoSurfaceEnabled = false;
+    float isoLevel = 0.0f;
+    int isoMaxSteps = 128;
+    float isoEpsilon = 0.002f;
+    float isoMaxDistance = 30.0f;
+    glm::vec3 isoColor{0.72f, 0.82f, 1.0f};
   } field;
   struct Depth { bool testing = true; bool writing = true; int precision = 24; int function = 0; int visualization = 0; bool orderingTable = false; int orderingBuckets = 32; } depth;
   struct Stencil { bool enabled = false; bool invert = false; int reference = 1; } stencil;
@@ -95,7 +112,7 @@ enum class RelationOperator {
   SignedColorOffset,
   BitwiseXor,
 };
-enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask, FieldInterference, ImportedModel };
+enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask, FieldInterference, SdfIsoSurface, ImportedModel };
 
 struct CameraOrbit {
   float yaw = 0.72f;
