@@ -63,6 +63,15 @@ bool isNintendo64Example(handbook::Example example) {
   return example >= handbook::Example::N64ThreePoint && example <= handbook::Example::N64VideoInterface;
 }
 
+bool shouldEnableNativeViewports() {
+#if defined(GLFW_PLATFORM) && defined(GLFW_PLATFORM_WAYLAND)
+  // Native Wayland intentionally has no desktop-global window coordinates, so Dear ImGui cannot
+  // implement platform windows there. We select X11/XWayland when DISPLAY is available below.
+  if (glfwGetPlatform() == GLFW_PLATFORM_WAYLAND) return false;
+#endif
+  return true;
+}
+
 constexpr std::array<float, 8> uiScales = {0.75f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f};
 
 std::array<ImFont*, uiScales.size()> createUiFonts() {
@@ -111,6 +120,9 @@ namespace gfxlab {
 int runApplication() {
   glfwSetErrorCallback(glfwError);
 #if defined(GLFW_PLATFORM) && defined(GLFW_PLATFORM_X11)
+  // Dear ImGui platform windows need desktop-global positions, which native Wayland intentionally
+  // does not expose. XWayland supplies those semantics; ImGui 1.92.8 also corrects its X11-specific
+  // framebuffer/content-scale handling so rendering and pointer hit testing share one coordinate space.
   if (std::getenv("DISPLAY") != nullptr) glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
 #endif
   if (!glfwInit()) fail("GLFW initialization failed");
@@ -129,9 +141,7 @@ int runApplication() {
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-#if defined(GLFW_PLATFORM) && defined(GLFW_PLATFORM_WAYLAND)
-  if (glfwGetPlatform() != GLFW_PLATFORM_WAYLAND)
-#endif
+  if (shouldEnableNativeViewports())
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
   const std::array<ImFont*, uiScales.size()> uiFonts = createUiFonts();
   ImGui::GetIO().FontDefault = uiFonts[uiScaleIndex(1.0f)];

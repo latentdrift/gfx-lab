@@ -11,8 +11,8 @@ void keepCurrentWindowVisible() {
   const ImVec2 position = ImGui::GetWindowPos();
   const ImVec2 size = ImGui::GetWindowSize();
   const float titleHeight = ImGui::GetFrameHeight();
-  bool recoverable = false;
   const ImGuiPlatformIO& platform = ImGui::GetPlatformIO();
+  const ImGuiViewport* main = ImGui::GetMainViewport();
   const auto visibleOn = [&](const ImVec2 workPosition, const ImVec2 workSize) {
     const float overlapX = std::max(0.0f, std::min(position.x + size.x, workPosition.x +
       workSize.x) - std::max(position.x, workPosition.x));
@@ -23,14 +23,22 @@ void keepCurrentWindowVisible() {
     }
     return false;
   };
-  for (const ImGuiPlatformMonitor& monitor : platform.Monitors) {
-    if (visibleOn(monitor.WorkPos, monitor.WorkSize)) {
-      recoverable = true;
-      break;
+
+  bool recoverable = false;
+  if ((ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) == 0) {
+    // Without native platform viewports, window positions are relative to the main ImGui viewport.
+    // Comparing them with desktop-global monitor coordinates would introduce the same kind of
+    // coordinate-space mismatch this recovery path is meant to repair.
+    recoverable = visibleOn(main->WorkPos, main->WorkSize);
+  } else {
+    for (const ImGuiPlatformMonitor& monitor : platform.Monitors) {
+      if (visibleOn(monitor.WorkPos, monitor.WorkSize)) {
+        recoverable = true;
+        break;
+      }
     }
+    if (platform.Monitors.empty()) recoverable = visibleOn(main->WorkPos, main->WorkSize);
   }
-  const ImGuiViewport* main = ImGui::GetMainViewport();
-  if (platform.Monitors.empty()) recoverable = visibleOn(main->WorkPos, main->WorkSize);
   if (recoverable) return;
 
   const ImVec2 recoveredSize(std::min(size.x, main->WorkSize.x * 0.9f),

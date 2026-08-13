@@ -11,12 +11,12 @@
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
       imguiDockingFor = pkgs: pkgs.imgui.overrideAttrs (_: {
-        version = "1.91.4-docking";
+        version = "1.92.8-docking";
         src = pkgs.fetchFromGitHub {
           owner = "ocornut";
           repo = "imgui";
-          tag = "v1.91.4-docking";
-          hash = "sha256-b0ZXuSXV8U8eBU6WE6blxUvS6xaIgEt9Svob+Kow0g8=";
+          tag = "v1.92.8-docking";
+          hash = "sha256-zUTQaQ9SifwoHl7Z/+tkdpHMXpehCDGomkyF7Kj9LzE=";
         };
       });
     in {
