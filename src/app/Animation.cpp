@@ -10,34 +10,132 @@
 namespace gfxlab {
 namespace {
 
+using K = AnimationValueKind;
+using B = AnimationBehavior;
+#define CONT(ID, LABEL, GROUP, COMPONENTS, KIND, MINIMUM, MAXIMUM) \
+  {ID, LABEL, GROUP, COMPONENTS, KIND, B::Continuous, MINIMUM, MAXIMUM}
+#define STEP(ID, LABEL, GROUP, KIND, MINIMUM, MAXIMUM) \
+  {ID, LABEL, GROUP, 1, KIND, B::Step, MINIMUM, MAXIMUM}
+#define FIXED(ID, LABEL, GROUP, COMPONENTS, KIND, MINIMUM, MAXIMUM) \
+  {ID, LABEL, GROUP, COMPONENTS, KIND, B::NotAnimatable, MINIMUM, MAXIMUM}
 constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationProperty::Count)> propertyInfo = {{
-  {"model_translation", "Model translation", "Geometry perturbation", 3},
-  {"model_scale", "Model scale", "Geometry perturbation", 1},
-  {"normal_inflation", "Normal inflation", "Geometry perturbation", 1},
-  {"uv_offset", "UV offset", "Sampling perturbation", 2},
-  {"uv_scale", "UV scale", "Sampling perturbation", 2},
-  {"camera_yaw", "Camera yaw offset", "View perturbation", 1},
-  {"camera_pitch", "Camera pitch offset", "View perturbation", 1},
-  {"camera_distance", "Camera distance offset", "View perturbation", 1},
-  {"field_of_view_offset", "Field-of-view offset", "View perturbation", 1},
-  {"composite_gain", "Composite gain", "Composite", 1},
-  {"composite_bias", "Composite bias", "Composite", 1},
-  {"composite_opacity", "Composite opacity", "Composite", 1},
-  {"vertex_quantization", "Vertex position precision", "Geometry", 1},
-  {"normal_strength", "Normal-map strength", "Surface", 1},
-  {"ambient", "Ambient term", "Lighting", 1},
-  {"light_azimuth", "Light azimuth", "Lighting", 1},
-  {"light_elevation", "Light elevation", "Lighting", 1},
-  {"shininess", "Specular exponent", "Lighting", 1},
-  {"depth_cue_start", "Depth cue start", "Lighting", 1},
-  {"depth_cue_end", "Depth cue end", "Lighting", 1},
-  {"far_color", "Depth cue far color", "Lighting", 3},
-  {"fog_start", "Fog start", "Post", 1},
-  {"fog_end", "Fog end", "Post", 1},
-  {"primitive_color", "N64 primitive color", "N64 surface", 4},
-  {"environment_color", "N64 environment color", "N64 surface", 4},
-  {"alpha_threshold", "N64 alpha threshold", "N64 surface", 1},
+  STEP("pass_enabled", "Pass enabled", "Pass", K::Boolean, 0, 1),
+  STEP("pass_output", "Output buffer", "Pass", K::Enumeration, 0, 3),
+  STEP("texture_source", "Texture source", "Texture", K::Enumeration, 0, 3),
+  STEP("texture_color_interpretation", "Texture color interpretation", "Texture", K::Boolean, 0, 1),
+  CONT("model_translation", "Model translation", "Geometry perturbation", 3, K::Vec3, -4, 4),
+  CONT("model_scale", "Model scale", "Geometry perturbation", 1, K::Float, 0.01f, 4),
+  CONT("normal_inflation", "Normal inflation", "Geometry perturbation", 1, K::Float, -1, 1),
+  CONT("uv_offset", "UV offset", "Sampling perturbation", 2, K::Vec2, -4, 4),
+  CONT("uv_scale", "UV scale", "Sampling perturbation", 2, K::Vec2, 0.01f, 8),
+  CONT("camera_yaw", "Camera yaw offset", "View perturbation", 1, K::Angle, -6.283f, 6.283f),
+  CONT("camera_pitch", "Camera pitch offset", "View perturbation", 1, K::Angle, -1.45f, 1.45f),
+  CONT("camera_distance", "Camera distance offset", "View perturbation", 1, K::Float, -10, 10),
+  CONT("field_of_view_offset", "Field-of-view offset", "View perturbation", 1, K::Float, -100, 100),
+  CONT("composite_gain", "Composite gain", "Composite", 1, K::Float, 0, 16),
+  CONT("composite_bias", "Composite bias", "Composite", 1, K::Float, -1, 1),
+  CONT("composite_opacity", "Composite opacity", "Composite", 1, K::Float, 0, 1),
+  STEP("composite_operation", "Composite operation", "Composite", K::Enumeration, 0, 11),
+  STEP("composite_color_space", "Composite color space", "Composite", K::Enumeration, 0, 1),
+  STEP("composite_range", "Composite range", "Composite", K::Enumeration, 0, 2),
+  STEP("composite_mask", "Composite mask", "Composite", K::Enumeration, 0, 3),
+  STEP("composite_mask_inverted", "Composite mask inverted", "Composite", K::Boolean, 0, 1),
+  CONT("vertex_quantization", "Vertex position precision", "Geometry", 1, K::Float, 0, 0.125f),
+  STEP("clipping_enabled", "Clipping plane enabled", "Geometry", K::Boolean, 0, 1),
+  CONT("clipping_height", "Clipping plane height", "Geometry", 1, K::Float, -10, 10),
+  STEP("clipping_keep_above", "Clipping plane keep above", "Geometry", K::Boolean, 0, 1),
+  STEP("projection_orthographic", "Orthographic projection", "Camera", K::Boolean, 0, 1),
+  CONT("field_of_view", "Field of view", "Camera", 1, K::Float, 5, 150),
+  CONT("orthographic_size", "Orthographic view height", "Camera", 1, K::Float, 0.1f, 20),
+  CONT("near_plane", "Near clipping plane", "Camera", 1, K::Float, 0.001f, 10),
+  STEP("affine_mapping", "Affine texture mapping", "Rasterization", K::Boolean, 0, 1),
+  STEP("cull_mode", "Face culling", "Rasterization", K::Enumeration, 0, 2),
+  FIXED("multisample_count", "Multisample count", "Rasterization", 1, K::Integer, 1, 8),
+  STEP("polygon_offset_enabled", "Polygon offset fill", "Rasterization", K::Boolean, 0, 1),
+  CONT("polygon_offset_factor", "Polygon offset slope factor", "Rasterization", 1, K::Float, -8, 8),
+  CONT("polygon_offset_units", "Polygon offset constant units", "Rasterization", 1, K::Float, -16, 16),
+  STEP("smooth_shading", "Smooth normal interpolation", "Surface", K::Boolean, 0, 1),
+  STEP("wireframe_overlay", "Wireframe overlay", "Surface", K::Boolean, 0, 1),
+  STEP("surface_visualization", "Surface visualization", "Surface", K::Enumeration, 0, 5),
+  STEP("normal_mapping_enabled", "Normal mapping enabled", "Surface", K::Boolean, 0, 1),
+  CONT("normal_strength", "Normal-map strength", "Surface", 1, K::Float, 0, 4),
+  STEP("transparency_operation", "Transparency operation", "Surface", K::Enumeration, 0, 9),
+  CONT("alpha_cutoff", "Alpha cutoff", "Surface", 1, K::Float, 0, 1),
+  STEP("reverse_draw_order", "Reverse object draw order", "Surface", K::Boolean, 0, 1),
+  STEP("nearest_filtering", "Nearest texture filtering", "Texture", K::Boolean, 0, 1),
+  STEP("texture_repeat", "Texture repeat addressing", "Texture", K::Boolean, 0, 1),
+  STEP("mipmapping", "Mipmapping enabled", "Texture", K::Boolean, 0, 1),
+  STEP("trilinear_filtering", "Trilinear mip interpolation", "Texture", K::Boolean, 0, 1),
+  CONT("anisotropy", "Anisotropy", "Texture", 1, K::Float, 1, 16),
+  STEP("texture_color_storage", "Texture color storage", "Texture", K::Enumeration, 0, 2),
+  STEP("lighting_model", "Lighting model", "Lighting", K::Enumeration, 0, 4),
+  CONT("ambient", "Ambient term", "Lighting", 1, K::Float, 0, 1),
+  CONT("light_azimuth", "Light azimuth", "Lighting", 1, K::Angle, -180, 180),
+  CONT("light_elevation", "Light elevation", "Lighting", 1, K::Angle, -89, 89),
+  CONT("shininess", "Specular exponent", "Lighting", 1, K::Float, 1, 256),
+  STEP("shadows_enabled", "Shadow map enabled", "Lighting", K::Boolean, 0, 1),
+  FIXED("shadow_resolution", "Shadow-map resolution", "Lighting", 1, K::Integer, 128, 4096),
+  CONT("shadow_bias", "Shadow depth bias", "Lighting", 1, K::Float, 0, 0.02f),
+  STEP("shadow_pcf", "Shadow PCF filtering", "Lighting", K::Boolean, 0, 1),
+  STEP("shadow_map_visualization", "Shadow-map visualization", "Lighting", K::Boolean, 0, 1),
+  STEP("depth_cue_enabled", "Vertex depth cue enabled", "Lighting", K::Boolean, 0, 1),
+  CONT("depth_cue_start", "Depth cue start", "Lighting", 1, K::Float, 0, 100),
+  CONT("depth_cue_end", "Depth cue end", "Lighting", 1, K::Float, 0, 100),
+  CONT("far_color", "Depth cue far color", "Lighting", 3, K::Color3, 0, 1),
+  STEP("depth_test_enabled", "Depth test enabled", "Depth", K::Boolean, 0, 1),
+  STEP("depth_write_enabled", "Depth writes enabled", "Depth", K::Boolean, 0, 1),
+  FIXED("depth_precision", "Depth-buffer precision", "Depth", 1, K::Integer, 16, 24),
+  STEP("depth_comparison", "Depth comparison", "Depth", K::Enumeration, 0, 3),
+  STEP("depth_visualization", "Depth visualization", "Depth", K::Enumeration, 0, 2),
+  STEP("ordering_table_enabled", "Ordering-table submission", "Depth", K::Boolean, 0, 1),
+  STEP("ordering_buckets", "Ordering-table buckets", "Depth", K::Integer, 4, 256),
+  STEP("stencil_enabled", "Stencil mask enabled", "Stencil", K::Boolean, 0, 1),
+  STEP("stencil_inverted", "Stencil comparison inverted", "Stencil", K::Boolean, 0, 1),
+  STEP("stencil_reference", "Stencil reference", "Stencil", K::Integer, 0, 255),
+  STEP("bits_per_channel", "Color bits per channel", "Color", K::Integer, 1, 8),
+  STEP("dithering_enabled", "Ordered dithering", "Color", K::Boolean, 0, 1),
+  STEP("linear_light", "Linear-light calculations", "Color", K::Boolean, 0, 1),
+  STEP("fog_enabled", "Distance fog enabled", "Post", K::Boolean, 0, 1),
+  CONT("fog_start", "Fog start", "Post", 1, K::Float, 0, 100),
+  CONT("fog_end", "Fog end", "Post", 1, K::Float, 0, 100),
+  STEP("overdraw_enabled", "Overdraw visualization", "Post", K::Boolean, 0, 1),
+  CONT("overdraw_range", "Overdraw heat-map maximum", "Post", 1, K::Float, 1, 64),
+  FIXED("internal_resolution", "Internal resolution", "Output", 2, K::Vec2, 1, 4096),
+  STEP("nearest_upscaling", "Nearest viewport upscaling", "Output", K::Boolean, 0, 1),
+  STEP("n64_cycle_type", "N64 RDP cycle type", "N64 surface", K::Enumeration, 1, 2),
+  STEP("n64_cycle_0_a", "N64 cycle 0 source A", "N64 combiner", K::Enumeration, 0, 8),
+  STEP("n64_cycle_0_b", "N64 cycle 0 source B", "N64 combiner", K::Enumeration, 0, 8),
+  STEP("n64_cycle_0_c", "N64 cycle 0 source C", "N64 combiner", K::Enumeration, 0, 8),
+  STEP("n64_cycle_0_d", "N64 cycle 0 source D", "N64 combiner", K::Enumeration, 0, 8),
+  STEP("n64_cycle_1_a", "N64 cycle 1 source A", "N64 combiner", K::Enumeration, 0, 8),
+  STEP("n64_cycle_1_b", "N64 cycle 1 source B", "N64 combiner", K::Enumeration, 0, 8),
+  STEP("n64_cycle_1_c", "N64 cycle 1 source C", "N64 combiner", K::Enumeration, 0, 8),
+  STEP("n64_cycle_1_d", "N64 cycle 1 source D", "N64 combiner", K::Enumeration, 0, 8),
+  CONT("primitive_color", "N64 primitive color", "N64 surface", 4, K::Color4, 0, 1),
+  CONT("environment_color", "N64 environment color", "N64 surface", 4, K::Color4, 0, 1),
+  STEP("n64_texture_format", "N64 texture format", "N64 texture", K::Enumeration, 0, 8),
+  STEP("n64_texture_filter", "N64 texture filter", "N64 texture", K::Enumeration, 0, 2),
+  STEP("n64_mipmap_mode", "N64 mip/detail mode", "N64 texture", K::Enumeration, 0, 4),
+  FIXED("n64_tile_size", "N64 tile size", "N64 texture", 2, K::Vec2, 1, 64),
+  STEP("n64_mirror_s", "N64 mirror S", "N64 texture", K::Boolean, 0, 1),
+  STEP("n64_mirror_t", "N64 mirror T", "N64 texture", K::Boolean, 0, 1),
+  STEP("n64_shift_s", "N64 S coordinate shift", "N64 texture", K::Integer, -5, 5),
+  STEP("n64_shift_t", "N64 T coordinate shift", "N64 texture", K::Integer, -5, 5),
+  STEP("n64_texture_generation", "N64 texture-coordinate generation", "N64 surface", K::Boolean, 0, 1),
+  STEP("n64_surface_mode", "N64 surface mode", "N64 surface", K::Enumeration, 0, 3),
+  STEP("n64_z_compare", "N64 Z compare", "N64 depth", K::Boolean, 0, 1),
+  STEP("n64_z_update", "N64 Z update", "N64 depth", K::Boolean, 0, 1),
+  STEP("n64_alpha_compare", "N64 alpha compare", "N64 surface", K::Enumeration, 0, 2),
+  CONT("alpha_threshold", "N64 alpha threshold", "N64 surface", 1, K::Float, 0, 1),
+  STEP("n64_coverage_antialiasing", "N64 coverage antialiasing", "N64 rasterization", K::Boolean, 0, 1),
+  STEP("n64_framebuffer_format", "N64 framebuffer format", "N64 output", K::Enumeration, 0, 1),
+  STEP("n64_color_dither", "N64 color dither", "N64 output", K::Enumeration, 0, 2),
+  STEP("n64_vi_reconstruction", "N64 VI reconstruction", "N64 output", K::Boolean, 0, 1),
+  STEP("n64_vi_divot", "N64 VI divot filter", "N64 output", K::Boolean, 0, 1),
 }};
+#undef CONT
+#undef STEP
+#undef FIXED
 
 std::size_t nearbyIndex(const std::vector<PropertyKeyframe>& keyframes, const float timeSeconds,
     const float toleranceSeconds) {
@@ -74,8 +172,24 @@ const AnimationPropertyInfo& animationPropertyInfo(const AnimationProperty prope
   return propertyInfo[std::min(static_cast<std::size_t>(property), propertyInfo.size() - 1)];
 }
 
+bool animationPropertyIsAnimatable(const AnimationProperty property) {
+  return property != AnimationProperty::Count &&
+    animationPropertyInfo(property).behavior != AnimationBehavior::NotAnimatable;
+}
+
+bool animationPropertyValuesEqual(const AnimationProperty property, const glm::vec4& a, const glm::vec4& b) {
+  const AnimationPropertyInfo& info = animationPropertyInfo(property);
+  for (int component = 0; component < info.components; ++component)
+    if (std::abs(a[component] - b[component]) > 0.000001f) return false;
+  return true;
+}
+
 glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty property) {
   switch (property) {
+  case AnimationProperty::PassEnabled: return glm::vec4(pass.enabled ? 1.0f : 0.0f);
+  case AnimationProperty::PassOutput: return glm::vec4(static_cast<float>(pass.output));
+  case AnimationProperty::TextureSource: return glm::vec4(static_cast<float>(pass.textureSource));
+  case AnimationProperty::TextureColorInterpretation: return glm::vec4(pass.importedTextureSrgb ? 1.0f : 0.0f);
   case AnimationProperty::ModelTranslation: return glm::vec4(pass.perturbation.modelTranslation, 0.0f);
   case AnimationProperty::ModelScale: return glm::vec4(pass.perturbation.modelScale);
   case AnimationProperty::NormalInflation: return glm::vec4(pass.perturbation.normalInflation);
@@ -88,20 +202,103 @@ glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty
   case AnimationProperty::CompositeGain: return glm::vec4(pass.composite.gain);
   case AnimationProperty::CompositeBias: return glm::vec4(pass.composite.bias);
   case AnimationProperty::CompositeOpacity: return glm::vec4(pass.composite.opacity);
+  case AnimationProperty::CompositeOperation: return glm::vec4(static_cast<float>(pass.composite.operation));
+  case AnimationProperty::CompositeColorSpace: return glm::vec4(static_cast<float>(pass.composite.colorSpace));
+  case AnimationProperty::CompositeRange: return glm::vec4(static_cast<float>(pass.composite.range));
+  case AnimationProperty::CompositeMask: return glm::vec4(static_cast<float>(pass.composite.mask));
+  case AnimationProperty::CompositeMaskInverted: return glm::vec4(pass.composite.invertMask ? 1.0f : 0.0f);
   case AnimationProperty::VertexQuantization: return glm::vec4(pass.renderer.geometry.vertexQuantization);
+  case AnimationProperty::ClippingEnabled: return glm::vec4(pass.renderer.geometry.clipping ? 1.0f : 0.0f);
+  case AnimationProperty::ClippingHeight: return glm::vec4(pass.renderer.geometry.clipHeight);
+  case AnimationProperty::ClippingKeepAbove: return glm::vec4(pass.renderer.geometry.clipAbove ? 1.0f : 0.0f);
+  case AnimationProperty::ProjectionOrthographic: return glm::vec4(pass.renderer.camera.orthographic ? 1.0f : 0.0f);
+  case AnimationProperty::FieldOfView: return glm::vec4(pass.renderer.camera.fieldOfView);
+  case AnimationProperty::OrthographicSize: return glm::vec4(pass.renderer.camera.orthographicSize);
+  case AnimationProperty::NearPlane: return glm::vec4(pass.renderer.camera.nearPlane);
+  case AnimationProperty::AffineMapping: return glm::vec4(pass.renderer.rasterization.affineMapping ? 1.0f : 0.0f);
+  case AnimationProperty::CullMode: return glm::vec4(pass.renderer.rasterization.cullMode);
+  case AnimationProperty::MultisampleCount: return glm::vec4(pass.renderer.rasterization.samples);
+  case AnimationProperty::PolygonOffsetEnabled: return glm::vec4(pass.renderer.rasterization.polygonOffset ? 1.0f : 0.0f);
+  case AnimationProperty::PolygonOffsetFactor: return glm::vec4(pass.renderer.rasterization.polygonOffsetFactor);
+  case AnimationProperty::PolygonOffsetUnits: return glm::vec4(pass.renderer.rasterization.polygonOffsetUnits);
+  case AnimationProperty::SmoothShading: return glm::vec4(pass.renderer.surface.smoothShading ? 1.0f : 0.0f);
+  case AnimationProperty::WireframeOverlay: return glm::vec4(pass.renderer.surface.wireframe ? 1.0f : 0.0f);
+  case AnimationProperty::SurfaceVisualization: return glm::vec4(pass.renderer.surface.visualization);
+  case AnimationProperty::NormalMappingEnabled: return glm::vec4(pass.renderer.surface.normalMapping ? 1.0f : 0.0f);
   case AnimationProperty::NormalStrength: return glm::vec4(pass.renderer.surface.normalStrength);
+  case AnimationProperty::TransparencyOperation: return glm::vec4(pass.renderer.surface.transparency);
+  case AnimationProperty::AlphaCutoff: return glm::vec4(pass.renderer.surface.alphaCutoff);
+  case AnimationProperty::ReverseDrawOrder: return glm::vec4(pass.renderer.surface.reverseDrawOrder ? 1.0f : 0.0f);
+  case AnimationProperty::NearestFiltering: return glm::vec4(pass.renderer.texture.nearestFiltering ? 1.0f : 0.0f);
+  case AnimationProperty::TextureRepeat: return glm::vec4(pass.renderer.texture.repeat ? 1.0f : 0.0f);
+  case AnimationProperty::Mipmapping: return glm::vec4(pass.renderer.texture.mipmapping ? 1.0f : 0.0f);
+  case AnimationProperty::TrilinearFiltering: return glm::vec4(pass.renderer.texture.trilinear ? 1.0f : 0.0f);
+  case AnimationProperty::Anisotropy: return glm::vec4(pass.renderer.texture.anisotropy);
+  case AnimationProperty::TextureColorStorage: return glm::vec4(pass.renderer.texture.colorMode);
+  case AnimationProperty::LightingModel: return glm::vec4(pass.renderer.lighting.model);
   case AnimationProperty::Ambient: return glm::vec4(pass.renderer.lighting.ambient);
   case AnimationProperty::LightAzimuth: return glm::vec4(pass.renderer.lighting.azimuth);
   case AnimationProperty::LightElevation: return glm::vec4(pass.renderer.lighting.elevation);
   case AnimationProperty::Shininess: return glm::vec4(pass.renderer.lighting.shininess);
+  case AnimationProperty::ShadowsEnabled: return glm::vec4(pass.renderer.lighting.shadows ? 1.0f : 0.0f);
+  case AnimationProperty::ShadowResolution: return glm::vec4(pass.renderer.lighting.shadowResolution);
+  case AnimationProperty::ShadowBias: return glm::vec4(pass.renderer.lighting.shadowBias);
+  case AnimationProperty::ShadowPcf: return glm::vec4(pass.renderer.lighting.shadowPcf ? 1.0f : 0.0f);
+  case AnimationProperty::ShadowMapVisualization: return glm::vec4(pass.renderer.lighting.visualizeShadowMap ? 1.0f : 0.0f);
+  case AnimationProperty::DepthCueEnabled: return glm::vec4(pass.renderer.lighting.depthCue ? 1.0f : 0.0f);
   case AnimationProperty::DepthCueStart: return glm::vec4(pass.renderer.lighting.depthCueStart);
   case AnimationProperty::DepthCueEnd: return glm::vec4(pass.renderer.lighting.depthCueEnd);
   case AnimationProperty::FarColor: return glm::vec4(pass.renderer.lighting.farColor, 1.0f);
+  case AnimationProperty::DepthTestEnabled: return glm::vec4(pass.renderer.depth.testing ? 1.0f : 0.0f);
+  case AnimationProperty::DepthWriteEnabled: return glm::vec4(pass.renderer.depth.writing ? 1.0f : 0.0f);
+  case AnimationProperty::DepthPrecision: return glm::vec4(pass.renderer.depth.precision);
+  case AnimationProperty::DepthComparison: return glm::vec4(pass.renderer.depth.function);
+  case AnimationProperty::DepthVisualization: return glm::vec4(pass.renderer.depth.visualization);
+  case AnimationProperty::OrderingTableEnabled: return glm::vec4(pass.renderer.depth.orderingTable ? 1.0f : 0.0f);
+  case AnimationProperty::OrderingBuckets: return glm::vec4(pass.renderer.depth.orderingBuckets);
+  case AnimationProperty::StencilEnabled: return glm::vec4(pass.renderer.stencil.enabled ? 1.0f : 0.0f);
+  case AnimationProperty::StencilInverted: return glm::vec4(pass.renderer.stencil.invert ? 1.0f : 0.0f);
+  case AnimationProperty::StencilReference: return glm::vec4(pass.renderer.stencil.reference);
+  case AnimationProperty::BitsPerChannel: return glm::vec4(pass.renderer.color.bitsPerChannel);
+  case AnimationProperty::DitheringEnabled: return glm::vec4(pass.renderer.color.dithering ? 1.0f : 0.0f);
+  case AnimationProperty::LinearLight: return glm::vec4(pass.renderer.color.linearLight ? 1.0f : 0.0f);
+  case AnimationProperty::FogEnabled: return glm::vec4(pass.renderer.post.fog ? 1.0f : 0.0f);
   case AnimationProperty::FogStart: return glm::vec4(pass.renderer.post.fogStart);
   case AnimationProperty::FogEnd: return glm::vec4(pass.renderer.post.fogEnd);
+  case AnimationProperty::OverdrawEnabled: return glm::vec4(pass.renderer.post.overdraw ? 1.0f : 0.0f);
+  case AnimationProperty::OverdrawRange: return glm::vec4(pass.renderer.post.overdrawRange);
+  case AnimationProperty::InternalResolution: return glm::vec4(pass.renderer.output.width, pass.renderer.output.height, 0, 0);
+  case AnimationProperty::NearestUpscaling: return glm::vec4(pass.renderer.output.nearestUpscaling ? 1.0f : 0.0f);
+  case AnimationProperty::N64CycleType: return glm::vec4(pass.renderer.n64.cycleType);
+  case AnimationProperty::N64Cycle0A: return glm::vec4(pass.renderer.n64.cycle0.a);
+  case AnimationProperty::N64Cycle0B: return glm::vec4(pass.renderer.n64.cycle0.b);
+  case AnimationProperty::N64Cycle0C: return glm::vec4(pass.renderer.n64.cycle0.c);
+  case AnimationProperty::N64Cycle0D: return glm::vec4(pass.renderer.n64.cycle0.d);
+  case AnimationProperty::N64Cycle1A: return glm::vec4(pass.renderer.n64.cycle1.a);
+  case AnimationProperty::N64Cycle1B: return glm::vec4(pass.renderer.n64.cycle1.b);
+  case AnimationProperty::N64Cycle1C: return glm::vec4(pass.renderer.n64.cycle1.c);
+  case AnimationProperty::N64Cycle1D: return glm::vec4(pass.renderer.n64.cycle1.d);
   case AnimationProperty::PrimitiveColor: return pass.renderer.n64.primitiveColor;
   case AnimationProperty::EnvironmentColor: return pass.renderer.n64.environmentColor;
+  case AnimationProperty::N64TextureFormat: return glm::vec4(pass.renderer.n64.textureFormat);
+  case AnimationProperty::N64TextureFilter: return glm::vec4(pass.renderer.n64.textureFilter);
+  case AnimationProperty::N64MipmapMode: return glm::vec4(pass.renderer.n64.mipmapMode);
+  case AnimationProperty::N64TileSize: return glm::vec4(pass.renderer.n64.tileWidth, pass.renderer.n64.tileHeight, 0, 0);
+  case AnimationProperty::N64MirrorS: return glm::vec4(pass.renderer.n64.mirrorS ? 1.0f : 0.0f);
+  case AnimationProperty::N64MirrorT: return glm::vec4(pass.renderer.n64.mirrorT ? 1.0f : 0.0f);
+  case AnimationProperty::N64ShiftS: return glm::vec4(pass.renderer.n64.shiftS);
+  case AnimationProperty::N64ShiftT: return glm::vec4(pass.renderer.n64.shiftT);
+  case AnimationProperty::N64TextureGeneration: return glm::vec4(pass.renderer.n64.textureGeneration ? 1.0f : 0.0f);
+  case AnimationProperty::N64SurfaceMode: return glm::vec4(pass.renderer.n64.surfaceMode);
+  case AnimationProperty::N64ZCompare: return glm::vec4(pass.renderer.n64.zCompare ? 1.0f : 0.0f);
+  case AnimationProperty::N64ZUpdate: return glm::vec4(pass.renderer.n64.zUpdate ? 1.0f : 0.0f);
+  case AnimationProperty::N64AlphaCompare: return glm::vec4(pass.renderer.n64.alphaCompare);
   case AnimationProperty::AlphaThreshold: return glm::vec4(pass.renderer.n64.alphaThreshold);
+  case AnimationProperty::N64CoverageAntialiasing: return glm::vec4(pass.renderer.n64.coverageAntialiasing ? 1.0f : 0.0f);
+  case AnimationProperty::N64FramebufferFormat: return glm::vec4(pass.renderer.n64.framebufferFormat);
+  case AnimationProperty::N64ColorDither: return glm::vec4(pass.renderer.n64.colorDither);
+  case AnimationProperty::N64ViReconstruction: return glm::vec4(pass.renderer.n64.viReconstruction ? 1.0f : 0.0f);
+  case AnimationProperty::N64ViDivot: return glm::vec4(pass.renderer.n64.viDivot ? 1.0f : 0.0f);
   case AnimationProperty::Count: break;
   }
   return glm::vec4(0.0f);
@@ -109,6 +306,10 @@ glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty
 
 void setAnimationPropertyValue(RenderPass& pass, const AnimationProperty property, const glm::vec4& value) {
   switch (property) {
+  case AnimationProperty::PassEnabled: pass.enabled = value.x >= 0.5f; break;
+  case AnimationProperty::PassOutput: pass.output = static_cast<PassOutput>(static_cast<int>(std::round(value.x))); break;
+  case AnimationProperty::TextureSource: pass.textureSource = static_cast<TextureSource>(static_cast<int>(std::round(value.x))); break;
+  case AnimationProperty::TextureColorInterpretation: pass.importedTextureSrgb = value.x >= 0.5f; break;
   case AnimationProperty::ModelTranslation: pass.perturbation.modelTranslation = glm::vec3(value); break;
   case AnimationProperty::ModelScale: pass.perturbation.modelScale = value.x; break;
   case AnimationProperty::NormalInflation: pass.perturbation.normalInflation = value.x; break;
@@ -121,20 +322,107 @@ void setAnimationPropertyValue(RenderPass& pass, const AnimationProperty propert
   case AnimationProperty::CompositeGain: pass.composite.gain = value.x; break;
   case AnimationProperty::CompositeBias: pass.composite.bias = value.x; break;
   case AnimationProperty::CompositeOpacity: pass.composite.opacity = value.x; break;
+  case AnimationProperty::CompositeOperation: pass.composite.operation = static_cast<RelationOperator>(static_cast<int>(std::round(value.x))); break;
+  case AnimationProperty::CompositeColorSpace: pass.composite.colorSpace = static_cast<CompositeColorSpace>(static_cast<int>(std::round(value.x))); break;
+  case AnimationProperty::CompositeRange: pass.composite.range = static_cast<CompositeRange>(static_cast<int>(std::round(value.x))); break;
+  case AnimationProperty::CompositeMask: pass.composite.mask = static_cast<CompositeMask>(static_cast<int>(std::round(value.x))); break;
+  case AnimationProperty::CompositeMaskInverted: pass.composite.invertMask = value.x >= 0.5f; break;
   case AnimationProperty::VertexQuantization: pass.renderer.geometry.vertexQuantization = value.x; break;
+  case AnimationProperty::ClippingEnabled: pass.renderer.geometry.clipping = value.x >= 0.5f; break;
+  case AnimationProperty::ClippingHeight: pass.renderer.geometry.clipHeight = value.x; break;
+  case AnimationProperty::ClippingKeepAbove: pass.renderer.geometry.clipAbove = value.x >= 0.5f; break;
+  case AnimationProperty::ProjectionOrthographic: pass.renderer.camera.orthographic = value.x >= 0.5f; break;
+  case AnimationProperty::FieldOfView: pass.renderer.camera.fieldOfView = value.x; break;
+  case AnimationProperty::OrthographicSize: pass.renderer.camera.orthographicSize = value.x; break;
+  case AnimationProperty::NearPlane: pass.renderer.camera.nearPlane = value.x; break;
+  case AnimationProperty::AffineMapping: pass.renderer.rasterization.affineMapping = value.x >= 0.5f; break;
+  case AnimationProperty::CullMode: pass.renderer.rasterization.cullMode = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::MultisampleCount: pass.renderer.rasterization.samples = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::PolygonOffsetEnabled: pass.renderer.rasterization.polygonOffset = value.x >= 0.5f; break;
+  case AnimationProperty::PolygonOffsetFactor: pass.renderer.rasterization.polygonOffsetFactor = value.x; break;
+  case AnimationProperty::PolygonOffsetUnits: pass.renderer.rasterization.polygonOffsetUnits = value.x; break;
+  case AnimationProperty::SmoothShading: pass.renderer.surface.smoothShading = value.x >= 0.5f; break;
+  case AnimationProperty::WireframeOverlay: pass.renderer.surface.wireframe = value.x >= 0.5f; break;
+  case AnimationProperty::SurfaceVisualization: pass.renderer.surface.visualization = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::NormalMappingEnabled: pass.renderer.surface.normalMapping = value.x >= 0.5f; break;
   case AnimationProperty::NormalStrength: pass.renderer.surface.normalStrength = value.x; break;
+  case AnimationProperty::TransparencyOperation: pass.renderer.surface.transparency = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::AlphaCutoff: pass.renderer.surface.alphaCutoff = value.x; break;
+  case AnimationProperty::ReverseDrawOrder: pass.renderer.surface.reverseDrawOrder = value.x >= 0.5f; break;
+  case AnimationProperty::NearestFiltering: pass.renderer.texture.nearestFiltering = value.x >= 0.5f; break;
+  case AnimationProperty::TextureRepeat: pass.renderer.texture.repeat = value.x >= 0.5f; break;
+  case AnimationProperty::Mipmapping: pass.renderer.texture.mipmapping = value.x >= 0.5f; break;
+  case AnimationProperty::TrilinearFiltering: pass.renderer.texture.trilinear = value.x >= 0.5f; break;
+  case AnimationProperty::Anisotropy: pass.renderer.texture.anisotropy = value.x; break;
+  case AnimationProperty::TextureColorStorage: pass.renderer.texture.colorMode = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::LightingModel: pass.renderer.lighting.model = static_cast<int>(std::round(value.x)); break;
   case AnimationProperty::Ambient: pass.renderer.lighting.ambient = value.x; break;
   case AnimationProperty::LightAzimuth: pass.renderer.lighting.azimuth = value.x; break;
   case AnimationProperty::LightElevation: pass.renderer.lighting.elevation = value.x; break;
   case AnimationProperty::Shininess: pass.renderer.lighting.shininess = value.x; break;
+  case AnimationProperty::ShadowsEnabled: pass.renderer.lighting.shadows = value.x >= 0.5f; break;
+  case AnimationProperty::ShadowResolution: pass.renderer.lighting.shadowResolution = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::ShadowBias: pass.renderer.lighting.shadowBias = value.x; break;
+  case AnimationProperty::ShadowPcf: pass.renderer.lighting.shadowPcf = value.x >= 0.5f; break;
+  case AnimationProperty::ShadowMapVisualization: pass.renderer.lighting.visualizeShadowMap = value.x >= 0.5f; break;
+  case AnimationProperty::DepthCueEnabled: pass.renderer.lighting.depthCue = value.x >= 0.5f; break;
   case AnimationProperty::DepthCueStart: pass.renderer.lighting.depthCueStart = value.x; break;
   case AnimationProperty::DepthCueEnd: pass.renderer.lighting.depthCueEnd = value.x; break;
   case AnimationProperty::FarColor: pass.renderer.lighting.farColor = glm::vec3(value); break;
+  case AnimationProperty::DepthTestEnabled: pass.renderer.depth.testing = value.x >= 0.5f; break;
+  case AnimationProperty::DepthWriteEnabled: pass.renderer.depth.writing = value.x >= 0.5f; break;
+  case AnimationProperty::DepthPrecision: pass.renderer.depth.precision = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::DepthComparison: pass.renderer.depth.function = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::DepthVisualization: pass.renderer.depth.visualization = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::OrderingTableEnabled: pass.renderer.depth.orderingTable = value.x >= 0.5f; break;
+  case AnimationProperty::OrderingBuckets: pass.renderer.depth.orderingBuckets = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::StencilEnabled: pass.renderer.stencil.enabled = value.x >= 0.5f; break;
+  case AnimationProperty::StencilInverted: pass.renderer.stencil.invert = value.x >= 0.5f; break;
+  case AnimationProperty::StencilReference: pass.renderer.stencil.reference = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::BitsPerChannel: pass.renderer.color.bitsPerChannel = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::DitheringEnabled: pass.renderer.color.dithering = value.x >= 0.5f; break;
+  case AnimationProperty::LinearLight: pass.renderer.color.linearLight = value.x >= 0.5f; break;
+  case AnimationProperty::FogEnabled: pass.renderer.post.fog = value.x >= 0.5f; break;
   case AnimationProperty::FogStart: pass.renderer.post.fogStart = value.x; break;
   case AnimationProperty::FogEnd: pass.renderer.post.fogEnd = value.x; break;
+  case AnimationProperty::OverdrawEnabled: pass.renderer.post.overdraw = value.x >= 0.5f; break;
+  case AnimationProperty::OverdrawRange: pass.renderer.post.overdrawRange = value.x; break;
+  case AnimationProperty::InternalResolution:
+    pass.renderer.output.width = static_cast<int>(std::round(value.x));
+    pass.renderer.output.height = static_cast<int>(std::round(value.y)); break;
+  case AnimationProperty::NearestUpscaling: pass.renderer.output.nearestUpscaling = value.x >= 0.5f; break;
+  case AnimationProperty::N64CycleType: pass.renderer.n64.cycleType = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64Cycle0A: pass.renderer.n64.cycle0.a = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64Cycle0B: pass.renderer.n64.cycle0.b = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64Cycle0C: pass.renderer.n64.cycle0.c = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64Cycle0D: pass.renderer.n64.cycle0.d = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64Cycle1A: pass.renderer.n64.cycle1.a = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64Cycle1B: pass.renderer.n64.cycle1.b = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64Cycle1C: pass.renderer.n64.cycle1.c = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64Cycle1D: pass.renderer.n64.cycle1.d = static_cast<int>(std::round(value.x)); break;
   case AnimationProperty::PrimitiveColor: pass.renderer.n64.primitiveColor = value; break;
   case AnimationProperty::EnvironmentColor: pass.renderer.n64.environmentColor = value; break;
+  case AnimationProperty::N64TextureFormat: pass.renderer.n64.textureFormat = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64TextureFilter: pass.renderer.n64.textureFilter = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64MipmapMode: pass.renderer.n64.mipmapMode = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64TileSize:
+    pass.renderer.n64.tileWidth = static_cast<int>(std::round(value.x));
+    pass.renderer.n64.tileHeight = static_cast<int>(std::round(value.y)); break;
+  case AnimationProperty::N64MirrorS: pass.renderer.n64.mirrorS = value.x >= 0.5f; break;
+  case AnimationProperty::N64MirrorT: pass.renderer.n64.mirrorT = value.x >= 0.5f; break;
+  case AnimationProperty::N64ShiftS: pass.renderer.n64.shiftS = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64ShiftT: pass.renderer.n64.shiftT = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64TextureGeneration: pass.renderer.n64.textureGeneration = value.x >= 0.5f; break;
+  case AnimationProperty::N64SurfaceMode: pass.renderer.n64.surfaceMode = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64ZCompare: pass.renderer.n64.zCompare = value.x >= 0.5f; break;
+  case AnimationProperty::N64ZUpdate: pass.renderer.n64.zUpdate = value.x >= 0.5f; break;
+  case AnimationProperty::N64AlphaCompare: pass.renderer.n64.alphaCompare = static_cast<int>(std::round(value.x)); break;
   case AnimationProperty::AlphaThreshold: pass.renderer.n64.alphaThreshold = value.x; break;
+  case AnimationProperty::N64CoverageAntialiasing: pass.renderer.n64.coverageAntialiasing = value.x >= 0.5f; break;
+  case AnimationProperty::N64FramebufferFormat: pass.renderer.n64.framebufferFormat = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64ColorDither: pass.renderer.n64.colorDither = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::N64ViReconstruction: pass.renderer.n64.viReconstruction = value.x >= 0.5f; break;
+  case AnimationProperty::N64ViDivot: pass.renderer.n64.viDivot = value.x >= 0.5f; break;
   case AnimationProperty::Count: break;
   }
 }
@@ -161,7 +449,8 @@ glm::vec4 samplePropertyTrack(const PropertyAnimationTrack& track, const float t
   const PropertyKeyframe& b = *upper;
   const PropertyKeyframe& a = *(upper - 1);
   float amount = (timeSeconds - a.timeSeconds) / std::max(b.timeSeconds - a.timeSeconds, 0.00001f);
-  if (track.interpolation == KeyframeInterpolation::Step) amount = 0.0f;
+  if (animationPropertyInfo(track.property).behavior == AnimationBehavior::Step ||
+      track.interpolation == KeyframeInterpolation::Step) amount = 0.0f;
   else if (track.interpolation == KeyframeInterpolation::SmoothStep)
     amount = amount * amount * (3.0f - 2.0f * amount);
   return glm::mix(a.value, b.value, amount);
@@ -169,9 +458,12 @@ glm::vec4 samplePropertyTrack(const PropertyAnimationTrack& track, const float t
 
 void setPropertyKeyframe(RenderPass& pass, const AnimationProperty property, const float timeSeconds,
     const glm::vec4* explicitValue) {
+  if (!animationPropertyIsAnimatable(property)) return;
   PropertyAnimationTrack* track = findPropertyTrack(pass, property);
   if (track == nullptr) {
-    pass.animation.tracks.push_back({property, KeyframeInterpolation::Linear, {}});
+    const KeyframeInterpolation interpolation = animationPropertyInfo(property).behavior == AnimationBehavior::Step
+      ? KeyframeInterpolation::Step : KeyframeInterpolation::Linear;
+    pass.animation.tracks.push_back({property, interpolation, {}});
     track = &pass.animation.tracks.back();
   }
   const glm::vec4 value = explicitValue == nullptr ? animationPropertyValue(pass, property) : *explicitValue;

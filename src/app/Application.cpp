@@ -178,6 +178,18 @@ int runApplication() {
     if (std::abs(evaluateRenderStack(animationValidation, 1.0f).selected().composite.gain - 1.0f) > 0.0001f ||
         !propertyHasKeyAt(animationValidation.selected(), AnimationProperty::CompositeGain, 2.0f))
       fail("independent property tracks or step interpolation failed validation");
+    animationValidation.selected().renderer.surface.wireframe = false;
+    setPropertyKeyframe(animationValidation.selected(), AnimationProperty::WireframeOverlay, 0.0f);
+    animationValidation.selected().renderer.surface.wireframe = true;
+    setPropertyKeyframe(animationValidation.selected(), AnimationProperty::WireframeOverlay, 2.0f);
+    const PropertyAnimationTrack* wireframeTrack = findPropertyTrack(animationValidation.selected(),
+      AnimationProperty::WireframeOverlay);
+    if (wireframeTrack == nullptr || wireframeTrack->interpolation != KeyframeInterpolation::Step ||
+        evaluateRenderStack(animationValidation, 1.0f).selected().renderer.surface.wireframe ||
+        !evaluateRenderStack(animationValidation, 2.0f).selected().renderer.surface.wireframe ||
+        animationPropertyInfo(AnimationProperty::MultisampleCount).behavior != AnimationBehavior::NotAnimatable ||
+        animationPropertyInfo(AnimationProperty::WireframeOverlay).kind != AnimationValueKind::Boolean)
+      fail("typed stepped animation property validation failed");
     AnimationTimeline timelineValidation;
     timelineValidation.durationSeconds = 2.0f;
     timelineValidation.timeSeconds = 1.5f;
