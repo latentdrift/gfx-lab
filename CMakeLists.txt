@@ -26,6 +26,7 @@ add_executable(graphics-lab
   src/renderer/Renderer.cpp
   src/renderer/TestGeometry.cpp
   src/ui/AnimationEditor.cpp
+  src/ui/AnimationControls.cpp
   src/ui/Inspector.cpp
   src/ui/PassInspector.cpp
 )

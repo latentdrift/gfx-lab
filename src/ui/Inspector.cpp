@@ -1,4 +1,6 @@
 #include "ui/Inspector.hpp"
+#include "app/RenderStack.hpp"
+#include "ui/AnimationControls.hpp"
 
 #include <imgui.h>
 
@@ -84,7 +86,8 @@ int n64TextureBytes(const RendererState::N64& state) {
   return textureBytes + paletteBytes;
 }
 
-void drawInspector(Category category, RendererState& state, HardwareProfile profile) {
+void drawInspector(Category category, RenderPass& pass, HardwareProfile profile, AnimationTimeline& timeline) {
+  RendererState& state = pass.renderer;
   const ProfileCapabilities& capabilities = hardwareProfileCapabilities(profile);
   switch (category) {
     case Category::Geometry: {
@@ -94,7 +97,9 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
       const float values[] = {0.0f, 1.0f/64.0f, 1.0f/32.0f, 1.0f/16.0f, 1.0f/8.0f};
       int selected = 0;
       for (int i = 1; i < 5; ++i) if (std::abs(state.geometry.vertexQuantization - values[i]) < 0.0001f) selected = i;
-      if (ImGui::Combo("##precision", &selected, labels, 5)) state.geometry.vertexQuantization = values[selected];
+      const bool precisionChanged = ImGui::Combo("##precision", &selected, labels, 5);
+      if (precisionChanged) state.geometry.vertexQuantization = values[selected];
+      animationKeyControl(pass, AnimationProperty::VertexQuantization, timeline, precisionChanged);
       description("Rounds model-space vertex positions to a fixed grid before projection.");
       ImGui::Checkbox("World-space clipping plane", &state.geometry.clipping);
       ImGui::SliderFloat("Plane height", &state.geometry.clipHeight, -1.5f, 1.5f, "y = %.2f");
@@ -164,8 +169,10 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
         description("Two-cycle mode evaluates a second combiner equation and halves nominal pixel throughput.");
         drawCombinerCycle("Color combiner cycle 0", state.n64.cycle0);
         if (state.n64.cycleType == 2) drawCombinerCycle("Color combiner cycle 1", state.n64.cycle1);
-        ImGui::ColorEdit4("Primitive color", &state.n64.primitiveColor.x);
-        ImGui::ColorEdit4("Environment color", &state.n64.environmentColor.x);
+        animationKeyControl(pass, AnimationProperty::PrimitiveColor, timeline,
+          ImGui::ColorEdit4("Primitive color", &state.n64.primitiveColor.x));
+        animationKeyControl(pass, AnimationProperty::EnvironmentColor, timeline,
+          ImGui::ColorEdit4("Environment color", &state.n64.environmentColor.x));
         description("Combiner sources are clamped after each (A - B) x C + D cycle.");
         ImGui::TextUnformatted("RDP surface / Z mode");
         const char* surfaceModes[] = {"Opaque", "Translucent", "Decal", "Interpenetrating"};
@@ -176,7 +183,8 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
         const char* alphaModes[] = {"Off", "Threshold", "Dither"};
         ImGui::Combo("##n64-alpha-compare", &state.n64.alphaCompare, alphaModes, 3);
         if (state.n64.alphaCompare == 1)
-          ImGui::SliderFloat("Alpha threshold", &state.n64.alphaThreshold, 0.0f, 1.0f, "%.2f");
+          animationKeyControl(pass, AnimationProperty::AlphaThreshold, timeline,
+            ImGui::SliderFloat("Alpha threshold", &state.n64.alphaThreshold, 0.0f, 1.0f, "%.2f"));
         description("Rejects fragments before framebuffer blending using a constant threshold or spatial noise.");
       }
       if (capabilities.surfaceDiagnostics) {
@@ -198,7 +206,8 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
       if (capabilities.normalMapping) {
         ImGui::Checkbox("Tangent-space normal mapping", &state.surface.normalMapping);
         ImGui::BeginDisabled(!state.surface.normalMapping);
-        ImGui::SliderFloat("Normal-map strength", &state.surface.normalStrength, 0.0f, 2.0f, "%.2f");
+        animationKeyControl(pass, AnimationProperty::NormalStrength, timeline,
+          ImGui::SliderFloat("Normal-map strength", &state.surface.normalStrength, 0.0f, 2.0f, "%.2f"));
         ImGui::EndDisabled();
         description("Transforms sampled tangent-space normals into world space with the tangent-bitangent-normal basis.");
       }
@@ -305,11 +314,16 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
         ImGui::Combo("##lighting-model", &state.lighting.model, lightingLabels, 2);
       }
       description("Gouraud interpolates computed vertex lighting; Phong shading interpolates normals and lights each fragment.");
-      ImGui::SliderFloat("Ambient term", &state.lighting.ambient, 0.0f, 1.0f, "%.2f");
-      if (capabilities.perFragmentLighting && state.lighting.model >= 3)
-        ImGui::SliderFloat("Specular exponent", &state.lighting.shininess, 2.0f, 128.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
-      ImGui::SliderFloat("Light azimuth", &state.lighting.azimuth, -180.0f, 180.0f, "%.0f deg");
-      ImGui::SliderFloat("Light elevation", &state.lighting.elevation, -90.0f, 90.0f, "%.0f deg");
+      animationKeyControl(pass, AnimationProperty::Ambient, timeline,
+        ImGui::SliderFloat("Ambient term", &state.lighting.ambient, 0.0f, 1.0f, "%.2f"));
+      if (capabilities.perFragmentLighting && state.lighting.model >= 3) {
+        animationKeyControl(pass, AnimationProperty::Shininess, timeline,
+          ImGui::SliderFloat("Specular exponent", &state.lighting.shininess, 2.0f, 128.0f, "%.0f", ImGuiSliderFlags_Logarithmic));
+      }
+      animationKeyControl(pass, AnimationProperty::LightAzimuth, timeline,
+        ImGui::SliderFloat("Light azimuth", &state.lighting.azimuth, -180.0f, 180.0f, "%.0f deg"));
+      animationKeyControl(pass, AnimationProperty::LightElevation, timeline,
+        ImGui::SliderFloat("Light elevation", &state.lighting.elevation, -90.0f, 90.0f, "%.0f deg"));
       description("Azimuth rotates around the vertical axis; elevation moves above or below the horizon.");
       if (capabilities.shadowMapping) {
         ImGui::Checkbox("Directional shadow map", &state.lighting.shadows);
@@ -332,9 +346,12 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
       }
       ImGui::Checkbox(profile == HardwareProfile::Nintendo64 ? "RSP vertex fog" : "Vertex depth cueing", &state.lighting.depthCue);
       ImGui::BeginDisabled(!state.lighting.depthCue);
-      ImGui::SliderFloat("Cue start", &state.lighting.depthCueStart, 0.0f, 15.0f, "%.2f units");
-      ImGui::SliderFloat("Cue end", &state.lighting.depthCueEnd, 0.1f, 30.0f, "%.2f units");
-      ImGui::ColorEdit3("Far color", &state.lighting.farColor.x, ImGuiColorEditFlags_NoInputs);
+      animationKeyControl(pass, AnimationProperty::DepthCueStart, timeline,
+        ImGui::SliderFloat("Cue start", &state.lighting.depthCueStart, 0.0f, 15.0f, "%.2f units"));
+      animationKeyControl(pass, AnimationProperty::DepthCueEnd, timeline,
+        ImGui::SliderFloat("Cue end", &state.lighting.depthCueEnd, 0.1f, 30.0f, "%.2f units"));
+      animationKeyControl(pass, AnimationProperty::FarColor, timeline,
+        ImGui::ColorEdit3("Far color", &state.lighting.farColor.x, ImGuiColorEditFlags_NoInputs));
       ImGui::EndDisabled();
       description(profile == HardwareProfile::Nintendo64
         ? "Computes fog alpha at vertices and interpolates it; the lab applies the far-color blend in the RDP material path."
@@ -428,8 +445,10 @@ void drawInspector(Category category, RendererState& state, HardwareProfile prof
       ImGui::TextUnformatted("POST"); ImGui::Separator();
       ImGui::Checkbox("Linear distance fog", &state.post.fog);
       description("Blends shaded fragments toward the background according to camera distance.");
-      ImGui::SliderFloat("Fog start", &state.post.fogStart, 0.0f, 12.0f, "%.2f units");
-      ImGui::SliderFloat("Fog end", &state.post.fogEnd, 0.0f, 12.0f, "%.2f units");
+      animationKeyControl(pass, AnimationProperty::FogStart, timeline,
+        ImGui::SliderFloat("Fog start", &state.post.fogStart, 0.0f, 12.0f, "%.2f units"));
+      animationKeyControl(pass, AnimationProperty::FogEnd, timeline,
+        ImGui::SliderFloat("Fog end", &state.post.fogEnd, 0.0f, 12.0f, "%.2f units"));
       description("Start is fully clear; end is fully fogged.");
       ImGui::Checkbox("Overdraw visualization", &state.post.overdraw);
       ImGui::BeginDisabled(!state.post.overdraw);

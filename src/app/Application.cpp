@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -46,6 +47,35 @@ void glfwError(int, const char* descriptionText) { std::fprintf(stderr, "GLFW: %
 
 bool isNintendo64Example(handbook::Example example) {
   return example >= handbook::Example::N64ThreePoint && example <= handbook::Example::N64VideoInterface;
+}
+
+bool animationValueEqual(const glm::vec4& a, const glm::vec4& b, const int components) {
+  for (int component = 0; component < components; ++component)
+    if (std::abs(a[component] - b[component]) > 0.000001f) return false;
+  return true;
+}
+
+void applyEditedPass(RenderPass& authored, const RenderPass& displayedBefore, RenderPass edited) {
+  const RenderPass authoredBefore = authored;
+  const PassAnimation editedAnimation = edited.animation;
+  std::array<bool, static_cast<std::size_t>(AnimationProperty::Count)> propertyChanged{};
+  std::array<glm::vec4, static_cast<std::size_t>(AnimationProperty::Count)> displayedValues{};
+  for (int index = 0; index < static_cast<int>(AnimationProperty::Count); ++index) {
+    const AnimationProperty property = static_cast<AnimationProperty>(index);
+    const std::size_t propertyIndex = static_cast<std::size_t>(index);
+    displayedValues[propertyIndex] = animationPropertyValue(edited, property);
+    propertyChanged[propertyIndex] = !animationValueEqual(animationPropertyValue(displayedBefore, property),
+      displayedValues[propertyIndex], animationPropertyInfo(property).components);
+    setAnimationPropertyValue(edited, property, animationPropertyValue(authoredBefore, property));
+  }
+  edited.animation = editedAnimation;
+  authored = std::move(edited);
+  for (int index = 0; index < static_cast<int>(AnimationProperty::Count); ++index) {
+    const AnimationProperty property = static_cast<AnimationProperty>(index);
+    const std::size_t propertyIndex = static_cast<std::size_t>(index);
+    if (propertyChanged[propertyIndex] && findPropertyTrack(authored, property) == nullptr)
+      setAnimationPropertyValue(authored, property, displayedValues[propertyIndex]);
+  }
 }
 
 } // namespace
@@ -586,10 +616,15 @@ int runApplication() {
     ImGui::SameLine(0, 5);
 
     ImGui::BeginChild("Inspector", ImVec2(inspectorWidth, contentHeight), true);
-      drawPassInspector(renderStack);
+      RenderStack inspectorStack = renderStack;
+      const RenderPass displayedBefore = (animationTimeline.playing || previewAnimation)
+        ? evaluateRenderPass(renderStack.selected(), animationTimeline.timeSeconds) : renderStack.selected();
+      inspectorStack.selected() = displayedBefore;
+      drawPassInspector(inspectorStack, animationTimeline);
       ImGui::Spacing();
       ImGui::Separator();
-      drawInspector(category, renderStack.selected().renderer, hardwareProfile);
+      drawInspector(category, inspectorStack.selected(), hardwareProfile, animationTimeline);
+      applyEditedPass(renderStack.selected(), displayedBefore, inspectorStack.selected());
     ImGui::EndChild();
     ImGui::End();
 
