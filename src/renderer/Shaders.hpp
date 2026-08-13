@@ -471,12 +471,24 @@ vec3 signedPow(vec3 value, float exponent) {
   return sign(value) * pow(abs(value), vec3(exponent));
 }
 
+float finiteChannel(float value) {
+  if (isnan(value)) return 0.0;
+  if (isinf(value)) return sign(value) * 65504.0;
+  return clamp(value, -65504.0, 65504.0);
+}
+
+vec3 finiteColor(vec3 value) {
+  return vec3(finiteChannel(value.r), finiteChannel(value.g), finiteChannel(value.b));
+}
+
 void main() {
   vec2 historyUv = (vUv - 0.5) * uHistoryUvScale + 0.5 + uHistoryUvOffset;
   vec3 storedA = uSourceAMode == 3 ? uFixedColor.rgb :
     texture(uImageA, uSourceAMode == 4 ? historyUv : vUv).rgb;
   vec3 storedB = uSourceBMode == 3 ? uFixedColor.rgb :
     texture(uImageB, uSourceBMode == 4 ? historyUv : vUv).rgb;
+  storedA = finiteColor(storedA);
+  storedB = finiteColor(storedB);
   if (uSourceAMode == 4) storedA *= uHistoryDecay;
   if (uSourceBMode == 4) storedB *= uHistoryDecay;
   vec3 a = uColorSpace == 1 ? signedPow(storedA, 2.2) : storedA;
@@ -507,6 +519,7 @@ void main() {
     relation = vec3(qa ^ qb) / levels;
   }
   relation = relation * uGain + uBias;
+  relation = finiteColor(relation);
   if (uRangeMode == 0) relation = clamp(relation, 0.0, 1.0);
   else if (uRangeMode == 2) relation = fract(relation);
   float mask = 1.0;
@@ -527,7 +540,7 @@ void main() {
     mask = smoothstep(0.025, 0.20, max(change.r, max(change.g, change.b)));
   }
   if (uInvertMask) mask = 1.0 - mask;
-  vec3 composed = mix(a, relation, uOpacity * mask);
+  vec3 composed = finiteColor(mix(a, relation, uOpacity * mask));
   if (uColorSpace == 1) composed = signedPow(composed, 1.0 / 2.2);
   fragColor = vec4(composed, 1.0);
 }

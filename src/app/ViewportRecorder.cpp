@@ -126,14 +126,11 @@ void ViewportRecorder::capture(const unsigned int selectedTexture, const unsigne
     const unsigned int compositeTexture, const CompareMode mode, const double nowSeconds) {
   if (!recording()) return;
   constexpr double frameInterval = 1.0 / static_cast<double>(framesPerSecond);
-  int catchUpFrames = 0;
-  while (nowSeconds >= nextFrameTime_ && catchUpFrames < 4) {
-    captureFrame(selectedTexture, baseTexture, compositeTexture, mode);
-    nextFrameTime_ += frameInterval;
-    ++catchUpFrames;
-  }
-  if (catchUpFrames == 4 && nowSeconds >= nextFrameTime_)
-    nextFrameTime_ = nowSeconds + frameInterval;
+  if (nowSeconds < nextFrameTime_) return;
+  captureFrame(selectedTexture, baseTexture, compositeTexture, mode);
+  // GPU readback is synchronous. Never issue extra readbacks to catch up after a slow render:
+  // doing so makes the next frame slower and can trap the editor in a permanent catch-up loop.
+  nextFrameTime_ = nowSeconds + frameInterval;
 }
 
 bool ViewportRecorder::stop(std::string& error) {

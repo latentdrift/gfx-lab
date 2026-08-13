@@ -296,6 +296,18 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     compositeValidation.passes()[2].composite.bitDepth = 5;
     if (renderer.composite(compositeValidation) == 0 || renderer.composite(compositeValidation) == 0)
       fail("quantized temporal compositing failed validation");
+    compositeValidation.passes()[2].composite.sourceA = CompositeSource::PreviousFrame;
+    compositeValidation.passes()[2].composite.sourceB = CompositeSource::PreviousFrame;
+    compositeValidation.passes()[2].composite.operation = RelationOperator::Add;
+    compositeValidation.passes()[2].composite.range = CompositeRange::Preserve;
+    compositeValidation.passes()[2].composite.historyDecay = 1.0f;
+    compositeValidation.passes()[2].composite.gain = 16.0f;
+    for (int feedbackFrame = 0; feedbackFrame < 32; ++feedbackFrame)
+      if (renderer.composite(compositeValidation) == 0)
+        fail("extreme temporal composite feedback failed validation");
+    glFinish();
+    if (glGetError() != GL_NO_ERROR)
+      fail("extreme temporal composite feedback produced an OpenGL error");
     compositeValidation.display().enabled = true;
     for (int signal = static_cast<int>(DisplaySignal::DirectRgb);
          signal <= static_cast<int>(DisplaySignal::CompositeNtsc); ++signal) {
