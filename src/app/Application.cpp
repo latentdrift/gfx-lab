@@ -19,8 +19,10 @@
 #include "assets/ModelAsset.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
+#include "ui/AnimationControls.hpp"
 #include "ui/AnimationEditor.hpp"
 #include "ui/Inspector.hpp"
+#include "ui/PassDifferenceAudit.hpp"
 #include "ui/PassInspector.hpp"
 
 #include <algorithm>
@@ -118,6 +120,7 @@ int runApplication() {
   bool viewportHovered = false;
   bool animationPanelOpen = true;
   bool previewAnimation = true;
+  bool passDifferenceAuditOpen = false;
   AnimationTimeline animationTimeline;
   double previousFrameTime = glfwGetTime();
   double configCopiedAt = -10.0;
@@ -190,6 +193,23 @@ int runApplication() {
         animationPropertyInfo(AnimationProperty::MultisampleCount).behavior != AnimationBehavior::NotAnimatable ||
         animationPropertyInfo(AnimationProperty::WireframeOverlay).kind != AnimationValueKind::Boolean)
       fail("typed stepped animation property validation failed");
+    RenderPass catalogValidation;
+    std::size_t animatablePropertyCount = 0;
+    for (int index = 0; index < static_cast<int>(AnimationProperty::Count); ++index) {
+      const AnimationProperty property = static_cast<AnimationProperty>(index);
+      setPropertyKeyframe(catalogValidation, property, 0.0f);
+      const PropertyAnimationTrack* track = findPropertyTrack(catalogValidation, property);
+      if (animationPropertyIsAnimatable(property)) {
+        ++animatablePropertyCount;
+        if (track == nullptr || (animationPropertyInfo(property).behavior == AnimationBehavior::Step &&
+            track->interpolation != KeyframeInterpolation::Step))
+          fail("typed animation catalog omitted or mistyped an animatable property");
+      } else if (track != nullptr) {
+        fail("typed animation catalog keyed a GPU-resource allocation property");
+      }
+    }
+    if (catalogValidation.animation.tracks.size() != animatablePropertyCount || animatablePropertyCount < 90)
+      fail("typed animation catalog coverage failed validation");
     AnimationTimeline timelineValidation;
     timelineValidation.durationSeconds = 2.0f;
     timelineValidation.timeSeconds = 1.5f;
@@ -257,6 +277,7 @@ int runApplication() {
     compositeValidation.passes()[2].perturbation.uvOffset = {1.0f / 256.0f, 0.0f};
     compositeValidation.passes()[2].textureSource = TextureSource::ImportedOverride;
     compositeValidation.passes()[2].importedTexture = importedTexture.asset;
+    setPropertyKeyframe(compositeValidation.passes()[2], AnimationProperty::WireframeOverlay, 0.0f);
     compositeValidation.passes()[2].composite.operation = RelationOperator::Exclusion;
     for (std::size_t passIndex = 0; passIndex < compositeValidation.passes().size(); ++passIndex)
       renderer.renderPass(compositeValidation.passes()[passIndex], camera, scene, passIndex);
@@ -275,6 +296,8 @@ int runApplication() {
         stackConfig.find("\"composite_into_previous\"") == std::string::npos ||
         stackConfig.find("\"animation\"") == std::string::npos ||
         stackConfig.find("\"property_tracks\"") == std::string::npos ||
+        stackConfig.find("\"value_kind\"") == std::string::npos ||
+        stackConfig.find("\"animation_behavior\"") == std::string::npos ||
         stackConfig.find("\"texture_source\": \"imported_override\"") == std::string::npos ||
         stackConfig.find("\"imported_texture\"") == std::string::npos ||
         stackConfig.find("\"imported_model\"") == std::string::npos)
@@ -533,6 +556,8 @@ int runApplication() {
     ImGui::SameLine();
     if (ImGui::Button(animationPanelOpen ? "Hide animation" : "Animation"))
       animationPanelOpen = !animationPanelOpen;
+    ImGui::SameLine();
+    if (ImGui::Button("Pass differences")) passDifferenceAuditOpen = true;
     ImGui::TextDisabled("Compare:");
     ImGui::SameLine();
     if (ImGui::RadioButton("Selected pass", compare == CompareMode::A)) compare = CompareMode::A;
@@ -588,7 +613,8 @@ int runApplication() {
     for (std::size_t passIndex = 0; passIndex < renderStack.passes().size(); ++passIndex) {
       RenderPass& pass = renderStack.passes()[passIndex];
       ImGui::PushID(static_cast<int>(passIndex));
-      ImGui::Checkbox("##enabled", &pass.enabled);
+      const bool passEnabledChanged = ImGui::Checkbox("##enabled", &pass.enabled);
+      animationKeyControl(pass, AnimationProperty::PassEnabled, animationTimeline, passEnabledChanged);
       ImGui::SameLine();
       if (ImGui::Selectable(pass.name.c_str(), renderStack.selectedIndex() == passIndex, 0, ImVec2(0, 24)))
         renderStack.select(passIndex);
@@ -685,6 +711,7 @@ int runApplication() {
     ImGui::End();
 
     const handbook::Action handbookAction = graphicsHandbook.draw(hardwareProfile);
+    drawPassDifferenceAudit(passDifferenceAuditOpen, renderStack);
     if (handbookAction.type != handbook::ActionType::None && isNintendo64Example(handbookAction.example))
       hardwareProfile = HardwareProfile::Nintendo64;
     if (handbookAction.type == handbook::ActionType::ApplyToA) {

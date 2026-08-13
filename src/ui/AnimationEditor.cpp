@@ -9,6 +9,8 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <string_view>
+#include <vector>
 
 namespace gfxlab::ui {
 namespace {
@@ -21,6 +23,15 @@ struct KeySelection {
 
 KeySelection selection;
 int propertyToAdd = 0;
+
+std::vector<AnimationProperty> animatableProperties() {
+  std::vector<AnimationProperty> properties;
+  for (int index = 0; index < static_cast<int>(AnimationProperty::Count); ++index) {
+    const AnimationProperty property = static_cast<AnimationProperty>(index);
+    if (animationPropertyIsAnimatable(property)) properties.push_back(property);
+  }
+  return properties;
+}
 
 void drawDiamond(ImDrawList* draw, const ImVec2 center, const ImU32 color, const bool selected) {
   const float radius = selected ? 6.0f : 5.0f;
@@ -116,21 +127,47 @@ void drawSelectedKeyEditor(AnimationTimeline& timeline, RenderStack& stack) {
     track = findPropertyTrack(pass, selection.property);
   }
   bool valueChanged = false;
-  if (info.components == 1) valueChanged = ImGui::DragFloat("Value", &value.x, 0.01f);
+  if (info.kind == AnimationValueKind::Boolean) {
+    bool enabled = value.x >= 0.5f;
+    if (ImGui::Checkbox("Value", &enabled)) { value.x = enabled ? 1.0f : 0.0f; valueChanged = true; }
+  } else if (info.kind == AnimationValueKind::Enumeration) {
+    int integer = static_cast<int>(std::round(value.x));
+    const char* currentLabel = animationPropertyDiscreteValueLabel(selection.property, integer);
+    if (currentLabel != nullptr && ImGui::BeginCombo("Value", currentLabel)) {
+      for (int option = static_cast<int>(info.minimum); option <= static_cast<int>(info.maximum); ++option) {
+        const char* optionLabel = animationPropertyDiscreteValueLabel(selection.property, option);
+        if (optionLabel != nullptr && ImGui::Selectable(optionLabel, integer == option)) {
+          integer = option; value.x = static_cast<float>(integer); valueChanged = true;
+        }
+      }
+      ImGui::EndCombo();
+    } else if (currentLabel == nullptr && ImGui::DragInt("Value", &integer, 1.0f,
+        static_cast<int>(info.minimum), static_cast<int>(info.maximum))) {
+      value.x = static_cast<float>(integer); valueChanged = true;
+    }
+  } else if (info.kind == AnimationValueKind::Integer) {
+    int integer = static_cast<int>(std::round(value.x));
+    if (ImGui::DragInt("Value", &integer, 1.0f, static_cast<int>(info.minimum),
+        static_cast<int>(info.maximum))) { value.x = static_cast<float>(integer); valueChanged = true; }
+  } else if (info.components == 1) valueChanged = ImGui::DragFloat("Value", &value.x, 0.01f,
+      info.minimum, info.maximum);
   else if (info.components == 2) valueChanged = ImGui::DragFloat2("Value", &value.x, 0.01f);
-  else if (info.components == 3 && (selection.property == AnimationProperty::FarColor))
+  else if (info.kind == AnimationValueKind::Color3)
     valueChanged = ImGui::ColorEdit3("Value", &value.x);
-  else if (info.components == 4 && (selection.property == AnimationProperty::PrimitiveColor ||
-      selection.property == AnimationProperty::EnvironmentColor))
+  else if (info.kind == AnimationValueKind::Color4)
     valueChanged = ImGui::ColorEdit4("Value", &value.x);
   else if (info.components == 3) valueChanged = ImGui::DragFloat3("Value", &value.x, 0.01f);
   else valueChanged = ImGui::DragFloat4("Value", &value.x, 0.01f);
   if (valueChanged) setPropertyKeyframe(pass, selection.property, selection.time, &value);
 
-  const char* interpolationLabels[] = {"Step", "Linear", "Smooth step"};
-  int interpolation = static_cast<int>(track->interpolation);
-  if (ImGui::Combo("Interpolation", &interpolation, interpolationLabels, 3))
-    track->interpolation = static_cast<KeyframeInterpolation>(interpolation);
+  if (info.behavior == AnimationBehavior::Step) {
+    ImGui::TextDisabled("Interpolation: Step (discrete property)");
+  } else {
+    const char* interpolationLabels[] = {"Step", "Linear", "Smooth step"};
+    int interpolation = static_cast<int>(track->interpolation);
+    if (ImGui::Combo("Interpolation", &interpolation, interpolationLabels, 3))
+      track->interpolation = static_cast<KeyframeInterpolation>(interpolation);
+  }
   if (ImGui::Button("Delete selected key", ImVec2(-1.0f, 0.0f))) {
     static_cast<void>(removePropertyKeyframe(pass, selection.property, selection.time, 0.0001f));
     selection.pass = std::numeric_limits<std::size_t>::max();
@@ -169,14 +206,27 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
     timeline.playing = false;
   ImGui::SameLine();
   ImGui::SetNextItemWidth(180.0f);
-  const char* propertyLabels[static_cast<int>(AnimationProperty::Count)];
-  for (int index = 0; index < static_cast<int>(AnimationProperty::Count); ++index)
-    propertyLabels[index] = animationPropertyInfo(static_cast<AnimationProperty>(index)).label.data();
-  ImGui::Combo("##property-to-key", &propertyToAdd, propertyLabels, static_cast<int>(AnimationProperty::Count));
+  const std::vector<AnimationProperty> properties = animatableProperties();
+  propertyToAdd = std::clamp(propertyToAdd, 0, static_cast<int>(properties.size()) - 1);
+  const AnimationProperty chosenProperty = properties[static_cast<std::size_t>(propertyToAdd)];
+  if (ImGui::BeginCombo("##property-to-key", animationPropertyInfo(chosenProperty).label.data())) {
+    std::string_view previousGroup;
+    for (std::size_t index = 0; index < properties.size(); ++index) {
+      const AnimationProperty property = properties[index];
+      const AnimationPropertyInfo& info = animationPropertyInfo(property);
+      if (info.group != previousGroup) {
+        ImGui::SeparatorText(info.group.data());
+        previousGroup = info.group;
+      }
+      if (ImGui::Selectable(info.label.data(), propertyToAdd == static_cast<int>(index)))
+        propertyToAdd = static_cast<int>(index);
+    }
+    ImGui::EndCombo();
+  }
   ImGui::SameLine();
   if (ImGui::Button("Key property")) {
     RenderPass& pass = stack.selected();
-    const AnimationProperty property = static_cast<AnimationProperty>(propertyToAdd);
+    const AnimationProperty property = properties[static_cast<std::size_t>(propertyToAdd)];
     const RenderPass evaluated = evaluateRenderPass(pass, timeline.timeSeconds);
     const glm::vec4 value = animationPropertyValue(evaluated, property);
     setPropertyKeyframe(pass, property, timeline.timeSeconds, &value);

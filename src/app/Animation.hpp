@@ -175,6 +175,7 @@ struct AnimationTimeline {
 [[nodiscard]] bool animationPropertyIsAnimatable(AnimationProperty property);
 [[nodiscard]] bool animationPropertyValuesEqual(AnimationProperty property, const glm::vec4& a,
   const glm::vec4& b);
+[[nodiscard]] const char* animationPropertyDiscreteValueLabel(AnimationProperty property, int value);
 [[nodiscard]] glm::vec4 animationPropertyValue(const RenderPass& pass, AnimationProperty property);
 void setAnimationPropertyValue(RenderPass& pass, AnimationProperty property, const glm::vec4& value);
 [[nodiscard]] PropertyAnimationTrack* findPropertyTrack(RenderPass& pass, AnimationProperty property);

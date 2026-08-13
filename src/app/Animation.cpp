@@ -129,7 +129,7 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   CONT("alpha_threshold", "N64 alpha threshold", "N64 surface", 1, K::Float, 0, 1),
   STEP("n64_coverage_antialiasing", "N64 coverage antialiasing", "N64 rasterization", K::Boolean, 0, 1),
   STEP("n64_framebuffer_format", "N64 framebuffer format", "N64 output", K::Enumeration, 0, 1),
-  STEP("n64_color_dither", "N64 color dither", "N64 output", K::Enumeration, 0, 2),
+  STEP("n64_color_dither", "N64 color dither", "N64 output", K::Enumeration, 0, 3),
   STEP("n64_vi_reconstruction", "N64 VI reconstruction", "N64 output", K::Boolean, 0, 1),
   STEP("n64_vi_divot", "N64 VI divot filter", "N64 output", K::Boolean, 0, 1),
 }};
@@ -182,6 +182,43 @@ bool animationPropertyValuesEqual(const AnimationProperty property, const glm::v
   for (int component = 0; component < info.components; ++component)
     if (std::abs(a[component] - b[component]) > 0.000001f) return false;
   return true;
+}
+
+const char* animationPropertyDiscreteValueLabel(const AnimationProperty property, const int value) {
+  const auto label = [value](const auto& labels, const int first = 0) -> const char* {
+    const int index = value - first;
+    return index >= 0 && index < static_cast<int>(labels.size()) ? labels[static_cast<std::size_t>(index)] : nullptr;
+  };
+  switch (property) {
+  case AnimationProperty::PassOutput: { constexpr std::array labels = {"Color", "Linear depth", "Normals", "Vertex colors"}; return label(labels); }
+  case AnimationProperty::TextureSource: { constexpr std::array labels = {"Scene material", "Built-in checker", "Imported override", "White texel"}; return label(labels); }
+  case AnimationProperty::CompositeOperation: return value >= 0 && value <= 11 ? relationOperatorLabel(static_cast<RelationOperator>(value)) : nullptr;
+  case AnimationProperty::CompositeColorSpace: { constexpr std::array labels = {"Encoded RGB", "Linear light"}; return label(labels); }
+  case AnimationProperty::CompositeRange: { constexpr std::array labels = {"Clamp 0..1", "Preserve signed/HDR", "Wrap fractional"}; return label(labels); }
+  case AnimationProperty::CompositeMask: { constexpr std::array labels = {"None", "Pass luminance", "Pass depth", "Pass edges"}; return label(labels); }
+  case AnimationProperty::CullMode: { constexpr std::array labels = {"None", "Back faces", "Front faces"}; return label(labels); }
+  case AnimationProperty::SurfaceVisualization: { constexpr std::array labels = {"Texture", "UV coordinates", "Normals", "Vertex colors", "Tangents", "Bitangents"}; return label(labels); }
+  case AnimationProperty::TransparencyOperation: { constexpr std::array labels = {"Opaque", "Alpha test", "Straight alpha", "Premultiplied alpha", "Additive", "Multiply", "PS1 average", "PS1 additive", "PS1 subtractive", "PS1 quarter-add"}; return label(labels); }
+  case AnimationProperty::TextureColorStorage: { constexpr std::array labels = {"Direct color", "Indexed 8-bit", "Indexed 4-bit"}; return label(labels); }
+  case AnimationProperty::LightingModel: { constexpr std::array labels = {"Unlit", "Gouraud Lambert", "Phong-shaded Lambert", "Phong reflection", "Blinn-Phong reflection"}; return label(labels); }
+  case AnimationProperty::DepthComparison: { constexpr std::array labels = {"Less", "Less or equal", "Greater", "Always"}; return label(labels); }
+  case AnimationProperty::DepthVisualization: { constexpr std::array labels = {"Off", "Raw window depth", "Linear camera depth"}; return label(labels); }
+  case AnimationProperty::N64CycleType: { constexpr std::array labels = {"1-cycle", "2-cycle"}; return label(labels, 1); }
+  case AnimationProperty::N64Cycle0A: case AnimationProperty::N64Cycle0B:
+  case AnimationProperty::N64Cycle0C: case AnimationProperty::N64Cycle0D:
+  case AnimationProperty::N64Cycle1A: case AnimationProperty::N64Cycle1B:
+  case AnimationProperty::N64Cycle1C: case AnimationProperty::N64Cycle1D: {
+    constexpr std::array labels = {"ZERO", "TEXEL0", "ONE", "SHADE", "PRIMITIVE", "ENVIRONMENT", "TEXEL1", "COMBINED", "LOD_FRACTION"}; return label(labels);
+  }
+  case AnimationProperty::N64TextureFormat: { constexpr std::array labels = {"RGBA16", "RGBA32", "CI4", "CI8", "IA4", "IA8", "IA16", "I4", "I8"}; return label(labels); }
+  case AnimationProperty::N64TextureFilter: { constexpr std::array labels = {"Point", "Three-point", "Box average"}; return label(labels); }
+  case AnimationProperty::N64MipmapMode: { constexpr std::array labels = {"Disabled", "Nearest level", "Trilinear", "Sharpen", "Detail"}; return label(labels); }
+  case AnimationProperty::N64SurfaceMode: { constexpr std::array labels = {"Opaque", "Translucent", "Decal", "Interpenetrating"}; return label(labels); }
+  case AnimationProperty::N64AlphaCompare: { constexpr std::array labels = {"Off", "Threshold", "Dither"}; return label(labels); }
+  case AnimationProperty::N64FramebufferFormat: { constexpr std::array labels = {"RGBA16", "RGBA32"}; return label(labels); }
+  case AnimationProperty::N64ColorDither: { constexpr std::array labels = {"Disabled", "Magic-square 4x4", "Bayer 4x4", "Noise"}; return label(labels); }
+  default: return nullptr;
+  }
 }
 
 glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty property) {

@@ -104,6 +104,9 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   constexpr const char* rangeIds[] = {"clamp_0_to_1", "preserve_signed_hdr", "wrap_fractional_part"};
   constexpr const char* maskIds[] = {"none", "pass_luminance", "pass_depth_0_to_10_units", "pass_image_edges"};
   constexpr const char* interpolationIds[] = {"step", "linear", "smooth_step"};
+  constexpr const char* valueKindIds[] = {"float", "vec2", "vec3", "color3", "color4", "angle",
+    "boolean", "integer", "enumeration"};
+  constexpr const char* behaviorIds[] = {"continuous", "step", "not_animatable"};
   constexpr const char* textureSourceIds[] = {"scene_material", "built_in_checker", "imported_override", "white"};
   const auto escape = [](const std::string& value) {
     std::string result;
@@ -192,6 +195,8 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
       const AnimationPropertyInfo& info = animationPropertyInfo(track.property);
       if (trackIndex != 0) json << ",";
       json << "\n        {\"property\": \"" << info.id << "\", \"components\": " << info.components
+           << ", \"value_kind\": \"" << valueKindIds[static_cast<int>(info.kind)]
+           << "\", \"animation_behavior\": \"" << behaviorIds[static_cast<int>(info.behavior)]
            << ", \"interpolation\": \"" << interpolationIds[static_cast<int>(track.interpolation)]
            << "\", \"keys\": [";
       for (std::size_t keyIndex = 0; keyIndex < track.keyframes.size(); ++keyIndex) {

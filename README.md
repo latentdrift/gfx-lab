@@ -38,6 +38,7 @@ src/
     Inspector.cpp             pipeline-category controls and visual styling
     AnimationEditor.cpp       transport, dope sheet, tracks, and selected-key editing
     PassInspector.cpp         pass perturbation and composite controls
+    PassDifferenceAudit.cpp  authored selected/reference pass comparison and restore
   handbook/
     Handbook.cpp              searchable articles, diagrams, and live comparisons
 ```
@@ -66,7 +67,9 @@ The **Animation dope sheet** stores a separate sparse track for each animated pr
 
 Animatable inspector controls have a right-aligned diamond: gray outline means unanimated, blue means the property has a track, and gold means it has a key at the playhead. Click the diamond to add or remove that exact key. Once a property is animated, changing its ordinary control writes that property at the playhead; **Auto Key** allows an ordinary control edit to create its first track. The control displays the evaluated playhead value, so editing does not require copying a sampled pose into the pass first.
 
-Continuous tracks include pass perturbations, composite gain/bias/opacity, vertex precision, normal-map strength, lighting quantities, fog and depth-cue distances/colors, and N64 primitive/environment colors. Algorithm choices and binary switches remain static. Playback evaluates a temporary render stack and does not overwrite authored base values.
+The animation catalog covers eligible state across every pipeline category. Continuous numbers, vectors, colors, and angles support step, linear, or smooth-step interpolation. Booleans, integers, algorithm selections, filtering modes, depth/stencil modes, texture sources, composite operations, and N64 fixed-function selections use step tracks because intermediate values have no meaning. Settings that reallocate large GPU resources during playback—MSAA count, shadow-map resolution, internal resolution, and N64 tile dimensions—remain visible in the catalog but deliberately non-keyable. Playback evaluates a temporary render stack and does not overwrite authored base values.
+
+Use **Pass differences** after duplicating a pass to audit authored disagreements against any reference pass. It lists only properties whose base value or animation track differs, shows static versus keyed state, and can match an individual property to the reference. Matching copies both the reference base value and its track; if the reference is static, it removes the selected pass's track. Imported texture resources are compared separately from their sampling state.
 
 The **Target** selector defaults to **Unrestricted**. **PlayStation (PS1)** and **Nintendo 64** normalize every pass to target-representable state, remove unavailable categories and controls, narrow shared controls to supported choices, and display important forced values or labelled emulation substitutes as profile facts. Switching back to Unrestricted unlocks the controls but does not restore values discarded during normalization. Reset buttons are also normalized by the active target.
 

@@ -29,7 +29,9 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline) {
 
   const char* outputLabels[] = {"Color", "Linear depth", "Normals", "Vertex colors"};
   int output = static_cast<int>(pass.output);
-  if (ImGui::Combo("Output buffer", &output, outputLabels, 4)) pass.output = static_cast<PassOutput>(output);
+  const bool outputChanged = ImGui::Combo("Output buffer", &output, outputLabels, 4);
+  if (outputChanged) pass.output = static_cast<PassOutput>(output);
+  animationKeyControl(pass, AnimationProperty::PassOutput, timeline, outputChanged);
 
   ImGui::Spacing();
   ImGui::TextDisabled("GEOMETRY PERTURBATION");
@@ -91,6 +93,7 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline) {
     pass.composite.operation = static_cast<RelationOperator>(operation);
     resetCompositeTransform(pass.composite);
   }
+  animationKeyControl(pass, AnimationProperty::CompositeOperation, timeline, ImGui::IsItemEdited());
   animationKeyControl(pass, AnimationProperty::CompositeOpacity, timeline,
     ImGui::SliderFloat("Opacity", &pass.composite.opacity, 0.0f, 1.0f, "%.2f"));
   animationKeyControl(pass, AnimationProperty::CompositeGain, timeline,
@@ -102,17 +105,24 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline) {
 
   const char* colorSpaces[] = {"Encoded RGB values", "Linear-light values"};
   int colorSpace = static_cast<int>(pass.composite.colorSpace);
-  if (ImGui::Combo("Arithmetic color space", &colorSpace, colorSpaces, 2))
+  const bool colorSpaceChanged = ImGui::Combo("Arithmetic color space", &colorSpace, colorSpaces, 2);
+  if (colorSpaceChanged)
     pass.composite.colorSpace = static_cast<CompositeColorSpace>(colorSpace);
+  animationKeyControl(pass, AnimationProperty::CompositeColorSpace, timeline, colorSpaceChanged);
   const char* ranges[] = {"Clamp to 0..1", "Preserve signed / HDR", "Wrap with fract"};
   int range = static_cast<int>(pass.composite.range);
-  if (ImGui::Combo("Range behavior", &range, ranges, 3)) pass.composite.range = static_cast<CompositeRange>(range);
+  const bool rangeChanged = ImGui::Combo("Range behavior", &range, ranges, 3);
+  if (rangeChanged) pass.composite.range = static_cast<CompositeRange>(range);
+  animationKeyControl(pass, AnimationProperty::CompositeRange, timeline, rangeChanged);
   const char* masks[] = {"None", "Pass luminance", "Pass depth (0..10 units)", "Pass image edges"};
   int mask = static_cast<int>(pass.composite.mask);
-  if (ImGui::Combo("Mask", &mask, masks, 4)) pass.composite.mask = static_cast<CompositeMask>(mask);
+  const bool maskChanged = ImGui::Combo("Mask", &mask, masks, 4);
+  if (maskChanged) pass.composite.mask = static_cast<CompositeMask>(mask);
+  animationKeyControl(pass, AnimationProperty::CompositeMask, timeline, maskChanged);
   if (pass.composite.mask != CompositeMask::None) {
     ImGui::SameLine();
-    ImGui::Checkbox("Invert", &pass.composite.invertMask);
+    animationKeyControl(pass, AnimationProperty::CompositeMaskInverted, timeline,
+      ImGui::Checkbox("Invert", &pass.composite.invertMask));
   }
 }
 

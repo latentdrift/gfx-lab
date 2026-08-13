@@ -29,6 +29,7 @@ add_executable(graphics-lab
   src/ui/AnimationControls.cpp
   src/ui/Inspector.cpp
   src/ui/PassInspector.cpp
+  src/ui/PassDifferenceAudit.cpp
 )
 target_include_directories(graphics-lab PRIVATE src)
 target_compile_features(graphics-lab PRIVATE cxx_std_20)
