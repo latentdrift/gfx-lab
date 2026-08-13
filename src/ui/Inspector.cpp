@@ -1,4 +1,6 @@
 #include "ui/Inspector.hpp"
+
+#include "app/Spectral.hpp"
 #include "app/FileDialog.hpp"
 #include "app/RenderStack.hpp"
 #include "assets/ModelAsset.hpp"
@@ -699,6 +701,44 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       ImGui::EndDisabled();
       break;
     }
+    case Category::Spectral: {
+      ImGui::TextUnformatted("SPECTRAL LIGHT"); ImGui::Separator();
+      constexpr const char* illuminants[] = {"Reference daylight", "Tungsten 2856 K", "Tri-band LED"};
+      constexpr const char* observers[] = {"Reference human LMS", "Shifted observer", "Rod monochrome"};
+      animationKeyControl(pass, AnimationProperty::SpectralIlluminant, timeline,
+        ImGui::Combo("Illuminant", &state.spectral.illuminant, illuminants, 3));
+      animationKeyControl(pass, AnimationProperty::SpectralObserver, timeline,
+        ImGui::Combo("Observer", &state.spectral.observer, observers, 3));
+      animationKeyControl(pass, AnimationProperty::SpectralExposure, timeline,
+        ImGui::SliderFloat("Presentation exposure", &state.spectral.exposure, -4.0f, 4.0f, "%+.2f stops"));
+      description("The scene retains sixteen radiance samples from 400 to 700 nm. RGB is produced only after the selected observer integrates those samples.");
+      ImGui::SeparatorText("REFLECTANCE SPECTRA");
+      const ImVec2 plotOrigin = ImGui::GetCursorScreenPos();
+      const ImVec2 plotSize(std::max(240.0f, ImGui::GetContentRegionAvail().x), 150.0f);
+      ImDrawList* draw = ImGui::GetWindowDrawList();
+      const ImVec2 plotEnd(plotOrigin.x + plotSize.x, plotOrigin.y + plotSize.y);
+      draw->AddRectFilled(plotOrigin, plotEnd, IM_COL32(18, 20, 23, 255));
+      draw->AddRect(plotOrigin, plotEnd, IM_COL32(70, 74, 80, 255));
+      for (int band = 0; band < static_cast<int>(spectral::bandCount) - 1; ++band) {
+        const float x0 = plotOrigin.x + plotSize.x * static_cast<float>(band) / 15.0f;
+        const float x1 = plotOrigin.x + plotSize.x * static_cast<float>(band + 1) / 15.0f;
+        const auto point = [&](const float x, const float value) { return ImVec2(x,
+          plotOrigin.y + plotSize.y * (1.0f - std::clamp(value, 0.0f, 1.0f))); };
+        draw->AddLine(point(x0, spectral::reflectanceA[band]), point(x1, spectral::reflectanceA[band + 1]),
+          IM_COL32(92, 205, 255, 255), 2.0f);
+        draw->AddLine(point(x0, spectral::reflectanceB[band]), point(x1, spectral::reflectanceB[band + 1]),
+          IM_COL32(255, 174, 74, 255), 2.0f);
+      }
+      ImGui::Dummy(plotSize);
+      ImGui::TextColored(ImVec4(0.36f, 0.80f, 1.0f, 1.0f), "A"); ImGui::SameLine();
+      ImGui::TextColored(ImVec4(1.0f, 0.68f, 0.29f, 1.0f), "B"); ImGui::SameLine();
+      ImGui::TextDisabled("  400 nm                              700 nm");
+      if (state.spectral.illuminant == 0 && state.spectral.observer == 0)
+        ImGui::TextWrapped("Reference condition: A and B are metamers. Their spectra differ, but their integrated LMS responses match.");
+      else
+        ImGui::TextWrapped("Non-reference condition: the illuminant or receptor curves weight the spectra differently, so the match can fail.");
+      break;
+    }
     case Category::Depth: {
       ImGui::TextUnformatted("DEPTH"); ImGui::Separator();
       if (profile == HardwareProfile::Nintendo64) {
@@ -886,6 +926,7 @@ const char* categoryName(Category category) {
     case Category::Texture: return "Texture";
     case Category::Lighting: return "Lighting";
     case Category::Field: return "Field";
+    case Category::Spectral: return "Spectral";
     case Category::Depth: return "Depth";
     case Category::Stencil: return "Stencil";
     case Category::Color: return "Color";

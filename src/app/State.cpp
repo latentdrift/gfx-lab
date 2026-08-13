@@ -28,6 +28,7 @@ const char* testSceneName(TestScene scene) {
     case TestScene::StencilMask: return "stencil_mask";
     case TestScene::FieldInterference: return "field_interference";
     case TestScene::SdfIsoSurface: return "sdf_iso_surface";
+    case TestScene::SpectralMetamers: return "spectral_metamers";
     case TestScene::ImportedModel: return "imported_model";
   }
   return "unknown";
@@ -119,6 +120,20 @@ void applyRecommendedSetup(TestScene scene, RendererState& state, CameraOrbit& c
       camera.yaw = 0.68f;
       camera.pitch = 0.32f;
       camera.distance = 6.4f;
+      break;
+    case TestScene::SpectralMetamers:
+      state.spectral.illuminant = 0;
+      state.spectral.observer = 0;
+      state.spectral.exposure = 0.0f;
+      state.lighting.ambient = 0.22f;
+      state.rasterization.samples = 1;
+      state.color.linearLight = true;
+      state.output.width = 640;
+      state.output.height = 480;
+      camera.yaw = 0.0f;
+      camera.pitch = 0.18f;
+      camera.distance = 6.0f;
+      camera.target = glm::vec3(0.0f, 0.0f, 0.0f);
       break;
     case TestScene::ImportedModel:
       camera.distance = 5.2f;
@@ -424,6 +439,14 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
        << ", \"level\": " << state.field.isoLevel << ", \"maximum_steps\": " << state.field.isoMaxSteps
        << ", \"epsilon\": " << state.field.isoEpsilon << ", \"maximum_distance\": " << state.field.isoMaxDistance
        << ", \"color_rgb\": [" << state.field.isoColor.r << ", " << state.field.isoColor.g << ", " << state.field.isoColor.b << "]}\n";
+  json << "  },\n";
+  constexpr const char* spectralIlluminants[] = {"reference_daylight", "tungsten_2856k", "tri_band_led"};
+  constexpr const char* spectralObservers[] = {"reference_human_lms", "shifted_observer", "rod_monochrome"};
+  json << "  \"spectral\": {\n";
+  json << "    \"wavelength_samples_nm\": [400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700],\n";
+  json << "    \"illuminant\": \"" << spectralIlluminants[std::clamp(state.spectral.illuminant, 0, 2)] << "\",\n";
+  json << "    \"observer\": \"" << spectralObservers[std::clamp(state.spectral.observer, 0, 2)] << "\",\n";
+  json << "    \"presentation_exposure_stops\": " << state.spectral.exposure << "\n";
   json << "  },\n";
   json << "  \"depth\": {\n";
   json << "    \"test_enabled\": " << boolean(state.depth.testing) << ",\n";

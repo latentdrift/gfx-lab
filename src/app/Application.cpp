@@ -378,7 +378,7 @@ int runApplication() {
       if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
       if (hardwareProfile != HardwareProfile::Unrestricted &&
           (scene == TestScene::StencilMask || scene == TestScene::FieldInterference ||
-           scene == TestScene::SdfIsoSurface))
+           scene == TestScene::SdfIsoSurface || scene == TestScene::SpectralMetamers))
         scene = TestScene::Torus;
     }
     if (!modelImportError.empty()) ImGui::OpenPopup("Model import failed");

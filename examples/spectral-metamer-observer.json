@@ -1,0 +1,41 @@
+{
+  "schema": "graphics-lab.render-stack.v8",
+  "hardware_target": "unrestricted",
+  "test_scene": "spectral_metamers",
+  "view": {"orbit_yaw_radians": 0.0, "orbit_pitch_radians": 0.18, "distance_units": 6.0, "target": [0.0, 0.0, 0.0]},
+  "global_base": {
+    "properties": {
+      "spectral_illuminant": [0.0], "spectral_observer": [0.0], "spectral_exposure": [0.0],
+      "ambient": [0.22], "linear_light": [1.0], "internal_resolution": [640.0, 480.0]
+    },
+    "property_tracks": []
+  },
+  "passes": [
+    {
+      "id": 1, "name": "Daylight spectral scene", "enabled": true, "output_buffer": "color", "overrides": [],
+      "composite_into_previous": {
+        "operation": "absolute_difference",
+        "source_a": {"type": "accumulated_result", "pass_id": 1},
+        "source_b": {"type": "current_pass", "pass_id": 1},
+        "interpretation_a": "raw_rgb", "interpretation_b": "raw_rgb",
+        "gain": 1.0, "bias": 0.0, "opacity": 1.0,
+        "arithmetic_color_space": "linear_light", "range_behavior": "clamp_0_to_1",
+        "mask": "none", "invert_mask": false
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    },
+    {
+      "id": 2, "name": "Human vs shifted observer", "enabled": true, "output_buffer": "color", "overrides": [],
+      "composite_into_previous": {
+        "operation": "absolute_difference",
+        "source_a": {"type": "render_pass_spectrum", "pass_id": 1},
+        "source_b": {"type": "render_pass_spectrum", "pass_id": 1},
+        "interpretation_a": "spectral_human", "interpretation_b": "spectral_alternate",
+        "gain": 5.0, "bias": 0.0, "opacity": 1.0,
+        "arithmetic_color_space": "linear_light", "range_behavior": "clamp_0_to_1",
+        "mask": "none", "invert_mask": false
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    }
+  ]
+}

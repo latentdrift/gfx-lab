@@ -26,6 +26,7 @@ add_executable(graphics-lab
   src/app/HardwareProfile.cpp
   src/app/PassEditing.cpp
   src/app/RenderStack.cpp
+  src/app/Spectral.cpp
   src/app/State.cpp
   src/app/StackDocument.cpp
   src/app/Validation.cpp

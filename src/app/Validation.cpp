@@ -7,12 +7,14 @@
 #include "app/PassEditing.hpp"
 #include "app/RenderStack.hpp"
 #include "app/StackDocument.hpp"
+#include "app/Spectral.hpp"
 #include "assets/ModelAsset.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
 
 #include <GL/glew.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -33,6 +35,30 @@ namespace {
 void runStartupValidationIfRequested(Renderer& renderer, RendererState& current, RendererState& reference,
     CameraOrbit& camera, TestScene& scene, Category& category) {
   if (std::getenv("GRAPHICS_LAB_VALIDATE_HANDBOOK")) {
+    const auto referenceA = spectral::humanResponse(spectral::reflectanceA, spectral::daylight);
+    const auto referenceB = spectral::humanResponse(spectral::reflectanceB, spectral::daylight);
+    float referenceDelta = 0.0f;
+    for (int channel = 0; channel < 3; ++channel)
+      referenceDelta = std::max(referenceDelta, std::abs(referenceA[channel] - referenceB[channel]));
+    const auto tungstenA = spectral::humanResponse(spectral::reflectanceA, spectral::tungsten);
+    const auto tungstenB = spectral::humanResponse(spectral::reflectanceB, spectral::tungsten);
+    float tungstenDelta = 0.0f;
+    for (int channel = 0; channel < 3; ++channel)
+      tungstenDelta = std::max(tungstenDelta, std::abs(tungstenA[channel] - tungstenB[channel]));
+    if (referenceDelta > 0.00002f || tungstenDelta < 0.04f)
+      fail("spectral metamer fixture does not match under reference light and separate under tungsten");
+    RendererState spectralState;
+    CameraOrbit spectralCamera;
+    applyRecommendedSetup(TestScene::SpectralMetamers, spectralState, spectralCamera);
+    if (renderer.render(spectralState, spectralCamera, TestScene::SpectralMetamers, false) == 0)
+      fail("spectral metamer scene failed render validation");
+    const StackDocumentLoadResult spectralDocument = loadStackDocumentFile(
+      "examples/spectral-metamer-observer.json");
+    if (!spectralDocument || spectralDocument.document->scene != TestScene::SpectralMetamers ||
+        spectralDocument.document->renderStack.passes().size() != 2 ||
+        spectralDocument.document->renderStack.passes()[1].composite.sourceA !=
+          CompositeSource::RenderPassSpectrum)
+      fail("spectral metamer example failed document validation");
     const ModelImportResult importedFixture = importModelAsset("tests/fixtures/import_triangle.obj");
     if (!importedFixture || importedFixture.asset->triangleCount != 1 ||
         importedFixture.asset->vertices.size() != 3 || !importedFixture.asset->hasTextureCoordinates ||
@@ -285,7 +311,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       if (renderer.composite(compositeValidation) == 0) fail("render-pass composite mask failed validation");
     }
     for (int source = static_cast<int>(CompositeSource::Accumulator);
-         source <= static_cast<int>(CompositeSource::RenderPassField); ++source) {
+         source <= static_cast<int>(CompositeSource::RenderPassSpectrum); ++source) {
       compositeValidation.passes()[2].composite.sourceA = static_cast<CompositeSource>(source);
       compositeValidation.passes()[2].composite.sourceB = static_cast<CompositeSource>(source);
       compositeValidation.passes()[2].composite.sourceAPassId = compositeValidation.passes()[0].id;
@@ -441,7 +467,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       renderer.renderPass(materializeRenderPass(observerOperandDocument.document->renderStack, passIndex),
         observerOperandDocument.document->camera, observerOperandDocument.document->scene, passIndex);
     for (int interpretation = static_cast<int>(CompositeInterpretation::RawRgb);
-         interpretation <= static_cast<int>(CompositeInterpretation::BlueYellowOpponent); ++interpretation) {
+         interpretation <= static_cast<int>(CompositeInterpretation::SpectralRod); ++interpretation) {
       observerOperandDocument.document->renderStack.passes()[1].composite.interpretationA =
         static_cast<CompositeInterpretation>(interpretation);
       observerOperandDocument.document->renderStack.passes()[1].composite.interpretationB =

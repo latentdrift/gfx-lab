@@ -76,7 +76,7 @@ void parseTracks(const Json& tracks, PassAnimation& animation) {
 
 TestScene sceneFromId(const std::string& id) {
   constexpr std::array sceneIds = {"torus", "texture_minification", "depth_precision", "transparency",
-    "lighting_comparison", "stencil_mask", "field_interference", "sdf_iso_surface", "imported_model"};
+    "lighting_comparison", "stencil_mask", "field_interference", "sdf_iso_surface", "spectral_metamers", "imported_model"};
   return enumFromId(id, sceneIds, TestScene::Torus);
 }
 
@@ -160,11 +160,11 @@ void parsePerturbation(const Json& source, PassPerturbation& perturbation) {
 void parseComposite(const Json& source, CompositeStep& composite) {
   if (!source.is_object()) return;
   constexpr std::array sourceIds = {"accumulated_result", "current_pass", "render_pass", "fixed_color",
-    "previous_frame", "render_pass_field"};
+    "previous_frame", "render_pass_field", "render_pass_spectrum"};
   constexpr std::array colorSpaceIds = {"encoded_rgb", "linear_light"};
   constexpr std::array rangeIds = {"clamp_0_to_1", "preserve_signed_hdr", "wrap_fractional_part"};
   constexpr std::array interpretationIds = {"raw_rgb", "l_cone", "m_cone", "s_cone", "cone_luminance",
-    "rod", "red_green_opponent", "blue_yellow_opponent"};
+    "rod", "red_green_opponent", "blue_yellow_opponent", "spectral_human", "spectral_alternate", "spectral_rod"};
   constexpr std::array maskIds = {"none", "pass_luminance", "pass_depth_0_to_10_units", "pass_image_edges",
     "pass_field"};
   const std::string operationId = source.value("operation", "absolute_difference");
@@ -310,7 +310,8 @@ StackDocumentLoadResult loadStackDocumentFile(const std::string& path) {
     }
     const auto validateNamedOperand = [&](const CompositeSource source, const int referencedPassId,
                                           const std::string& passName, const char* operandName) {
-      if ((source == CompositeSource::RenderPass || source == CompositeSource::RenderPassField) &&
+      if ((source == CompositeSource::RenderPass || source == CompositeSource::RenderPassField ||
+          source == CompositeSource::RenderPassSpectrum) &&
           !passIds.contains(referencedPassId))
         throw std::runtime_error(passName + " " + operandName + " references missing render-pass ID " +
           std::to_string(referencedPassId));

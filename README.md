@@ -97,6 +97,12 @@ B measures approximate rod response, and the compositor XORs their five-bit meas
 operand interpretation to L, M, S, rod, cone luminance, or centered opponent response without duplicating or
 rerendering the scene. These are explicit RGB-derived observer approximations, not spectral measurements.
 
+[`spectral-metamer-observer.json`](examples/spectral-metamer-observer.json) uses the dedicated Spectral
+metamers scene. Its two objects have different sixteen-band reflectance spectra but matching LMS responses
+under the reference daylight/human condition. The second pass reads the first pass's spectral attachment twice
+and displays human-versus-shifted-observer disagreement. Disable that pass to see the reference match; use the
+Spectral tool to switch to tungsten or tri-band illumination and watch the metameric match fail.
+
 Graphics Lab uses a persistent dockable workspace rather than one fixed application page. **Scene**, **Render Passes**, **Pass Properties**, **Viewport**, every rendering-pipeline category, **Texture Mapping**, **Display Reconstruction**, **Animation Timeline**, and **Pass Differences** are independent tool windows. The pipeline, mapping, and final-display tools begin as tabs in one dock node; tear out or rearrange the tools needed for an experiment and manage them under **Window**. **Window → Restore Default Layout** rebuilds the supplied compact workspace. ImGui saves subsequent window and docking changes between runs.
 
 Use **View → UI Scale** to resize text, controls, spacing, tabs, and interaction targets together from 75% to

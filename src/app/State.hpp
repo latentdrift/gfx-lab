@@ -54,6 +54,7 @@ struct RendererState {
     float isoMaxDistance = 30.0f;
     glm::vec3 isoColor{0.72f, 0.82f, 1.0f};
   } field;
+  struct Spectral { int illuminant = 0; int observer = 0; float exposure = 0.0f; } spectral;
   struct Depth { bool testing = true; bool writing = true; int precision = 24; int function = 0; int visualization = 0; bool orderingTable = false; int orderingBuckets = 32; } depth;
   struct Stencil { bool enabled = false; bool invert = false; int reference = 1; } stencil;
   struct Color { int bitsPerChannel = 8; bool dithering = false; bool linearLight = true; } color;
@@ -89,7 +90,7 @@ struct RendererState {
   } n64;
 };
 
-enum class Category { Geometry, Camera, Rasterization, Surface, Texture, Lighting, Field, Depth, Stencil, Color, Post, Output };
+enum class Category { Geometry, Camera, Rasterization, Surface, Texture, Lighting, Field, Spectral, Depth, Stencil, Color, Post, Output };
 enum class CompareMode { A, B, Split, Relation };
 enum class RelationOperator {
   AbsoluteDifference,
@@ -112,7 +113,7 @@ enum class RelationOperator {
   SignedColorOffset,
   BitwiseXor,
 };
-enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask, FieldInterference, SdfIsoSurface, ImportedModel };
+enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask, FieldInterference, SdfIsoSurface, SpectralMetamers, ImportedModel };
 
 struct CameraOrbit {
   float yaw = 0.72f;

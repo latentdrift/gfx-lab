@@ -51,12 +51,12 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   CONT("composite_bias", "Composite bias", "Composite", 1, K::Float, -1, 1),
   CONT("composite_opacity", "Composite opacity", "Composite", 1, K::Float, 0, 1),
   STEP("composite_operation", "Composite operation", "Composite", K::Enumeration, 0, 18),
-  STEP("composite_source_a", "Composite source A", "Composite operands", K::Enumeration, 0, 5),
-  STEP("composite_source_b", "Composite source B", "Composite operands", K::Enumeration, 0, 5),
+  STEP("composite_source_a", "Composite source A", "Composite operands", K::Enumeration, 0, 6),
+  STEP("composite_source_b", "Composite source B", "Composite operands", K::Enumeration, 0, 6),
   STEP("composite_source_a_pass", "Source A render-pass ID", "Composite operands", K::Integer, 1, 65535),
   STEP("composite_source_b_pass", "Source B render-pass ID", "Composite operands", K::Integer, 1, 65535),
-  STEP("composite_interpretation_a", "Source A interpretation", "Composite operands", K::Enumeration, 0, 7),
-  STEP("composite_interpretation_b", "Source B interpretation", "Composite operands", K::Enumeration, 0, 7),
+  STEP("composite_interpretation_a", "Source A interpretation", "Composite operands", K::Enumeration, 0, 10),
+  STEP("composite_interpretation_b", "Source B interpretation", "Composite operands", K::Enumeration, 0, 10),
   CONT("composite_fixed_color", "Composite fixed color", "Composite operands", 4, K::Color4, 0, 1),
   STEP("composite_bit_depth", "Composite bit depth", "Composite arithmetic", K::Integer, 1, 8),
   CONT("composite_history_decay", "Previous-frame decay", "Composite history", 1, K::Float, 0, 1),
@@ -142,6 +142,9 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   STEP("iso_maximum_steps", "Iso-surface maximum steps", "Iso-surface", K::Integer, 8, 512),
   CONT("iso_hit_epsilon", "Iso-surface hit epsilon", "Iso-surface", 1, K::Float, 0.0001f, 0.1f),
   CONT("iso_maximum_distance", "Iso-surface maximum distance", "Iso-surface", 1, K::Float, 1, 100),
+  STEP("spectral_illuminant", "Spectral illuminant", "Spectral", K::Enumeration, 0, 2),
+  STEP("spectral_observer", "Spectral observer", "Spectral", K::Enumeration, 0, 2),
+  CONT("spectral_exposure", "Spectral exposure", "Spectral", 1, K::Float, -8, 8),
   STEP("depth_test_enabled", "Depth test enabled", "Depth", K::Boolean, 0, 1),
   STEP("depth_write_enabled", "Depth writes enabled", "Depth", K::Boolean, 0, 1),
   FIXED("depth_precision", "Depth-buffer precision", "Depth", 1, K::Integer, 16, 24),
@@ -255,9 +258,11 @@ const char* animationPropertyDiscreteValueLabel(const AnimationProperty property
   case AnimationProperty::UvMapping: { constexpr std::array labels = {"Mesh UV0", "Planar XY", "Planar XZ", "Planar YZ"}; return label(labels); }
   case AnimationProperty::CompositeOperation: return value >= 0 && value <= 18 ? relationOperatorLabel(static_cast<RelationOperator>(value)) : nullptr;
   case AnimationProperty::CompositeSourceA:
-  case AnimationProperty::CompositeSourceB: { constexpr std::array labels = {"Accumulated result", "Current pass", "Render pass", "Fixed color", "Previous frame", "Render-pass field"}; return label(labels); }
+  case AnimationProperty::CompositeSourceB: { constexpr std::array labels = {"Accumulated result", "Current pass", "Render pass", "Fixed color", "Previous frame", "Render-pass field", "Render-pass spectrum"}; return label(labels); }
   case AnimationProperty::CompositeInterpretationA:
-  case AnimationProperty::CompositeInterpretationB: { constexpr std::array labels = {"Raw RGB", "L cone", "M cone", "S cone", "Cone luminance", "Rod", "Red-green opponent", "Blue-yellow opponent"}; return label(labels); }
+  case AnimationProperty::CompositeInterpretationB: { constexpr std::array labels = {"Raw RGB", "L cone", "M cone", "S cone", "Cone luminance", "Rod", "Red-green opponent", "Blue-yellow opponent", "Spectral human", "Spectral alternate", "Spectral rod"}; return label(labels); }
+  case AnimationProperty::SpectralIlluminant: { constexpr std::array labels = {"Reference daylight", "Tungsten 2856 K", "Tri-band LED"}; return label(labels); }
+  case AnimationProperty::SpectralObserver: { constexpr std::array labels = {"Reference human", "Shifted observer", "Rod monochrome"}; return label(labels); }
   case AnimationProperty::CompositeColorSpace: { constexpr std::array labels = {"Encoded RGB", "Linear light"}; return label(labels); }
   case AnimationProperty::CompositeRange: { constexpr std::array labels = {"Clamp 0..1", "Preserve signed/HDR", "Wrap fractional"}; return label(labels); }
   case AnimationProperty::CompositeMask: { constexpr std::array labels = {"None", "Pass luminance", "Pass depth", "Pass edges", "Pass field"}; return label(labels); }
@@ -406,6 +411,9 @@ glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty
   case AnimationProperty::IsoMaximumSteps: return glm::vec4(pass.renderer.field.isoMaxSteps);
   case AnimationProperty::IsoHitEpsilon: return glm::vec4(pass.renderer.field.isoEpsilon);
   case AnimationProperty::IsoMaximumDistance: return glm::vec4(pass.renderer.field.isoMaxDistance);
+  case AnimationProperty::SpectralIlluminant: return glm::vec4(pass.renderer.spectral.illuminant);
+  case AnimationProperty::SpectralObserver: return glm::vec4(pass.renderer.spectral.observer);
+  case AnimationProperty::SpectralExposure: return glm::vec4(pass.renderer.spectral.exposure);
   case AnimationProperty::DepthTestEnabled: return glm::vec4(pass.renderer.depth.testing ? 1.0f : 0.0f);
   case AnimationProperty::DepthWriteEnabled: return glm::vec4(pass.renderer.depth.writing ? 1.0f : 0.0f);
   case AnimationProperty::DepthPrecision: return glm::vec4(pass.renderer.depth.precision);
@@ -576,6 +584,9 @@ void setAnimationPropertyValue(RenderPass& pass, const AnimationProperty propert
   case AnimationProperty::IsoMaximumSteps: pass.renderer.field.isoMaxSteps = static_cast<int>(std::round(value.x)); break;
   case AnimationProperty::IsoHitEpsilon: pass.renderer.field.isoEpsilon = value.x; break;
   case AnimationProperty::IsoMaximumDistance: pass.renderer.field.isoMaxDistance = value.x; break;
+  case AnimationProperty::SpectralIlluminant: pass.renderer.spectral.illuminant = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::SpectralObserver: pass.renderer.spectral.observer = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::SpectralExposure: pass.renderer.spectral.exposure = value.x; break;
   case AnimationProperty::DepthTestEnabled: pass.renderer.depth.testing = value.x >= 0.5f; break;
   case AnimationProperty::DepthWriteEnabled: pass.renderer.depth.writing = value.x >= 0.5f; break;
   case AnimationProperty::DepthPrecision: pass.renderer.depth.precision = static_cast<int>(std::round(value.x)); break;

@@ -35,6 +35,7 @@ const char* compactSourceLabel(const CompositeSource source) {
     case CompositeSource::FixedColor: return "Fixed RGBA color";
     case CompositeSource::PreviousFrame: return "Previous frame";
     case CompositeSource::RenderPassField: return "Named pass field";
+    case CompositeSource::RenderPassSpectrum: return "Named pass spectrum";
   }
   return "Unknown source";
 }
@@ -86,15 +87,27 @@ SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& 
         sourcePassId = candidate.id;
       }
     }
+    ImGui::SeparatorText("SPECTRAL RADIANCE (16 BANDS)");
+    for (const RenderPass& candidate : stack.passes()) {
+      const bool selected = source == CompositeSource::RenderPassSpectrum && sourcePassId == candidate.id;
+      const std::string spectrumLabel = candidate.name + " spectrum";
+      if (ImGui::Selectable(spectrumLabel.c_str(), selected)) {
+        result.sourceChanged = source != CompositeSource::RenderPassSpectrum;
+        result.passChanged = sourcePassId != candidate.id;
+        source = CompositeSource::RenderPassSpectrum;
+        sourcePassId = candidate.id;
+      }
+    }
     ImGui::EndPopup();
   }
   constexpr const char* interpretationLabels[] = {"Raw RGB", "L cone response", "M cone response",
     "S cone response", "Cone luminance", "Rod response", "Red-green opponent (centered)",
-    "Blue-yellow opponent (centered)"};
+    "Blue-yellow opponent (centered)", "Spectral: human LMS", "Spectral: shifted observer",
+    "Spectral: rod monochrome"};
   int interpretationIndex = static_cast<int>(interpretation);
   ImGui::SetNextItemWidth(-1.0f);
   result.interpretationChanged = ImGui::Combo("##interpretation", &interpretationIndex,
-    interpretationLabels, 8);
+    interpretationLabels, 11);
   if (result.interpretationChanged)
     interpretation = static_cast<CompositeInterpretation>(interpretationIndex);
   ImGui::PopID();

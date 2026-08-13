@@ -570,6 +570,14 @@ inline constexpr const char* relationFragmentShader = R"GLSL(
 in vec2 vUv;
 uniform sampler2D uImageA;
 uniform sampler2D uImageB;
+uniform sampler2D uSpectrumA0;
+uniform sampler2D uSpectrumA1;
+uniform sampler2D uSpectrumA2;
+uniform sampler2D uSpectrumA3;
+uniform sampler2D uSpectrumB0;
+uniform sampler2D uSpectrumB1;
+uniform sampler2D uSpectrumB2;
+uniform sampler2D uSpectrumB3;
 uniform int uSourceAMode;
 uniform int uSourceBMode;
 uniform int uInterpretationA;
@@ -618,6 +626,33 @@ vec3 linearRgbToLms(vec3 rgb) {
     dot(rgb, vec3(0.01775239, 0.10944209, 0.87256922)));
 }
 
+const float spectralL[16] = float[](0.001204,0.005564,0.021110,0.065729,0.167973,0.352322,0.606531,0.856997,0.993846,0.945959,0.738991,0.473827,0.249352,0.107701,0.038180,0.011109);
+const float spectralM[16] = float[](0.003362,0.016038,0.059587,0.172422,0.388558,0.681941,0.932102,0.992218,0.822578,0.531096,0.267052,0.104579,0.031895,0.007576,0.001401,0.000202);
+const float spectralS[16] = float[](0.324652,0.706648,0.986207,0.882497,0.506336,0.186270,0.043937,0.006645,0.000644,0.000040,0.000002,0,0,0,0,0);
+float gaussianResponse(float wavelength, float center, float width) { float q=(wavelength-center)/width; return exp(-0.5*q*q); }
+float spectrumBand(bool operandA, int band) {
+  vec4 group;
+  if (operandA) group=band<4?texture(uSpectrumA0,vUv):band<8?texture(uSpectrumA1,vUv):band<12?texture(uSpectrumA2,vUv):texture(uSpectrumA3,vUv);
+  else group=band<4?texture(uSpectrumB0,vUv):band<8?texture(uSpectrumB1,vUv):band<12?texture(uSpectrumB2,vUv):texture(uSpectrumB3,vUv);
+  return group[band & 3];
+}
+vec3 interpretSpectrum(bool operandA, int interpretation) {
+  vec3 response=vec3(0.0), white=vec3(0.0);
+  for(int i=0;i<16;++i) {
+    float w=400.0+20.0*float(i);
+    vec3 sensitivity;
+    if (interpretation==9) sensitivity=vec3(gaussianResponse(w,585.0,43.0),gaussianResponse(w,515.0,36.0),gaussianResponse(w,430.0,27.0));
+    else if (interpretation==10) sensitivity=vec3(gaussianResponse(w,507.0,48.0));
+    else sensitivity=vec3(spectralL[i],spectralM[i],spectralS[i]);
+    response += spectrumBand(operandA,i)*sensitivity;
+    white += sensitivity;
+  }
+  vec3 measured=response/max(white,vec3(0.0001));
+  vec3 linearRgb = interpretation==10 ? vec3(measured.x*0.72,measured.x*0.84,measured.x) :
+    max(vec3(dot(measured,vec3(5.47221206,-4.64196010,0.16963708)),dot(measured,vec3(-1.12524190,2.29317094,-0.16789520)),dot(measured,vec3(0.02980165,-0.19318073,1.16364789))),vec3(0.0));
+  return pow(linearRgb,vec3(1.0/2.2));
+}
+
 vec3 interpretSignal(vec3 encodedRgb, int interpretation) {
   if (interpretation == 0) return encodedRgb;
   vec3 linearRgb = pow(max(encodedRgb, vec3(0.0)), vec3(2.2)) * exp2(uObserverExposureStops);
@@ -648,12 +683,14 @@ void main() {
     texture(uImageB, uSourceBMode == 4 ? historyUv : vUv).rgb;
   if (uSourceAMode == 5) storedA = storedA.rrr;
   if (uSourceBMode == 5) storedB = storedB.rrr;
+  if (uSourceAMode == 6) storedA = interpretSpectrum(true, uInterpretationA);
+  if (uSourceBMode == 6) storedB = interpretSpectrum(false, uInterpretationB);
   storedA = finiteColor(storedA);
   storedB = finiteColor(storedB);
   if (uSourceAMode == 4) storedA *= uHistoryDecay;
   if (uSourceBMode == 4) storedB *= uHistoryDecay;
-  storedA = interpretSignal(storedA, uInterpretationA);
-  storedB = interpretSignal(storedB, uInterpretationB);
+  if (uSourceAMode != 6) storedA = interpretSignal(storedA, uInterpretationA);
+  if (uSourceBMode != 6) storedB = interpretSignal(storedB, uInterpretationB);
   vec3 a = uColorSpace == 1 ? signedPow(storedA, 2.2) : storedA;
   vec3 b = uColorSpace == 1 ? signedPow(storedB, 2.2) : storedB;
   vec3 relation;
@@ -1121,6 +1158,78 @@ uniform bool uFieldDiscardEnabled;
 uniform float uFieldDiscardThreshold;
 void main() {
   if (uFieldEnabled && uFieldDiscardEnabled && vShadowFieldSignal < uFieldDiscardThreshold) discard;
+}
+)GLSL";
+
+inline constexpr const char* spectralVertexShader = R"GLSL(
+#version 410 core
+layout(location=0) in vec3 aPosition;
+layout(location=1) in vec3 aNormal;
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+out vec3 vNormal;
+void main() {
+  vNormal = normalize(mat3(transpose(inverse(uModel))) * aNormal);
+  gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
+}
+)GLSL";
+
+inline constexpr const char* spectralFragmentShader = R"GLSL(
+#version 410 core
+in vec3 vNormal;
+layout(location=0) out vec4 displayColor;
+layout(location=1) out vec4 spectrum0;
+layout(location=2) out vec4 spectrum1;
+layout(location=3) out vec4 spectrum2;
+layout(location=4) out vec4 spectrum3;
+uniform int uMaterial;
+uniform int uIlluminant;
+uniform int uObserver;
+uniform float uExposure;
+uniform vec3 uLightDirection;
+uniform float uAmbient;
+
+const float reflA[16] = float[](0.545263,0.585386,0.584232,0.569249,0.278715,0.196356,0.610745,0.832594,0.636627,0.501370,0.367205,0.163679,0.364608,0.753793,0.632001,0.287699);
+const float reflB[16] = float[](0.375459,0.387827,0.440040,0.499116,0.822001,0.921461,0.507073,0.268122,0.431738,0.522901,0.606008,0.757043,0.507881,0.079945,0.176668,0.512301);
+const float day[16] = float[](1.040000,1.039887,1.039138,1.037145,1.033353,1.027288,1.018574,1.006950,0.992283,0.974574,0.953955,0.930687,0.905145,0.877805,0.849220,0.820000);
+const float tung[16] = float[](0.074256,0.105985,0.144881,0.190845,0.243469,0.302084,0.365819,0.433667,0.504545,0.577351,0.651010,0.724507,0.796918,0.867422,0.935312,1.000000);
+const float coneL[16] = float[](0.001204,0.005564,0.021110,0.065729,0.167973,0.352322,0.606531,0.856997,0.993846,0.945959,0.738991,0.473827,0.249352,0.107701,0.038180,0.011109);
+const float coneM[16] = float[](0.003362,0.016038,0.059587,0.172422,0.388558,0.681941,0.932102,0.992218,0.822578,0.531096,0.267052,0.104579,0.031895,0.007576,0.001401,0.000202);
+const float coneS[16] = float[](0.324652,0.706648,0.986207,0.882497,0.506336,0.186270,0.043937,0.006645,0.000644,0.000040,0.000002,0,0,0,0,0);
+
+float wavelength(int i) { return 400.0 + 20.0 * float(i); }
+float gaussian(float x, float center, float width) { float q=(x-center)/width; return exp(-0.5*q*q); }
+float lightAt(int i) {
+  if (uIlluminant == 0) return day[i];
+  if (uIlluminant == 1) return tung[i];
+  float w=wavelength(i); return 0.16 + 1.15*gaussian(w,445.0,13.0) + 0.95*gaussian(w,535.0,16.0) + 1.05*gaussian(w,615.0,18.0);
+}
+float sensitivity(int receptor, int i) {
+  if (uObserver == 0) return receptor==0 ? coneL[i] : receptor==1 ? coneM[i] : coneS[i];
+  float w=wavelength(i);
+  if (uObserver == 1) return receptor==0 ? gaussian(w,585.0,43.0) : receptor==1 ? gaussian(w,515.0,36.0) : gaussian(w,430.0,27.0);
+  return gaussian(w,507.0,48.0);
+}
+void main() {
+  float radiance[16];
+  float response[3]=float[](0.0,0.0,0.0);
+  float white[3]=float[](0.0,0.0,0.0);
+  float shade=uAmbient+(1.0-uAmbient)*max(dot(normalize(vNormal),normalize(uLightDirection)),0.0);
+  for (int i=0;i<16;++i) {
+    float reflectance=uMaterial==1 ? reflA[i] : uMaterial==2 ? reflB[i] : 0.32;
+    radiance[i]=reflectance*lightAt(i)*shade;
+    for(int r=0;r<3;++r) { float s=sensitivity(r,i); response[r]+=radiance[i]*s; white[r]+=lightAt(i)*s; }
+  }
+  vec3 normalized=vec3(response[0]/max(white[0],0.0001),response[1]/max(white[1],0.0001),response[2]/max(white[2],0.0001));
+  vec3 rgb;
+  if (uObserver == 2) rgb=vec3(normalized.x*0.72,normalized.x*0.84,normalized.x);
+  else rgb=vec3(dot(normalized,vec3(5.47221206,-4.64196010,0.16963708)),dot(normalized,vec3(-1.12524190,2.29317094,-0.16789520)),dot(normalized,vec3(0.02980165,-0.19318073,1.16364789)));
+  displayColor=vec4(max(rgb,vec3(0.0))*exp2(uExposure),1.0);
+  spectrum0=vec4(radiance[0],radiance[1],radiance[2],radiance[3]);
+  spectrum1=vec4(radiance[4],radiance[5],radiance[6],radiance[7]);
+  spectrum2=vec4(radiance[8],radiance[9],radiance[10],radiance[11]);
+  spectrum3=vec4(radiance[12],radiance[13],radiance[14],radiance[15]);
 }
 )GLSL";
 

@@ -261,7 +261,7 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   constexpr const char* colorSpaceIds[] = {"encoded_rgb", "linear_light"};
   constexpr const char* rangeIds[] = {"clamp_0_to_1", "preserve_signed_hdr", "wrap_fractional_part"};
   constexpr const char* maskIds[] = {"none", "pass_luminance", "pass_depth_0_to_10_units", "pass_image_edges", "pass_field"};
-  constexpr const char* sourceIds[] = {"accumulated_result", "current_pass", "render_pass", "fixed_color", "previous_frame", "render_pass_field"};
+  constexpr const char* sourceIds[] = {"accumulated_result", "current_pass", "render_pass", "fixed_color", "previous_frame", "render_pass_field", "render_pass_spectrum"};
   constexpr const char* interpolationIds[] = {"step", "linear", "smooth_step"};
   constexpr const char* valueKindIds[] = {"float", "vec2", "vec3", "color3", "color4", "angle",
     "boolean", "integer", "enumeration"};
@@ -292,6 +292,7 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   json << "{\n";
   json << "  \"schema\": \"graphics-lab.render-stack.v8\",\n";
   json << "  \"field_resources\": \"each pass produces an R16F scalar field buffer from reconstructed world position; named field sources and field masks consume it independently of pass color\",\n";
+  json << "  \"spectral_resources\": \"spectral scenes produce sixteen 400-700 nm radiance bands in four RGBA16F attachments; named spectrum operands integrate them through the selected observer before compositing\",\n";
   json << "  \"evaluation\": \"bottom_to_top_sequential_compositing\",\n";
   json << "  \"property_precedence\": \"global base, global track, local override, local track\",\n";
   json << "  \"seed_rule\": \"the first enabled pass becomes the accumulator; every later enabled pass applies its composite step\",\n";
@@ -434,8 +435,9 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
          << "\", \"pass_id\": " << c.sourceAPassId << "}, \"source_b\": {\"type\": \""
          << sourceIds[static_cast<int>(c.sourceB)] << "\", \"pass_id\": " << c.sourceBPassId
          << "}, \"interpretation_a\": \"";
-    constexpr std::array<const char*, 8> interpretationIds = {"raw_rgb", "l_cone", "m_cone", "s_cone",
-      "cone_luminance", "rod", "red_green_opponent", "blue_yellow_opponent"};
+    constexpr std::array<const char*, 11> interpretationIds = {"raw_rgb", "l_cone", "m_cone", "s_cone",
+      "cone_luminance", "rod", "red_green_opponent", "blue_yellow_opponent", "spectral_human",
+      "spectral_alternate", "spectral_rod"};
     json << interpretationIds[static_cast<int>(c.interpretationA)] << "\", \"interpretation_b\": \""
          << interpretationIds[static_cast<int>(c.interpretationB)]
          << "\", \"fixed_color_rgba\": [" << c.fixedColor.r << ", " << c.fixedColor.g << ", "

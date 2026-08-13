@@ -183,7 +183,7 @@ void normalizeForHardwareProfile(HardwareProfile profile, RendererState& state) 
 
 bool categoryAvailableForHardwareProfile(HardwareProfile profile, Category category) {
   if (profile == HardwareProfile::Unrestricted) return true;
-  return category != Category::Field && category != Category::Stencil && category != Category::Post;
+  return category != Category::Field && category != Category::Spectral && category != Category::Stencil && category != Category::Post;
 }
 
 } // namespace gfxlab

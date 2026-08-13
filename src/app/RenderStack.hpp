@@ -19,12 +19,12 @@ enum class CompositeColorSpace { EncodedRgb, LinearLight };
 enum class CompositeRange { Clamp, Preserve, Wrap };
 enum class CompositeInterpretation {
   RawRgb, LResponse, MResponse, SResponse, ConeLuminance, RodResponse,
-  RedGreenOpponent, BlueYellowOpponent
+  RedGreenOpponent, BlueYellowOpponent, SpectralHuman, SpectralAlternate, SpectralRod
 };
 enum class PassOutput { Color, Depth, Normals, VertexColor, FieldSignal };
 enum class CompositeMask { None, PassLuminance, PassDepth, PassEdges, PassField };
 enum class CompositeSource {
-  Accumulator, CurrentPass, RenderPass, FixedColor, PreviousFrame, RenderPassField
+  Accumulator, CurrentPass, RenderPass, FixedColor, PreviousFrame, RenderPassField, RenderPassSpectrum
 };
 enum class TextureSource { SceneMaterial, BuiltInChecker, ImportedOverride, White };
 enum class UvMapping { MeshUv0, PlanarXy, PlanarXz, PlanarYz };

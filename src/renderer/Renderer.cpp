@@ -82,6 +82,8 @@ struct RenderTarget {
   GLuint fieldTexture = 0;
   GLuint overdrawFbo = 0;
   GLuint overdrawTexture = 0;
+  GLuint spectralFbo = 0;
+  std::array<GLuint, 4> spectralTextures{};
   int width = 0;
   int height = 0;
   int depthPrecision = 0;
@@ -108,6 +110,8 @@ struct RenderTarget {
       glGenTextures(1, &fieldTexture);
       glGenFramebuffers(1, &overdrawFbo);
       glGenTextures(1, &overdrawTexture);
+      glGenFramebuffers(1, &spectralFbo);
+      glGenTextures(static_cast<GLsizei>(spectralTextures.size()), spectralTextures.data());
     }
 
     glBindTexture(GL_TEXTURE_2D, sceneTexture);
@@ -134,6 +138,29 @@ struct RenderTarget {
       GL_TEXTURE_2D, depthTexture, 0);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
       failRenderer("could not create resolved scene render target");
+
+    glBindFramebuffer(GL_FRAMEBUFFER, spectralFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTexture, 0);
+    for (std::size_t i = 0; i < spectralTextures.size(); ++i) {
+      glBindTexture(GL_TEXTURE_2D, spectralTextures[i]);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1 + static_cast<GLenum>(i),
+        GL_TEXTURE_2D, spectralTextures[i], 0);
+    }
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, packedStencil ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT,
+      GL_TEXTURE_2D, depthTexture, 0);
+    constexpr std::array<GLenum, 5> spectralDrawBuffers = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1,
+      GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3, GL_COLOR_ATTACHMENT4};
+    glDrawBuffers(static_cast<GLsizei>(spectralDrawBuffers.size()), spectralDrawBuffers.data());
+    const GLenum spectralStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (spectralStatus != GL_FRAMEBUFFER_COMPLETE)
+      failRenderer("could not create spectral render target (status " + std::to_string(spectralStatus) + ")");
 
     if (samples > 1) {
       glBindRenderbuffer(GL_RENDERBUFFER, multisampleColor);
@@ -195,6 +222,8 @@ struct RenderTarget {
     glDeleteTextures(1, &fieldTexture);
     glDeleteFramebuffers(1, &overdrawFbo);
     glDeleteTextures(1, &overdrawTexture);
+    glDeleteFramebuffers(1, &spectralFbo);
+    glDeleteTextures(static_cast<GLsizei>(spectralTextures.size()), spectralTextures.data());
   }
 };
 
@@ -206,6 +235,7 @@ public:
     relationProgram_ = makeProgram(outputVertexShader, relationFragmentShader);
     fieldProgram_ = makeProgram(outputVertexShader, fieldFragmentShader);
     sdfIsoProgram_ = makeProgram(outputVertexShader, sdfIsoSurfaceFragmentShader);
+    spectralProgram_ = makeProgram(spectralVertexShader, spectralFragmentShader);
     copyProgram_ = makeProgram(outputVertexShader, copyFragmentShader);
     displayProgram_ = makeProgram(outputVertexShader, displayReconstructionFragmentShader);
     shadowProgram_ = makeProgram(shadowVertexShader, shadowFragmentShader);
@@ -336,6 +366,7 @@ public:
     glDeleteProgram(relationProgram_);
     glDeleteProgram(fieldProgram_);
     glDeleteProgram(sdfIsoProgram_);
+    glDeleteProgram(spectralProgram_);
     glDeleteProgram(copyProgram_);
     glDeleteProgram(displayProgram_);
     glDeleteProgram(shadowProgram_);
@@ -448,6 +479,12 @@ public:
     const int samples = state.rasterization.samples == 1 ? 1 : std::min(state.rasterization.samples, maxSamples_);
     const bool needsStencil = scene == TestScene::StencilMask && state.stencil.enabled;
     target.resize(state.output.width, state.output.height, state.depth.precision, samples, needsStencil);
+    if (scene != TestScene::SpectralMetamers) {
+      glBindFramebuffer(GL_FRAMEBUFFER, target.spectralFbo);
+      constexpr std::array<float, 4> zero = {0, 0, 0, 0};
+      for (int attachment = 1; attachment <= 4; ++attachment)
+        glClearBufferfv(GL_COLOR, attachment, zero.data());
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, samples > 1 ? target.multisampleFbo : target.sceneFbo);
     glViewport(0, 0, target.width, target.height);
     glDepthMask(GL_TRUE);
@@ -737,6 +774,8 @@ public:
         drawMesh(plane_, glm::translate(glm::scale(identity, glm::vec3(0.80f, 1.0f, 0.42f)),
           glm::vec3(0.0f, -1.55f, 0.0f)), glm::vec3(0.18f, 0.22f, 0.28f));
         break;
+      case TestScene::SpectralMetamers:
+        break;
       case TestScene::ImportedModel:
         for (const ImportedSubmeshGpu& submesh : importedSubmeshes_) {
           const ImportedMaterialGpu* material = submesh.materialIndex < importedMaterials_.size()
@@ -777,6 +816,47 @@ public:
         (needsStencil ? GL_STENCIL_BUFFER_BIT : 0);
       glBlitFramebuffer(0, 0, target.width, target.height, 0, 0, target.width, target.height,
         resolveBuffers, GL_NEAREST);
+    }
+
+    if (scene == TestScene::SpectralMetamers) {
+      glBindFramebuffer(GL_FRAMEBUFFER, target.spectralFbo);
+      constexpr std::array<GLenum, 5> buffers = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1,
+        GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3, GL_COLOR_ATTACHMENT4};
+      glDrawBuffers(static_cast<GLsizei>(buffers.size()), buffers.data());
+      glViewport(0, 0, target.width, target.height);
+      if (state.depth.testing) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+      glDepthMask(state.depth.writing ? GL_TRUE : GL_FALSE);
+      glDepthFunc(depthFunctions[std::clamp(state.depth.function, 0, 3)]);
+      glEnable(GL_CULL_FACE);
+      glCullFace(GL_BACK);
+      glDisable(GL_BLEND);
+      glClearColor(0.018f, 0.021f, 0.027f, 1.0f);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      glUseProgram(spectralProgram_);
+      glUniformMatrix4fv(glGetUniformLocation(spectralProgram_, "uView"), 1, GL_FALSE, glm::value_ptr(view));
+      glUniformMatrix4fv(glGetUniformLocation(spectralProgram_, "uProjection"), 1, GL_FALSE,
+        glm::value_ptr(projection));
+      glUniform3fv(glGetUniformLocation(spectralProgram_, "uLightDirection"), 1,
+        glm::value_ptr(lightDirection));
+      glUniform1f(glGetUniformLocation(spectralProgram_, "uAmbient"), state.lighting.ambient);
+      glUniform1i(glGetUniformLocation(spectralProgram_, "uIlluminant"), state.spectral.illuminant);
+      glUniform1i(glGetUniformLocation(spectralProgram_, "uObserver"), state.spectral.observer);
+      glUniform1f(glGetUniformLocation(spectralProgram_, "uExposure"), state.spectral.exposure);
+      glBindVertexArray(vao_);
+      const auto drawSpectral = [this, &passTransform](const MeshRange& mesh, const glm::mat4& transform,
+          const int material) {
+        const glm::mat4 modelMatrix = passTransform * transform;
+        glUniformMatrix4fv(glGetUniformLocation(spectralProgram_, "uModel"), 1, GL_FALSE,
+          glm::value_ptr(modelMatrix));
+        glUniform1i(glGetUniformLocation(spectralProgram_, "uMaterial"), material);
+        glDrawArrays(GL_TRIANGLES, mesh.first, mesh.count);
+      };
+      drawSpectral(smoothSphere_, glm::translate(identity, glm::vec3(-1.25f, 0.0f, 0.0f)), 1);
+      drawSpectral(smoothSphere_, glm::translate(identity, glm::vec3(1.25f, 0.0f, 0.0f)), 2);
+      const glm::mat4 floor = glm::translate(identity, glm::vec3(0.0f, -1.18f, -0.6f)) *
+        glm::rotate(identity, glm::radians(-90.0f), glm::vec3(1, 0, 0)) *
+        glm::scale(identity, glm::vec3(3.5f, 2.4f, 1.0f));
+      drawSpectral(quad_, floor, 0);
     }
 
     if (state.field.enabled && state.field.producerKind == 1 && state.field.isoSurfaceEnabled) {
@@ -934,6 +1014,10 @@ public:
           countMesh(plane_, glm::translate(glm::scale(identity, glm::vec3(0.80f, 1.0f, 0.42f)),
             glm::vec3(0.0f, -1.55f, 0.0f)));
           break;
+        case TestScene::SpectralMetamers:
+          countMesh(smoothSphere_, glm::translate(identity, glm::vec3(-1.25f, 0.0f, 0.0f)));
+          countMesh(smoothSphere_, glm::translate(identity, glm::vec3(1.25f, 0.0f, 0.0f)));
+          break;
         case TestScene::ImportedModel:
           countMesh(imported_, identity);
           break;
@@ -997,7 +1081,8 @@ public:
   }
 
   GLuint compositeTextures(const GLuint imageA, const GLuint imageB, const GLuint maskDepth,
-      const GLuint maskField,
+      const GLuint maskField, const std::array<GLuint, 4>& spectrumA,
+      const std::array<GLuint, 4>& spectrumB,
       const RendererState& maskState, const CompositeStep& step,
       const DisplayReconstructionState& observer, const std::size_t outputIndex) {
     const std::size_t pingPong = outputIndex % relationFbos_.size();
@@ -1013,6 +1098,16 @@ public:
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, imageB);
     glUniform1i(glGetUniformLocation(relationProgram_, "uImageB"), 1);
+    for (int group = 0; group < 4; ++group) {
+      glActiveTexture(GL_TEXTURE4 + group);
+      glBindTexture(GL_TEXTURE_2D, spectrumA[static_cast<std::size_t>(group)]);
+      const std::string uniformName = "uSpectrumA" + std::to_string(group);
+      glUniform1i(glGetUniformLocation(relationProgram_, uniformName.c_str()), 4 + group);
+      glActiveTexture(GL_TEXTURE8 + group);
+      glBindTexture(GL_TEXTURE_2D, spectrumB[static_cast<std::size_t>(group)]);
+      const std::string uniformNameB = "uSpectrumB" + std::to_string(group);
+      glUniform1i(glGetUniformLocation(relationProgram_, uniformNameB.c_str()), 8 + group);
+    }
     glUniform1i(glGetUniformLocation(relationProgram_, "uSourceAMode"), static_cast<int>(step.sourceA));
     glUniform1i(glGetUniformLocation(relationProgram_, "uSourceBMode"), static_cast<int>(step.sourceB));
     glUniform1i(glGetUniformLocation(relationProgram_, "uInterpretationA"),
@@ -1062,7 +1157,7 @@ public:
     step.gain = gain;
     step.bias = bias;
     return compositeTextures(passTargets_[0].outputTexture, passTargets_[1].outputTexture,
-      passTargets_[1].depthTexture, passTargets_[1].fieldTexture, RendererState{}, step,
+      passTargets_[1].depthTexture, passTargets_[1].fieldTexture, {}, {}, RendererState{}, step,
       DisplayReconstructionState{}, 0);
   }
 
@@ -1092,17 +1187,28 @@ public:
         case CompositeSource::PreviousFrame: return historyTexture_;
         case CompositeSource::RenderPassField:
           return passTargets_[passIndexForId(sourcePassId)].fieldTexture;
+        case CompositeSource::RenderPassSpectrum:
+          return passTargets_[passIndexForId(sourcePassId)].outputTexture;
         }
         return passTexture;
       };
       const GLuint imageA = sourceTexture(pass.composite.sourceA, pass.composite.sourceAPassId);
       const GLuint imageB = sourceTexture(pass.composite.sourceB, pass.composite.sourceBPassId);
+      const auto sourceSpectrum = [&](const CompositeSource source, const int sourcePassId) {
+        return source == CompositeSource::RenderPassSpectrum
+          ? passTargets_[passIndexForId(sourcePassId)].spectralTextures : std::array<GLuint, 4>{};
+      };
+      const std::array<GLuint, 4> spectrumA = sourceSpectrum(pass.composite.sourceA,
+        pass.composite.sourceAPassId);
+      const std::array<GLuint, 4> spectrumB = sourceSpectrum(pass.composite.sourceB,
+        pass.composite.sourceBPassId);
       std::size_t maskPassIndex = passIndex;
       if (pass.composite.sourceB == CompositeSource::RenderPass ||
-          pass.composite.sourceB == CompositeSource::RenderPassField)
+          pass.composite.sourceB == CompositeSource::RenderPassField ||
+          pass.composite.sourceB == CompositeSource::RenderPassSpectrum)
         maskPassIndex = passIndexForId(pass.composite.sourceBPassId);
       accumulated = compositeTextures(imageA, imageB, passTargets_[maskPassIndex].depthTexture,
-        passTargets_[maskPassIndex].fieldTexture, pass.renderer, pass.composite, stack.display(),
+        passTargets_[maskPassIndex].fieldTexture, spectrumA, spectrumB, pass.renderer, pass.composite, stack.display(),
         compositeIndex++);
     }
     if (accumulated != 0) copyToFrameHistory(accumulated);
@@ -1220,7 +1326,7 @@ private:
   }
 
   GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0, fieldProgram_ = 0,
-    sdfIsoProgram_ = 0,
+    sdfIsoProgram_ = 0, spectralProgram_ = 0,
     copyProgram_ = 0, displayProgram_ = 0,
     shadowProgram_ = 0, overdrawProgram_ = 0;
   GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, indexedTexture_ = 0,
