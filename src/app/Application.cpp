@@ -56,6 +56,32 @@ bool isNintendo64Example(handbook::Example example) {
   return example >= handbook::Example::N64ThreePoint && example <= handbook::Example::N64VideoInterface;
 }
 
+void applyUiScale(const float scale) {
+  setStyle();
+  ImGui::GetStyle().ScaleAllSizes(scale);
+  ImGuiIO& io = ImGui::GetIO();
+  io.Fonts->Clear();
+  ImFontConfig fontConfig;
+  fontConfig.SizePixels = 13.0f * scale;
+  io.Fonts->AddFontDefault(&fontConfig);
+  ImGui_ImplOpenGL3_DestroyFontsTexture();
+}
+
+void stepUiScale(float& scale, const int direction) {
+  constexpr std::array<float, 8> scales = {0.75f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f};
+  if (direction > 0) {
+    const auto next = std::find_if(scales.begin(), scales.end(), [scale](const float candidate) {
+      return candidate > scale + 0.001f;
+    });
+    scale = next == scales.end() ? scales.back() : *next;
+  } else {
+    const auto next = std::find_if(scales.rbegin(), scales.rend(), [scale](const float candidate) {
+      return candidate < scale - 0.001f;
+    });
+    scale = next == scales.rend() ? scales.front() : *next;
+  }
+}
+
 } // namespace
 
 namespace gfxlab {
@@ -106,6 +132,8 @@ int runApplication() {
   bool viewportGizmoUsing = false;
   bool previewAnimation = true;
   bool inspectorGlobalScope = true;
+  float uiScale = 1.0f;
+  float appliedUiScale = 1.0f;
   WorkspaceWindows workspaceWindows;
   AnimationTimeline animationTimeline;
   double previousFrameTime = glfwGetTime();
@@ -150,6 +178,10 @@ int runApplication() {
     const float deltaSeconds = static_cast<float>(std::min(frameTime - previousFrameTime, 0.1));
     previousFrameTime = frameTime;
     animationTimeline.advance(deltaSeconds);
+    if (std::abs(uiScale - appliedUiScale) > 0.001f) {
+      applyUiScale(uiScale);
+      appliedUiScale = uiScale;
+    }
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
@@ -161,6 +193,11 @@ int runApplication() {
       restoreHistory(io.KeyShift);
     else if (!io.WantTextInput && commandModifier && ImGui::IsKeyPressed(ImGuiKey_Y, false))
       restoreHistory(true);
+    if (!io.WantTextInput && commandModifier && ImGui::IsKeyPressed(ImGuiKey_0, false)) uiScale = 1.0f;
+    if (!io.WantTextInput && commandModifier && (ImGui::IsKeyPressed(ImGuiKey_Equal, false) ||
+        ImGui::IsKeyPressed(ImGuiKey_KeypadAdd, false))) stepUiScale(uiScale, 1);
+    if (!io.WantTextInput && commandModifier && ImGui::IsKeyPressed(ImGuiKey_Minus, false))
+      stepUiScale(uiScale, -1);
     if (viewportHovered) {
       if (viewportAcceptsCameraInput && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
         camera.yaw -= io.MouseDelta.x * 0.008f;
@@ -195,7 +232,7 @@ int runApplication() {
     };
 
     const WorkspaceActions workspaceActions = beginWorkspace(workspaceWindows,
-      editorHistory.canUndo(), editorHistory.canRedo());
+      editorHistory.canUndo(), editorHistory.canRedo(), uiScale);
     if (workspaceActions.undo) restoreHistory(false);
     if (workspaceActions.redo) restoreHistory(true);
     if (workspaceActions.importModel) importModelFromDialog();

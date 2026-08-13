@@ -52,7 +52,7 @@ struct ViewportWindowResult {
   bool gizmoUsing = false;
 };
 
-WorkspaceActions beginWorkspace(WorkspaceWindows& windows, bool canUndo, bool canRedo);
+WorkspaceActions beginWorkspace(WorkspaceWindows& windows, bool canUndo, bool canRedo, float& uiScale);
 SceneWindowResult drawSceneWindow(bool& open, TestScene& scene, HardwareProfile& profile,
   const ModelAsset* importedModel);
 void drawRenderPassesWindow(bool& open, RenderStack& stack, AnimationTimeline& timeline,

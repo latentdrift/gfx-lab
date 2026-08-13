@@ -63,7 +63,8 @@ void windowMenu(WorkspaceWindows& windows) {
 
 } // namespace
 
-WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, const bool canRedo) {
+WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, const bool canRedo,
+    float& uiScale) {
   WorkspaceActions actions;
   if (ImGui::BeginMainMenuBar()) {
     if (ImGui::BeginMenu("File")) {
@@ -76,6 +77,20 @@ WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, c
     if (ImGui::BeginMenu("Edit")) {
       if (ImGui::MenuItem("Undo", "Ctrl+Z", false, canUndo)) actions.undo = true;
       if (ImGui::MenuItem("Redo", "Ctrl+Shift+Z", false, canRedo)) actions.redo = true;
+      ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("View")) {
+      if (ImGui::BeginMenu("UI Scale")) {
+        constexpr std::array<float, 8> scales = {0.75f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f};
+        constexpr std::array<const char*, 8> labels = {
+          "75%", "90%", "100%", "110%", "125%", "150%", "175%", "200%"};
+        for (std::size_t index = 0; index < scales.size(); ++index)
+          if (ImGui::MenuItem(labels[index], nullptr, std::abs(uiScale - scales[index]) < 0.001f))
+            uiScale = scales[index];
+        ImGui::Separator();
+        ImGui::TextDisabled("Ctrl+- / Ctrl+= / Ctrl+0");
+        ImGui::EndMenu();
+      }
       ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Window")) {
