@@ -20,8 +20,10 @@ add_executable(graphics-lab
   src/app/EditorHistory.cpp
   src/app/FileDialog.cpp
   src/app/HardwareProfile.cpp
+  src/app/PassEditing.cpp
   src/app/RenderStack.cpp
   src/app/State.cpp
+  src/app/Validation.cpp
   src/handbook/Handbook.cpp
   src/renderer/Renderer.cpp
   src/renderer/TestGeometry.cpp
