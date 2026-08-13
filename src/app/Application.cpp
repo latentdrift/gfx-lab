@@ -353,9 +353,6 @@ int runApplication() {
       inspectorGlobalScope);
 
     if (workspaceWindows.animation) {
-      ImGui::SetNextWindowSize(ImVec2(900.0f, 420.0f), ImGuiCond_FirstUseEver);
-      ImGui::SetNextWindowSizeConstraints(ImVec2(420.0f * uiScale, 260.0f * uiScale),
-        ImVec2(FLT_MAX, FLT_MAX));
       if (ImGui::Begin("Animation Timeline", &workspaceWindows.animation)) {
         keepCurrentWindowVisible();
         drawAnimationEditor(animationTimeline, renderStack, previewAnimation, inspectorGlobalScope);

@@ -21,7 +21,7 @@
 namespace gfxlab::ui {
 namespace {
 
-constexpr const char* workspaceId = "Graphics Lab Workspace v6";
+constexpr const char* workspaceId = "Graphics Lab Workspace v7";
 
 void buildDefaultLayout(const ImGuiID dockspace) {
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -40,7 +40,11 @@ void buildDefaultLayout(const ImGuiID dockspace) {
   ImGui::DockBuilderSplitNode(leftTop, ImGuiDir_Down, 0.48f, &leftBottom, &leftTop);
   ImGui::DockBuilderDockWindow("Scene", leftTop);
   ImGui::DockBuilderDockWindow("Render Passes", leftBottom);
-  ImGui::DockBuilderDockWindow("Viewport", center);
+  ImGuiID centerBottom = 0;
+  ImGuiID centerTop = center;
+  ImGui::DockBuilderSplitNode(centerTop, ImGuiDir_Down, 0.30f, &centerBottom, &centerTop);
+  ImGui::DockBuilderDockWindow("Viewport", centerTop);
+  ImGui::DockBuilderDockWindow("Animation Timeline", centerBottom);
   ImGuiID rightBottom = 0;
   ImGuiID rightTop = right;
   ImGui::DockBuilderSplitNode(rightTop, ImGuiDir_Down, 0.34f, &rightBottom, &rightTop);
