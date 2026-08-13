@@ -33,6 +33,7 @@
               imgui
               assimp
               nativefiledialog-extended
+              stb
               zlib
               gtk3
               gsettings-desktop-schemas
@@ -64,6 +65,7 @@
               imgui
               assimp
               nativefiledialog-extended
+              stb
               zlib
               gtk3
               gsettings-desktop-schemas

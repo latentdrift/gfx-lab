@@ -127,9 +127,16 @@ int runApplication() {
     const ModelImportResult importedFixture = importModelAsset("tests/fixtures/import_triangle.obj");
     if (!importedFixture || importedFixture.asset->triangleCount != 1 ||
         importedFixture.asset->vertices.size() != 3 || !importedFixture.asset->hasTextureCoordinates ||
+        importedFixture.asset->submeshes.size() != 1 || importedFixture.asset->materials.empty() ||
+        importedFixture.asset->textures.size() != 1 ||
+        importedFixture.asset->materials[importedFixture.asset->submeshes.front().materialIndex].baseColorTexture != 0 ||
+        importedFixture.asset->textures.front().width != 2 || importedFixture.asset->textures.front().height != 2 ||
         std::abs((importedFixture.asset->sourceBoundsMaximum.x - importedFixture.asset->sourceBoundsMinimum.x) *
           importedFixture.asset->normalizationScale - 3.0f) > 0.0001f)
-      fail("OBJ model import or normalization failed validation");
+      fail("OBJ model, material, texture, or normalization import failed validation");
+    const TextureImportResult importedTexture = importTextureAsset("tests/fixtures/import_checker.pgm");
+    if (!importedTexture || importedTexture.asset->rgba8.size() != 16 || importedTexture.asset->contentHash == 0)
+      fail("standalone texture import failed validation");
     if (importModelAsset("tests/fixtures/not_a_model.txt"))
       fail("model importer accepted an unsupported file type");
     renderer.setImportedModel(*importedFixture.asset);
