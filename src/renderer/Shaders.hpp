@@ -440,6 +440,11 @@ uniform float uBias;
 uniform float uOpacity;
 uniform int uColorSpace;
 uniform int uRangeMode;
+uniform sampler2D uMaskDepth;
+uniform int uMaskMode;
+uniform bool uInvertMask;
+uniform float uMaskNearPlane;
+uniform bool uMaskOrthographic;
 out vec4 fragColor;
 
 vec3 signedPow(vec3 value, float exponent) {
@@ -467,7 +472,25 @@ void main() {
   relation = relation * uGain + uBias;
   if (uRangeMode == 0) relation = clamp(relation, 0.0, 1.0);
   else if (uRangeMode == 2) relation = fract(relation);
-  vec3 composed = mix(a, relation, uOpacity);
+  float mask = 1.0;
+  if (uMaskMode == 1) {
+    mask = dot(clamp(storedB, 0.0, 1.0), vec3(0.2126, 0.7152, 0.0722));
+  } else if (uMaskMode == 2) {
+    float rawDepth = texture(uMaskDepth, vUv).r;
+    float linearDepth;
+    if (uMaskOrthographic) linearDepth = mix(uMaskNearPlane, 100.0, rawDepth);
+    else {
+      float ndcDepth = rawDepth * 2.0 - 1.0;
+      linearDepth = (2.0 * uMaskNearPlane * 100.0) /
+        (100.0 + uMaskNearPlane - ndcDepth * (100.0 - uMaskNearPlane));
+    }
+    mask = clamp(linearDepth / 10.0, 0.0, 1.0);
+  } else if (uMaskMode == 3) {
+    vec3 change = abs(dFdx(storedB)) + abs(dFdy(storedB));
+    mask = smoothstep(0.025, 0.20, max(change.r, max(change.g, change.b)));
+  }
+  if (uInvertMask) mask = 1.0 - mask;
+  vec3 composed = mix(a, relation, uOpacity * mask);
   if (uColorSpace == 1) composed = signedPow(composed, 1.0 / 2.2);
   fragColor = vec4(composed, 1.0);
 }

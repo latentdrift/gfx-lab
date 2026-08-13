@@ -49,7 +49,20 @@ void drawPassInspector(RenderStack& stack) {
   ImGui::DragFloat2("UV offset", &pass.perturbation.uvOffset.x, 1.0f / 512.0f, -1.0f, 1.0f, "%.5f");
   ImGui::DragFloat2("UV scale", &pass.perturbation.uvScale.x, 0.001f, 0.25f, 4.0f, "%.4f");
 
-  if (stack.selectedIndex() == 0) {
+  std::size_t firstEnabled = stack.passes().size();
+  for (std::size_t index = 0; index < stack.passes().size(); ++index) {
+    if (stack.passes()[index].enabled) {
+      firstEnabled = index;
+      break;
+    }
+  }
+  if (!pass.enabled) {
+    ImGui::Spacing();
+    ImGui::Separator();
+    description("This pass is disabled, so its composite step is currently skipped. Its settings are retained.");
+    return;
+  }
+  if (stack.selectedIndex() == firstEnabled) {
     ImGui::Spacing();
     ImGui::Separator();
     description("The first enabled pass seeds the accumulated image. Composite controls begin on later passes.");
@@ -81,6 +94,13 @@ void drawPassInspector(RenderStack& stack) {
   const char* ranges[] = {"Clamp to 0..1", "Preserve signed / HDR", "Wrap with fract"};
   int range = static_cast<int>(pass.composite.range);
   if (ImGui::Combo("Range behavior", &range, ranges, 3)) pass.composite.range = static_cast<CompositeRange>(range);
+  const char* masks[] = {"None", "Pass luminance", "Pass depth (0..10 units)", "Pass image edges"};
+  int mask = static_cast<int>(pass.composite.mask);
+  if (ImGui::Combo("Mask", &mask, masks, 4)) pass.composite.mask = static_cast<CompositeMask>(mask);
+  if (pass.composite.mask != CompositeMask::None) {
+    ImGui::SameLine();
+    ImGui::Checkbox("Invert", &pass.composite.invertMask);
+  }
 }
 
 } // namespace gfxlab::ui

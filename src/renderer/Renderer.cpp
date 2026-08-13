@@ -664,8 +664,8 @@ public:
     return target.outputTexture;
   }
 
-  GLuint compositeTextures(const GLuint imageA, const GLuint imageB, const CompositeStep& step,
-      const std::size_t outputIndex) {
+  GLuint compositeTextures(const GLuint imageA, const GLuint imageB, const GLuint maskDepth,
+      const RendererState& maskState, const CompositeStep& step, const std::size_t outputIndex) {
     const std::size_t pingPong = outputIndex % relationFbos_.size();
     glBindFramebuffer(GL_FRAMEBUFFER, relationFbos_[pingPong]);
     glViewport(0, 0, relationWidth_, relationHeight_);
@@ -679,12 +679,19 @@ public:
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, imageB);
     glUniform1i(glGetUniformLocation(relationProgram_, "uImageB"), 1);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, maskDepth);
+    glUniform1i(glGetUniformLocation(relationProgram_, "uMaskDepth"), 2);
     glUniform1i(glGetUniformLocation(relationProgram_, "uOperator"), static_cast<int>(step.operation));
     glUniform1f(glGetUniformLocation(relationProgram_, "uGain"), step.gain);
     glUniform1f(glGetUniformLocation(relationProgram_, "uBias"), step.bias);
     glUniform1f(glGetUniformLocation(relationProgram_, "uOpacity"), step.opacity);
     glUniform1i(glGetUniformLocation(relationProgram_, "uColorSpace"), static_cast<int>(step.colorSpace));
     glUniform1i(glGetUniformLocation(relationProgram_, "uRangeMode"), static_cast<int>(step.range));
+    glUniform1i(glGetUniformLocation(relationProgram_, "uMaskMode"), static_cast<int>(step.mask));
+    glUniform1i(glGetUniformLocation(relationProgram_, "uInvertMask"), step.invertMask);
+    glUniform1f(glGetUniformLocation(relationProgram_, "uMaskNearPlane"), maskState.camera.nearPlane);
+    glUniform1i(glGetUniformLocation(relationProgram_, "uMaskOrthographic"), maskState.camera.orthographic);
     glBindVertexArray(fullscreenVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -696,7 +703,8 @@ public:
     step.operation = operation;
     step.gain = gain;
     step.bias = bias;
-    return compositeTextures(passTargets_[0].outputTexture, passTargets_[1].outputTexture, step, 0);
+    return compositeTextures(passTargets_[0].outputTexture, passTargets_[1].outputTexture,
+      passTargets_[1].depthTexture, RendererState{}, step, 0);
   }
 
   GLuint composite(const RenderStack& stack) {
@@ -710,7 +718,8 @@ public:
         accumulated = passTexture;
         continue;
       }
-      accumulated = compositeTextures(accumulated, passTexture, pass.composite, compositeIndex++);
+      accumulated = compositeTextures(accumulated, passTexture, passTargets_[passIndex].depthTexture,
+        pass.renderer, pass.composite, compositeIndex++);
     }
     return accumulated;
   }

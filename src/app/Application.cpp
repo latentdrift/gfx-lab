@@ -97,6 +97,18 @@ int runApplication() {
       renderer.renderPass(compositeValidation.passes()[passIndex], camera, scene, passIndex);
     if (renderer.composite(compositeValidation) == 0)
       fail("sequential render-pass compositing failed validation");
+    for (int mask = static_cast<int>(CompositeMask::None); mask <= static_cast<int>(CompositeMask::PassEdges); ++mask) {
+      compositeValidation.passes()[2].composite.mask = static_cast<CompositeMask>(mask);
+      compositeValidation.passes()[2].composite.invertMask = mask != static_cast<int>(CompositeMask::None);
+      if (renderer.composite(compositeValidation) == 0) fail("render-pass composite mask failed validation");
+    }
+    const std::string stackConfig = renderStackConfigJson(compositeValidation, camera, scene,
+      HardwareProfile::Unrestricted);
+    if (stackConfig.find("graphics-lab.render-stack.v1") == std::string::npos ||
+        stackConfig.find("\"passes\"") == std::string::npos ||
+        stackConfig.find("\"perturbation\"") == std::string::npos ||
+        stackConfig.find("\"composite_into_previous\"") == std::string::npos)
+      fail("render-pass stack missing from config export");
     constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,
       handbook::Example::AffineMapping, handbook::Example::TextureMinification, handbook::Example::NormalMapping,
       handbook::Example::LightingInterpolation, handbook::Example::DepthPrecision, handbook::Example::Transparency,
@@ -262,8 +274,8 @@ int runApplication() {
     if (ImGui::IsItemHovered())
       ImGui::SetTooltip("Apply the recommended renderer state and camera framing for the selected scene.");
     ImGui::SameLine();
-    if (ImGui::Button("Copy pass JSON")) {
-      const std::string exportedConfig = configJson(renderStack.selected().renderer, camera, scene, hardwareProfile);
+    if (ImGui::Button("Copy stack JSON")) {
+      const std::string exportedConfig = renderStackConfigJson(renderStack, camera, scene, hardwareProfile);
       ImGui::SetClipboardText(exportedConfig.c_str());
       configCopiedAt = glfwGetTime();
     }
@@ -384,17 +396,14 @@ int runApplication() {
     if (handbookAction.type != handbook::ActionType::None && isNintendo64Example(handbookAction.example))
       hardwareProfile = HardwareProfile::Nintendo64;
     if (handbookAction.type == handbook::ActionType::ApplyToA) {
-      applyHandbookExample(handbookAction.example, false, renderStack.selected().renderer, camera, scene, category);
+      applyHandbookExample(handbookAction.example, false, renderStack.passes().front().renderer, camera, scene, category);
     } else if (handbookAction.type == handbook::ActionType::ApplyToB) {
-      RendererState exampleState;
-      applyHandbookExample(handbookAction.example, true, exampleState, camera, scene, category);
-      if (renderStack.passes().size() < 2) {
+      if (renderStack.selectedIndex() == 0) {
         renderStack.select(0);
-        renderStack.duplicateSelected();
+        if (renderStack.passes().size() < 2) renderStack.duplicateSelected();
+        else renderStack.select(1);
       }
-      constexpr std::size_t alternative = 1;
-      renderStack.passes()[alternative].renderer = exampleState;
-      renderStack.select(alternative);
+      applyHandbookExample(handbookAction.example, true, renderStack.selected().renderer, camera, scene, category);
     } else if (handbookAction.type == handbook::ActionType::LoadComparison) {
       renderStack = RenderStack{};
       applyHandbookExample(handbookAction.example, false, renderStack.passes()[0].renderer, camera, scene, category);

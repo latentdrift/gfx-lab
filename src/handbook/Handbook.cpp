@@ -300,11 +300,17 @@ constexpr std::array articles = {
     "Specify framebuffer resolution/format, RDP coverage AA, VI reconstruction, divot filtering, and final display scaling separately.", Diagram::Output,
     Example::N64VideoInterface, "VI reconstruction and divot filters disabled", "Approximate VI reconstruction plus horizontal divot filter"},
   Article{"Output", "Render algebra between completed images",
-    "Render algebra evaluates the same aligned scene through two renderer states A and B, then computes a per-pixel, usually per-channel relationship F(A, B). Absolute difference preserves disagreement magnitude; signed difference also preserves which renderer produced the larger value.",
-    "A separate fullscreen pass after both selected renderer pipelines have produced images",
+    "Render algebra evaluates correlated render passes, then computes a per-pixel, usually per-channel relationship F(accumulator, pass). Absolute difference preserves disagreement magnitude; signed difference also preserves which input produced the larger value. Repeating the operation forms a bottom-to-top pass stack.",
+    "Separate fullscreen passes after each selected renderer pipeline has produced an image",
     "Agreement, opposition, and partial channel disagreement become the subject of the image. Clamped extrema can appear black, white, or intensely saturated without representing physical darkness or emitted light.",
-    "Camera, geometry, resolution, and sample alignment must match if the goal is pipeline comparison. Encoded-RGB versus linear-light arithmetic changes the result; gain reveals small residuals, bias displays signed values, and clamping deliberately destroys out-of-range magnitude.",
+    "Camera, geometry, resolution, and sample alignment must match if the goal is pipeline comparison. Deliberate perturbation makes those mismatches expressive instead. Encoded-RGB versus linear-light arithmetic changes the result; gain reveals small residuals, bias displays signed values, and clamp, preserve, or wrap policies treat extrema differently.",
     "Call this comparative rendering, image-space arithmetic, render algebra, or difference compositing. State the operator and whether it runs before or after quantization, dithering, framebuffer blending, and display reconstruction. Do not confuse it with an RDP material combiner or framebuffer alpha blending.", Diagram::Comparison},
+  Article{"Engine architecture", "Render-pass stacks and controlled perturbation",
+    "A render-pass stack rerenders a shared scene through multiple pass definitions, then combines their output images sequentially. Duplicating a pass preserves spatial correlation; a small camera, geometry, UV, precision, or shading change creates structured disagreement rather than unrelated image noise.",
+    "CPU pass scheduling, per-pass render targets, and fullscreen compositing passes",
+    "Near-duplicates reveal silhouettes, parallax, topology, texture parameterization, depth boundaries, sampling thresholds, and color extrema as controllable interference structures.",
+    "A duplicated framebuffer can only receive image-space edits; a duplicated render pass can alter the 3D interpretation and rerasterize it. More passes increase render-target memory, scene submission, fill cost, and the difficulty of attributing a result to one mutation.",
+    "Describe a pass by its scene inputs, renderer state, perturbation, output buffer, render-target format, and composite step. This resembles a layer stack but each layer may be a complete rerender rather than a stored bitmap.", Diagram::Comparison},
   Article{"Engine architecture", "Asset, scene, material, and renderer responsibilities",
     "Assets define authored data. The scene defines objects, transforms, cameras, and lights. Materials define surface inputs and shading. The renderer schedules passes and configures GPU state.",
     "Whole engine", "A coherent visual style emerges from constraints across all four responsibility areas.",
@@ -417,7 +423,8 @@ constexpr std::array quickReads = {
   QuickRead{"Color quantization and dithering", "Fewer allowed colors create bands; dithering rearranges the rounding errors into a controlled spatial pattern."},
   QuickRead{"Internal resolution and upscaling", "Render the whole scene into a smaller image first, then enlarge that finished image for the window."},
   QuickRead{"N64 Video Interface filtering", "After rendering is finished, the VI reconstructs and scales the framebuffer signal; this is separate from filtering a material texture."},
-  QuickRead{"Render algebra between completed images", "Render A and B separately, then make a third image whose pixels describe how those two completed renderings agree or disagree."},
+  QuickRead{"Render algebra between completed images", "Start with one completed pass, then make each later pass change the accumulated image according to an explicit per-pixel equation."},
+  QuickRead{"Render-pass stacks and controlled perturbation", "Duplicate a 3D interpretation, make the copy slightly wrong, then composite the correlated disagreement into the passes below it."},
   QuickRead{"Asset, scene, material, and renderer responsibilities", "Assets provide data, the scene arranges it, materials describe surfaces, and the renderer schedules the work that produces a frame."},
   QuickRead{"Forward rendering and render passes", "A pass is one scheduled piece of rendering with declared inputs and outputs; a frame is usually made from several passes."},
   QuickRead{"Forward, deferred, and forward+ rendering", "These architectures mainly differ in when surface lighting happens and how visible surfaces find the lights that affect them."},
@@ -710,7 +717,8 @@ std::array<const char*, 4> branchesFor(std::string_view title) {
   if (title == "Forward, deferred, and forward+ rendering") return {"Render graphs and pass dependencies", "GPU bottlenecks: geometry, fill rate, and bandwidth", "Rasterization versus ray tracing", nullptr};
   if (title == "Asset, scene, material, and renderer responsibilities") return {"Material versus shader", "Render graphs and pass dependencies", "CPU submission and draw calls", nullptr};
   if (title == "Render graphs and pass dependencies") return {"Hardware capability profiles", "Forward, deferred, and forward+ rendering", nullptr, nullptr};
-  if (title == "Render algebra between completed images") return {"N64 RDP color combiner and cycle types", "Transparency and compositing", "Linear light and encoded RGB", "Color quantization and dithering"};
+  if (title == "Render algebra between completed images") return {"Render-pass stacks and controlled perturbation", "Transparency and compositing", "Linear light and encoded RGB", "Color quantization and dithering"};
+  if (title == "Render-pass stacks and controlled perturbation") return {"Render algebra between completed images", "Forward rendering and render passes", "Render graphs and pass dependencies", "Material versus shader"};
   if (title == "Skeletal animation and skinning") return {"Vertex shaders", "Morph targets and procedural deformation", nullptr, nullptr};
   if (title == "Rasterization versus ray tracing") return {"Acceleration structures and path tracing", "The realtime rasterization pipeline", nullptr, nullptr};
   return {nullptr, nullptr, nullptr, nullptr};
@@ -836,16 +844,16 @@ Action Handbook::draw(gfxlab::HardwareProfile profile) {
     if (article.example != Example::None) {
       ImGui::Spacing();
       ImGui::Separator();
-      ImGui::TextDisabled("LIVE A/B EXAMPLE");
-      ImGui::Text("A  %s", article.baseline);
-      ImGui::Text("B  %s", article.alternative);
+      ImGui::TextDisabled("LIVE TWO-PASS EXAMPLE");
+      ImGui::Text("Base pass      %s", article.baseline);
+      ImGui::Text("Selected pass  %s", article.alternative);
       ImGui::Spacing();
       if (exampleAvailableForProfile(profile, article.example)) {
-        if (ImGui::Button("Apply example to A")) action = {ActionType::ApplyToA, article.example};
+        if (ImGui::Button("Apply to base pass")) action = {ActionType::ApplyToA, article.example};
         ImGui::SameLine();
-        if (ImGui::Button("Apply comparison to B")) action = {ActionType::ApplyToB, article.example};
+        if (ImGui::Button("Apply to selected pass")) action = {ActionType::ApplyToB, article.example};
         ImGui::SameLine();
-        if (ImGui::Button("Load split A/B")) {
+        if (ImGui::Button("Load split comparison")) {
           action = {ActionType::LoadComparison, article.example};
           open_ = false;
         }

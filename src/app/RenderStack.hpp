@@ -13,7 +13,7 @@ namespace gfxlab {
 enum class CompositeColorSpace { EncodedRgb, LinearLight };
 enum class CompositeRange { Clamp, Preserve, Wrap };
 enum class PassOutput { Color, Depth, Normals, VertexColor };
-enum class CompositeMask { None, PassLuminance, PassDepth, GeometryEdges };
+enum class CompositeMask { None, PassLuminance, PassDepth, PassEdges };
 
 struct PassPerturbation {
   glm::vec3 modelTranslation{0.0f};
@@ -71,8 +71,11 @@ private:
 };
 
 [[nodiscard]] const char* relationOperatorLabel(RelationOperator operation);
+[[nodiscard]] const char* relationOperatorId(RelationOperator operation);
 [[nodiscard]] const char* relationOperatorEquation(RelationOperator operation);
 [[nodiscard]] const char* relationOperatorMeaning(RelationOperator operation);
 void resetCompositeTransform(CompositeStep& step);
+[[nodiscard]] std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& camera,
+  TestScene scene, HardwareProfile profile);
 
 } // namespace gfxlab
