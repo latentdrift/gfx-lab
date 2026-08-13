@@ -25,7 +25,7 @@
                 );
             };
 
-            nativeBuildInputs = with pkgs; [ cmake ninja pkg-config ];
+            nativeBuildInputs = with pkgs; [ cmake ninja pkg-config wrapGAppsHook3 ];
             buildInputs = with pkgs; [
               glew
               glfw
@@ -34,6 +34,8 @@
               assimp
               nativefiledialog-extended
               zlib
+              gtk3
+              gsettings-desktop-schemas
               libGL
               libice
               libsm
@@ -63,6 +65,8 @@
               assimp
               nativefiledialog-extended
               zlib
+              gtk3
+              gsettings-desktop-schemas
               libGL
             ];
           };

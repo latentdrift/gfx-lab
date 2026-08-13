@@ -74,6 +74,10 @@ int runApplication() {
   ImGui_ImplOpenGL3_Init("#version 410 core");
 
   Renderer renderer;
+  if (std::getenv("GRAPHICS_LAB_VALIDATE_FILE_DIALOG")) {
+    const FileDialogResult dialog = openModelFileDialog();
+    if (!dialog.error.empty()) fail("native model file dialog failed validation: " + dialog.error);
+  }
   RendererState current;
   RendererState reference = current;
   CameraOrbit camera;
