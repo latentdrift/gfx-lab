@@ -27,6 +27,7 @@
 #include "ui/Inspector.hpp"
 #include "ui/PassDifferenceAudit.hpp"
 #include "ui/PassInspector.hpp"
+#include "ui/TextureInspector.hpp"
 #include "ui/Workspace.hpp"
 
 #include <algorithm>
@@ -320,6 +321,8 @@ int runApplication() {
 
     const handbook::Action handbookAction = graphicsHandbook.draw(hardwareProfile);
     drawPassDifferenceAudit(workspaceWindows.passDifferences, renderStack);
+    drawTextureInspector(workspaceWindows.textureInspector,
+      {selectedTexture, baseTexture, compositeTexture}, renderStack.selected().name);
     if (handbookAction.type != handbook::ActionType::None && isNintendo64Example(handbookAction.example))
       hardwareProfile = HardwareProfile::Nintendo64;
     if (handbookAction.type == handbook::ActionType::ApplyToA) {

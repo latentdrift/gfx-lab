@@ -53,6 +53,7 @@ void windowMenu(WorkspaceWindows& windows) {
   ImGui::MenuItem("Pipeline Inspector", nullptr, &windows.inspector);
   ImGui::MenuItem("Animation Timeline", nullptr, &windows.animation);
   ImGui::MenuItem("Pass Differences", nullptr, &windows.passDifferences);
+  ImGui::MenuItem("Texture Inspector", nullptr, &windows.textureInspector);
   ImGui::Separator();
   if (ImGui::MenuItem("Restore Default Layout")) windows.resetLayout = true;
 }

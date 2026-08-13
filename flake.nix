@@ -6,7 +6,6 @@
     url = "github:CedricGuillemet/ImGuizmo";
     flake = false;
   };
-
   outputs = { self, nixpkgs, imguizmo }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" ];

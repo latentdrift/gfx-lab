@@ -18,6 +18,11 @@ model transform directly. The gizmo writes the same parameters shown in the pass
 and participates in undo/redo. Middle/right drag and the mouse wheel continue to pan and zoom while a transform
 tool is active.
 
+Open **Window → Texture Inspector** to inspect the selected pass, base pass, or composite render target.
+The inspector provides cursor-centered zoom, panning, texel coordinates, and raw floating-point RGBA values;
+this makes clipped, negative, and above-white composite results visible as data even when the viewport cannot
+display their full numerical range.
+
 ## Source architecture
 
 The executable is divided by rendering responsibility:
