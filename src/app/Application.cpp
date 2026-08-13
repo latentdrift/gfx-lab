@@ -477,6 +477,11 @@ int runApplication() {
       ImGui::TextWrapped("%s", importedModel->name.c_str());
       ImGui::TextDisabled("%zu triangles  %zu meshes", importedModel->triangleCount,
         importedModel->sourceMeshCount);
+      ImGui::TextDisabled("UV0 %s   colors %s", importedModel->hasTextureCoordinates ? "yes" : "no",
+        importedModel->hasVertexColors ? "yes" : "no");
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s\nLongest source bounds extent normalized to 3.0 lab units.",
+          importedModel->sourcePath.c_str());
       if (scene != TestScene::ImportedModel && ImGui::Button("Use model", ImVec2(-1, 0)))
         scene = TestScene::ImportedModel;
       if (ImGui::Button("Unload model", ImVec2(-1, 0))) {

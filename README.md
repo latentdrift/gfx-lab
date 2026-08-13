@@ -27,6 +27,8 @@ src/
     HardwareProfile.cpp       target capabilities and state normalization
     RenderStack.cpp           pass definitions, compositing state, and stack export
     State.cpp                 explicit renderer state, scene setups, JSON export
+  assets/
+    ModelAsset.cpp            Assimp decoding, validation, attributes, and normalization
   renderer/
     Renderer.cpp              OpenGL resources, state application, and render passes
     Shaders.hpp               scene, output, shadow, and analysis GLSL programs
@@ -48,6 +50,10 @@ src/
 - Mouse wheel: zoom
 - Undo: Ctrl+Z
 - Redo: Ctrl+Shift+Z or Ctrl+Y
+
+Use **Import model** to load OBJ, glTF, or GLB geometry through the native file chooser. The importer applies scene-node transforms, triangulates faces, generates missing smooth normals and usable tangents, preserves UV0 and vertex color 0 when present, and combines source meshes into one lab mesh. It centers the result and scales its longest bounds extent to exactly 3.0 lab units so camera distance, fog, quantization, and pass perturbations remain comparable between unrelated assets. The left panel reports triangle count, source mesh count, and attribute availability; **Use model** and **Unload model** are undoable.
+
+This first import boundary does not recreate source materials, external image textures, skeletal animation, morph targets, cameras, or lights. Material base color becomes the fallback vertex color, while the lab's own checker and diagnostic textures remain the texture inputs. Copying stack JSON records the absolute source path, content hash, mesh facts, and normalization scale rather than embedding the vertex buffer.
 
 Undo and redo cover the authored render stack, all renderer and composite settings, pass order and names, animation tracks, camera, scene, hardware target, and timeline configuration. Continuous sliders and viewport-camera drags collapse into one history entry. Playback time, pass selection, comparison view, open windows, and temporary evaluated animation frames are workspace state rather than authored operations, so they do not flood document history.
 

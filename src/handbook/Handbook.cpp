@@ -328,6 +328,12 @@ constexpr std::array articles = {
     "Whole engine", "A coherent visual style emerges from constraints across all four responsibility areas.",
     "A shader cannot author low-poly silhouettes, schedule a shadow pass, or choose a camera composition by itself.",
     "Send agents separate asset constraints, scene constraints, renderer configuration, and architectural requirements.", Diagram::Pipeline},
+  Article{"Engine architecture", "Model import and mesh preprocessing",
+    "A model importer translates an interchange file into the engine's own mesh representation. Graphics Lab applies node transforms, triangulates faces, validates indices and finite values, supplies missing smooth normals and tangents, preserves UV0 and vertex color 0, then expands indexed triangles into the barycentric vertex format required by wireframe analysis.",
+    "Asset-loading boundary before GPU buffer upload",
+    "Imported OBJ, glTF, and GLB geometry can pass through the same shading, depth, fog, quantization, wireframe, render-pass, compositing, and animation experiments as supplied test geometry.",
+    "Importing geometry is not the same as recreating a complete authored scene. Materials, texture images, skinning, morph targets, lights, cameras, instancing, and animation each require their own translation and runtime systems. Graphics Lab currently uses source base color as a vertex-color fallback and retains its diagnostic textures.",
+    "Specify supported formats, primitive types, coordinate and unit conversion, node-transform handling, index validation, normal/tangent policy, attribute channels, material scope, size limits, and whether source bounds are preserved or normalized. This lab normalizes the longest centered bounds extent to 3.0 units and limits imports to two million triangles.", Diagram::Pipeline},
   Article{"Engine architecture", "Forward rendering and render passes",
     "A forward renderer shades geometry while rasterizing it into the camera target. Additional passes may generate shadows, masks, analysis buffers, or post-processed output.",
     "Render architecture", "Pass ordering determines which intermediate data exists and when it can be consumed.",
@@ -440,6 +446,7 @@ constexpr std::array quickReads = {
   QuickRead{"Keyframes and parameter animation", "Record parameter values at specific times, then calculate the in-between value before rendering each frame."},
   QuickRead{"Undo, redo, and editor transactions", "Save the document before an edit, and treat an entire continuous drag as one reversible operation rather than hundreds of tiny changes."},
   QuickRead{"Asset, scene, material, and renderer responsibilities", "Assets provide data, the scene arranges it, materials describe surfaces, and the renderer schedules the work that produces a frame."},
+  QuickRead{"Model import and mesh preprocessing", "Decode the file, apply its object transforms, validate and complete the vertex attributes, then convert it into the exact triangle format the renderer consumes."},
   QuickRead{"Forward rendering and render passes", "A pass is one scheduled piece of rendering with declared inputs and outputs; a frame is usually made from several passes."},
   QuickRead{"Forward, deferred, and forward+ rendering", "These architectures mainly differ in when surface lighting happens and how visible surfaces find the lights that affect them."},
   QuickRead{"Render graphs and pass dependencies", "A render graph makes the frame's passes and intermediate images explicit so the engine can order them safely."},
@@ -729,7 +736,8 @@ std::array<const char*, 4> branchesFor(std::string_view title) {
   if (title == "Material versus shader") return {"BRDFs and physically based materials", "Material inputs and texture semantics", "Forward, deferred, and forward+ rendering", nullptr};
   if (title == "Forward rendering and render passes") return {"Forward, deferred, and forward+ rendering", "Render graphs and pass dependencies", "Shadow mapping", nullptr};
   if (title == "Forward, deferred, and forward+ rendering") return {"Render graphs and pass dependencies", "GPU bottlenecks: geometry, fill rate, and bandwidth", "Rasterization versus ray tracing", nullptr};
-  if (title == "Asset, scene, material, and renderer responsibilities") return {"Material versus shader", "Render graphs and pass dependencies", "CPU submission and draw calls", nullptr};
+  if (title == "Asset, scene, material, and renderer responsibilities") return {"Model import and mesh preprocessing", "Material versus shader", "Render graphs and pass dependencies", "CPU submission and draw calls"};
+  if (title == "Model import and mesh preprocessing") return {"Asset, scene, material, and renderer responsibilities", "Vertex attributes", "Material inputs and texture semantics", "Skeletal animation and skinning"};
   if (title == "Render graphs and pass dependencies") return {"Hardware capability profiles", "Forward, deferred, and forward+ rendering", nullptr, nullptr};
   if (title == "Render algebra between completed images") return {"Render-pass stacks and controlled perturbation", "Transparency and compositing", "Linear light and encoded RGB", "Color quantization and dithering"};
   if (title == "Render-pass stacks and controlled perturbation") return {"Render algebra between completed images", "Keyframes and parameter animation", "Forward rendering and render passes", "Render graphs and pass dependencies"};
