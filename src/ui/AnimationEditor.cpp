@@ -23,7 +23,16 @@ struct KeySelection {
   float time = 0.0f;
 };
 
+struct KeyDrag {
+  bool active = false;
+  std::size_t pass = std::numeric_limits<std::size_t>::max();
+  AnimationProperty property = AnimationProperty::ModelTranslation;
+  float time = 0.0f;
+  float mouseOffsetPixels = 0.0f;
+};
+
 KeySelection selection;
+KeyDrag keyDrag;
 int propertyToAdd = 0;
 int curveComponent = 0;
 bool draggingCurveKey = false;
@@ -51,6 +60,22 @@ bool selected(const std::size_t passIndex, const AnimationProperty property, con
   return selection.pass == passIndex && selection.property == property && std::abs(selection.time - time) < 0.0001f;
 }
 
+float snappedTime(const AnimationTimeline& timeline, float time) {
+  time = std::clamp(time, 0.0f, timeline.durationSeconds);
+  if (!timeline.snapToFrames || ImGui::GetIO().KeyAlt) return time;
+  const float framesPerSecond = static_cast<float>(std::clamp(timeline.framesPerSecond, 1, 240));
+  return std::clamp(std::round(time * framesPerSecond) / framesPerSecond, 0.0f, timeline.durationSeconds);
+}
+
+bool deleteSelectedKey(RenderStack& stack) {
+  if (selection.pass != globalPassIndex && selection.pass >= stack.passes().size()) return false;
+  RenderPass& pass = selection.pass == globalPassIndex ? stack.global() : stack.passes()[selection.pass];
+  if (!removePropertyKeyframe(pass, selection.property, selection.time, 0.0001f)) return false;
+  selection.pass = std::numeric_limits<std::size_t>::max();
+  keyDrag.active = false;
+  return true;
+}
+
 void drawTrackRow(AnimationTimeline& timeline, RenderPass& pass, const std::size_t passIndex,
     PropertyAnimationTrack& track, const float labelWidth) {
   const AnimationPropertyInfo& info = animationPropertyInfo(track.property);
@@ -65,12 +90,21 @@ void drawTrackRow(AnimationTimeline& timeline, RenderPass& pass, const std::size
   const ImVec2 areaMaximum = ImGui::GetItemRectMax();
   ImDrawList* draw = ImGui::GetWindowDrawList();
   const float centerY = (areaMinimum.y + areaMaximum.y) * 0.5f;
-  draw->AddLine(ImVec2(areaMinimum.x, centerY), ImVec2(areaMaximum.x, centerY), IM_COL32(70, 74, 79, 255));
-  if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-    const float normalized = std::clamp((ImGui::GetIO().MousePos.x - areaMinimum.x) / trackWidth, 0.0f, 1.0f);
-    timeline.timeSeconds = normalized * timeline.durationSeconds;
-    timeline.playing = false;
+  const bool hovered = ImGui::IsItemHovered();
+  draw->AddRectFilled(areaMinimum, areaMaximum, IM_COL32(30, 32, 35, 255));
+  const int wholeSeconds = static_cast<int>(std::ceil(timeline.durationSeconds));
+  for (int second = 0; second <= wholeSeconds; ++second) {
+    const float x = areaMinimum.x + static_cast<float>(second) /
+      std::max(0.0001f, timeline.durationSeconds) * trackWidth;
+    draw->AddLine(ImVec2(x, areaMinimum.y), ImVec2(x, areaMaximum.y), IM_COL32(51, 54, 59, 255));
   }
+  draw->AddLine(ImVec2(areaMinimum.x, centerY), ImVec2(areaMaximum.x, centerY), IM_COL32(70, 74, 79, 255));
+  bool keyClicked = false;
+  bool moveKey = false;
+  bool keyHovered = false;
+  float moveFrom = 0.0f;
+  float moveTo = 0.0f;
+  glm::vec4 moveValue{};
   for (const PropertyKeyframe& key : track.keyframes) {
     const float normalized = timeline.durationSeconds > 0.0f ? key.timeSeconds / timeline.durationSeconds : 0.0f;
     const ImVec2 center(areaMinimum.x + std::clamp(normalized, 0.0f, 1.0f) * trackWidth, centerY);
@@ -79,11 +113,47 @@ void drawTrackRow(AnimationTimeline& timeline, RenderPass& pass, const std::size
       ? IM_COL32(245, 187, 72, 255) : IM_COL32(127, 183, 213, 255);
     drawDiamond(draw, center, color, isSelected);
     const glm::vec2 delta(ImGui::GetIO().MousePos.x - center.x, ImGui::GetIO().MousePos.y - center.y);
-    if (glm::dot(delta, delta) <= 64.0f && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+    if (glm::dot(delta, delta) <= 81.0f) keyHovered = true;
+    if (glm::dot(delta, delta) <= 81.0f && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
       selection = {passIndex, track.property, key.timeSeconds};
       timeline.timeSeconds = key.timeSeconds;
       timeline.playing = false;
+      keyDrag = {true, passIndex, track.property, key.timeSeconds, ImGui::GetIO().MousePos.x - center.x};
+      keyClicked = true;
     }
+    if (keyDrag.active && keyDrag.pass == passIndex && keyDrag.property == track.property &&
+        std::abs(key.timeSeconds - keyDrag.time) < 0.0001f && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+      moveFrom = key.timeSeconds;
+      moveTo = snappedTime(timeline, (ImGui::GetIO().MousePos.x - keyDrag.mouseOffsetPixels - areaMinimum.x) /
+        std::max(1.0f, trackWidth) * timeline.durationSeconds);
+      moveValue = key.value;
+      moveKey = std::abs(moveTo - moveFrom) > 0.0001f;
+    }
+  }
+  if (keyHovered) {
+    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
+      ImGui::SetTooltip("Drag to retime   Alt: bypass snap");
+  }
+  if (moveKey) {
+    static_cast<void>(removePropertyKeyframe(pass, track.property, moveFrom, 0.0001f));
+    setPropertyKeyframe(pass, track.property, moveTo, &moveValue);
+    selection.time = moveTo;
+    keyDrag.time = moveTo;
+    timeline.timeSeconds = moveTo;
+  }
+  if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !keyClicked) {
+    const float normalized = std::clamp((ImGui::GetIO().MousePos.x - areaMinimum.x) / trackWidth, 0.0f, 1.0f);
+    const float newTime = snappedTime(timeline, normalized * timeline.durationSeconds);
+    const glm::vec4 value = samplePropertyTrack(track, newTime);
+    setPropertyKeyframe(pass, track.property, newTime, &value);
+    selection = {passIndex, track.property, newTime};
+    timeline.timeSeconds = newTime;
+    timeline.playing = false;
+  } else if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !keyClicked) {
+    const float normalized = std::clamp((ImGui::GetIO().MousePos.x - areaMinimum.x) / trackWidth, 0.0f, 1.0f);
+    timeline.timeSeconds = snappedTime(timeline, normalized * timeline.durationSeconds);
+    timeline.playing = false;
   }
   const float playheadX = areaMinimum.x + (timeline.timeSeconds / timeline.durationSeconds) * trackWidth;
   draw->AddLine(ImVec2(playheadX, areaMinimum.y), ImVec2(playheadX, areaMaximum.y),
@@ -174,8 +244,7 @@ void drawSelectedKeyEditor(AnimationTimeline& timeline, RenderStack& stack) {
       track->interpolation = static_cast<KeyframeInterpolation>(interpolation);
   }
   if (ImGui::Button("Delete selected key", ImVec2(-1.0f, 0.0f))) {
-    static_cast<void>(removePropertyKeyframe(pass, selection.property, selection.time, 0.0001f));
-    selection.pass = std::numeric_limits<std::size_t>::max();
+    static_cast<void>(deleteSelectedKey(stack));
   }
 }
 
@@ -282,6 +351,10 @@ void drawCurveEditor(AnimationTimeline& timeline, RenderStack& stack) {
 void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& previewAtPlayhead,
     const bool globalScope) {
   static bool curveView = false;
+  if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) keyDrag.active = false;
+  if (!ImGui::GetIO().WantTextInput && !ImGui::IsAnyItemActive() &&
+      (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)))
+    static_cast<void>(deleteSelectedKey(stack));
   ImGui::BeginChild("Animation editor contents", ImVec2(0.0f, 0.0f), false);
   ImGui::AlignTextToFramePadding();
   ImGui::TextDisabled(globalScope ? "GLOBAL ANIMATION" : "LOCAL PASS ANIMATION");
@@ -301,6 +374,15 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
   if (ImGui::IsItemHovered()) ImGui::SetTooltip("When an animatable inspector control changes, write or replace its key at the playhead.");
   ImGui::SameLine();
   ImGui::Checkbox("All passes", &timeline.showAllPasses);
+  ImGui::SameLine();
+  ImGui::Checkbox("Snap", &timeline.snapToFrames);
+  if (timeline.snapToFrames) {
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(58.0f);
+    ImGui::DragInt("FPS", &timeline.framesPerSecond, 1.0f, 1, 240);
+    timeline.framesPerSecond = std::clamp(timeline.framesPerSecond, 1, 240);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hold Alt while dragging to bypass frame snapping.");
+  }
 
   ImGui::SetNextItemWidth(100.0f);
   ImGui::DragFloat("Duration", &timeline.durationSeconds, 0.1f, 0.1f, 120.0f, "%.1f s");
@@ -313,6 +395,7 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
   ImGui::SetNextItemWidth(-1.0f);
   if (ImGui::SliderFloat("##timeline-time", &timeline.timeSeconds, 0.0f, timeline.durationSeconds, "%.3f s"))
     timeline.playing = false;
+  ImGui::TextDisabled("Drag diamond: retime   Double-click row: add key   Delete: remove selected   Alt: bypass snap");
 
   const std::vector<AnimationProperty> properties = animatableProperties(globalScope);
   propertyToAdd = std::clamp(propertyToAdd, 0, static_cast<int>(properties.size()) - 1);
@@ -320,6 +403,7 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
   const float actionWidth = ImGui::CalcTextSize("Key property").x + ImGui::GetStyle().FramePadding.x * 2.0f;
   ImGui::SetNextItemWidth(std::max(120.0f, ImGui::GetContentRegionAvail().x - actionWidth -
     ImGui::GetStyle().ItemSpacing.x));
+  ImGui::TextDisabled("ADD OR KEY PROPERTY");
   if (ImGui::BeginCombo("##property-to-key", animationPropertyInfo(chosenProperty).label.data())) {
     std::string_view previousGroup;
     for (std::size_t index = 0; index < properties.size(); ++index) {
@@ -371,7 +455,7 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
   bool anyTracks = false;
   if (globalScope || timeline.showAllPasses) {
     RenderPass& pass = stack.global();
-    ImGui::TextDisabled("%s", globalScope ? "> Global base" : "  Global base");
+    ImGui::SeparatorText(globalScope ? "Global base (editing)" : "Global base");
     for (std::size_t trackIndex = 0; trackIndex < pass.animation.tracks.size();) {
       PropertyAnimationTrack& track = pass.animation.tracks[trackIndex];
       if (track.keyframes.empty()) {
@@ -393,7 +477,9 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
   for (std::size_t passIndex = firstPass; passIndex < endPass; ++passIndex) {
     RenderPass& pass = stack.passes()[passIndex];
     if (timeline.showAllPasses) {
-      ImGui::TextDisabled("%s%s", passIndex == stack.selectedIndex() ? "> " : "  ", pass.name.c_str());
+      const std::string passHeading = passIndex == stack.selectedIndex()
+        ? pass.name + " (selected)" : pass.name;
+      ImGui::SeparatorText(passHeading.c_str());
       if (ImGui::IsItemClicked()) stack.select(passIndex);
     }
     for (std::size_t trackIndex = 0; trackIndex < pass.animation.tracks.size();) {

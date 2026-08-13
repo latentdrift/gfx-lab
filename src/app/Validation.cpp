@@ -190,6 +190,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     AnimationTimeline timelineValidation;
     timelineValidation.durationSeconds = 2.0f;
     timelineValidation.timeSeconds = 1.5f;
+    timelineValidation.snapToFrames = true;
+    timelineValidation.framesPerSecond = 30;
     timelineValidation.playing = true;
     timelineValidation.advance(1.0f);
     if (std::abs(timelineValidation.timeSeconds - 0.5f) > 0.0001f)
@@ -305,7 +307,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     }
     if (glGetError() != GL_NO_ERROR) fail("display reconstruction produced an OpenGL error");
     const std::string stackConfig = renderStackConfigJson(compositeValidation, camera, scene,
-      HardwareProfile::Unrestricted, nullptr, importedFixture.asset.get());
+      HardwareProfile::Unrestricted, &timelineValidation, importedFixture.asset.get());
     if (stackConfig.find("graphics-lab.render-stack.v7") == std::string::npos ||
         stackConfig.find("global base, global track, local override, local track") == std::string::npos ||
         stackConfig.find("\"passes\"") == std::string::npos ||
@@ -324,6 +326,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         stackConfig.find("\"property_tracks\"") == std::string::npos ||
         stackConfig.find("\"value_kind\"") == std::string::npos ||
         stackConfig.find("\"animation_behavior\"") == std::string::npos ||
+        stackConfig.find("\"snap_to_frames\"") == std::string::npos ||
+        stackConfig.find("\"frames_per_second\"") == std::string::npos ||
         stackConfig.find("\"texture_source\": \"imported_override\"") == std::string::npos ||
         stackConfig.find("\"imported_texture\"") == std::string::npos ||
         stackConfig.find("\"imported_model\"") == std::string::npos ||

@@ -179,6 +179,8 @@ struct AnimationTimeline {
   bool loop = true;
   bool autoKey = false;
   bool showAllPasses = false;
+  bool snapToFrames = true;
+  int framesPerSecond = 24;
 
   void advance(float deltaSeconds);
 };

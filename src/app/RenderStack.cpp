@@ -274,7 +274,9 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
     json << "  \"animation_timeline\": {\"duration_seconds\": " << timeline->durationSeconds
          << ", \"playback_rate\": " << timeline->playbackRate << ", \"loop\": " << timeline->loop
          << ", \"auto_key\": " << timeline->autoKey << ", \"show_all_passes\": "
-         << timeline->showAllPasses << ", \"current_time_seconds\": " << timeline->timeSeconds << "},\n";
+         << timeline->showAllPasses << ", \"snap_to_frames\": " << timeline->snapToFrames
+         << ", \"frames_per_second\": " << timeline->framesPerSecond
+         << ", \"current_time_seconds\": " << timeline->timeSeconds << "},\n";
   }
   json << "  \"global_base\": {\n";
   json << "    \"properties\": {";
