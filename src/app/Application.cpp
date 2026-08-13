@@ -24,6 +24,7 @@
 #include "ui/Inspector.hpp"
 #include "ui/PassDifferenceAudit.hpp"
 #include "ui/PassInspector.hpp"
+#include "ui/Workspace.hpp"
 
 #include <algorithm>
 #include <array>
@@ -136,6 +137,7 @@ int runApplication() {
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   setStyle();
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init("#version 410 core");
@@ -153,13 +155,11 @@ int runApplication() {
   CompareMode compare = CompareMode::A;
   HardwareProfile hardwareProfile = HardwareProfile::Unrestricted;
   bool viewportHovered = false;
-  bool animationPanelOpen = true;
   bool previewAnimation = true;
-  bool passDifferenceAuditOpen = false;
   bool inspectorGlobalScope = true;
+  WorkspaceWindows workspaceWindows;
   AnimationTimeline animationTimeline;
   double previousFrameTime = glfwGetTime();
-  double configCopiedAt = -10.0;
   handbook::Handbook graphicsHandbook;
 
   if (std::getenv("GRAPHICS_LAB_VALIDATE_HANDBOOK")) {
@@ -569,58 +569,7 @@ int runApplication() {
 
     int framebufferWidth, framebufferHeight;
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
-    ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::SetNextWindowSize(io.DisplaySize);
-    ImGui::Begin("Graphics Lab", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
-
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("GRAPHICS LAB");
-    ImGui::SameLine(125);
-    ImGui::BeginDisabled(!editorHistory.canUndo());
-    if (ImGui::Button("Undo")) restoreHistory(false);
-    ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Undo  Ctrl+Z");
-    ImGui::SameLine();
-    ImGui::BeginDisabled(!editorHistory.canRedo());
-    if (ImGui::Button("Redo")) restoreHistory(true);
-    ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Redo  Ctrl+Shift+Z or Ctrl+Y");
-    ImGui::SameLine();
-    ImGui::TextDisabled("Target");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(150.0f);
-    int hardwareProfileIndex = static_cast<int>(hardwareProfile);
-    const char* hardwareProfileLabels[] = {"Unrestricted", "PlayStation (PS1)", "Nintendo 64"};
-    if (ImGui::Combo("##hardware-profile", &hardwareProfileIndex, hardwareProfileLabels, 3)) {
-      hardwareProfile = static_cast<HardwareProfile>(hardwareProfileIndex);
-      normalizeDocument(hardwareProfile);
-      if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
-      if (hardwareProfile != HardwareProfile::Unrestricted && scene == TestScene::StencilMask) scene = TestScene::Torus;
-    }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", hardwareProfileDescription(hardwareProfile));
-    ImGui::SameLine();
-    ImGui::TextDisabled("Scene");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(180.0f);
-    const char* standardSceneLabels[] = {"Torus", "Texture minification", "Depth precision", "Transparency",
-      "Lighting comparison", "Stencil mask"};
-    const char* currentSceneLabel = scene == TestScene::ImportedModel && importedModel != nullptr
-      ? importedModel->name.c_str() : standardSceneLabels[std::min(static_cast<int>(scene), 5)];
-    if (ImGui::BeginCombo("##test-scene", currentSceneLabel)) {
-      for (int option = 0; option < 5; ++option) {
-        const TestScene candidate = static_cast<TestScene>(option);
-        if (ImGui::Selectable(standardSceneLabels[option], scene == candidate)) scene = candidate;
-      }
-      if (hardwareProfile == HardwareProfile::Unrestricted &&
-          ImGui::Selectable(standardSceneLabels[5], scene == TestScene::StencilMask))
-        scene = TestScene::StencilMask;
-      if (importedModel != nullptr &&
-          ImGui::Selectable(importedModel->name.c_str(), scene == TestScene::ImportedModel))
-        scene = TestScene::ImportedModel;
-      ImGui::EndCombo();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Import model")) {
+    const auto importModelFromDialog = [&]() {
       const FileDialogResult dialog = openModelFileDialog();
       if (!dialog.error.empty()) modelImportError = dialog.error;
       else if (dialog.path.has_value()) {
@@ -635,226 +584,121 @@ int runApplication() {
           modelImportError = imported.error;
         }
       }
-      if (!modelImportError.empty()) ImGui::OpenPopup("Model import failed");
+    };
+
+    const WorkspaceActions workspaceActions = beginWorkspace(workspaceWindows,
+      editorHistory.canUndo(), editorHistory.canRedo());
+    if (workspaceActions.undo) restoreHistory(false);
+    if (workspaceActions.redo) restoreHistory(true);
+    if (workspaceActions.importModel) importModelFromDialog();
+    if (workspaceActions.copyJson) {
+      const std::string exported = renderStackConfigJson(renderStack, camera, scene, hardwareProfile,
+        &animationTimeline, importedModel.get());
+      ImGui::SetClipboardText(exported.c_str());
     }
+    if (workspaceActions.handbook) graphicsHandbook.open();
+    if (workspaceActions.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
+
+    const SceneWindowResult sceneResult = drawSceneWindow(workspaceWindows.scene, scene,
+      hardwareProfile, importedModel.get());
+    if (sceneResult.importModel) importModelFromDialog();
+    if (sceneResult.unloadModel) {
+      importedModel.reset();
+      renderer.clearImportedModel();
+      if (scene == TestScene::ImportedModel) scene = TestScene::Torus;
+    }
+    if (sceneResult.hardwareProfileChanged) {
+      normalizeDocument(hardwareProfile);
+      if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
+      if (hardwareProfile != HardwareProfile::Unrestricted && scene == TestScene::StencilMask)
+        scene = TestScene::Torus;
+    }
+    if (!modelImportError.empty()) ImGui::OpenPopup("Model import failed");
     if (ImGui::BeginPopupModal("Model import failed", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
       ImGui::TextWrapped("%s", modelImportError.c_str());
-      if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
+      if (ImGui::Button("Close")) {
+        modelImportError.clear();
+        ImGui::CloseCurrentPopup();
+      }
       ImGui::EndPopup();
     }
-    ImGui::SameLine();
-    ImGui::TextDisabled("Edit");
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Global base", inspectorGlobalScope)) inspectorGlobalScope = true;
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Selected pass", !inspectorGlobalScope)) inspectorGlobalScope = false;
-    ImGui::SameLine();
-    if (inspectorGlobalScope) {
-      if (ImGui::Button("Reset global renderer")) renderStack.global().renderer = RendererState{};
-    } else {
-      if (ImGui::Button("Clear pass overrides")) {
-        renderStack.selected().overrides.clear();
-        renderStack.selected().importedTextureOverride = false;
-        renderStack.selected().importedTexture.reset();
-      }
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Reset scene setup")) {
-      if (inspectorGlobalScope) {
-        applyRecommendedSetup(scene, renderStack.global().renderer, camera);
-      } else {
-        RenderPass recommended = materializeRenderPass(renderStack, renderStack.selectedIndex(), 0.0f);
-        applyRecommendedSetup(scene, recommended.renderer, camera);
-        replaceRenderPassOverrides(renderStack.selected(), renderStack.global(), recommended);
-      }
-    }
-    if (ImGui::IsItemHovered())
-      ImGui::SetTooltip("Apply the recommended renderer state and camera framing for the selected scene.");
-    ImGui::SameLine();
-    if (ImGui::Button("Copy stack JSON")) {
-      const std::string exportedConfig = renderStackConfigJson(renderStack, camera, scene, hardwareProfile,
-        &animationTimeline, importedModel.get());
-      ImGui::SetClipboardText(exportedConfig.c_str());
-      configCopiedAt = glfwGetTime();
-    }
-    if (glfwGetTime() - configCopiedAt < 2.0) {
-      ImGui::SameLine();
-      ImGui::TextDisabled("Copied");
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Handbook")) graphicsHandbook.open();
-    ImGui::SameLine();
-    if (ImGui::Button(animationPanelOpen ? "Hide animation" : "Animation"))
-      animationPanelOpen = !animationPanelOpen;
-    ImGui::SameLine();
-    if (ImGui::Button("Pass differences")) passDifferenceAuditOpen = true;
-    ImGui::TextDisabled("Compare:");
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Selected pass", compare == CompareMode::A)) compare = CompareMode::A;
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Base pass", compare == CompareMode::B)) compare = CompareMode::B;
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Split base/selected", compare == CompareMode::Split)) compare = CompareMode::Split;
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Composite stack", compare == CompareMode::Relation)) compare = CompareMode::Relation;
-    ImGui::SameLine(ImGui::GetWindowWidth() - 260);
-    ImGui::TextDisabled("LMB orbit   MMB/RMB pan   Wheel zoom");
-    ImGui::Separator();
-    if (animationPanelOpen) {
-      drawAnimationEditor(animationTimeline, renderStack, previewAnimation, inspectorGlobalScope);
-      ImGui::Separator();
+
+    drawRenderPassesWindow(workspaceWindows.renderPasses, renderStack, animationTimeline,
+      inspectorGlobalScope);
+    drawPipelineWindow(workspaceWindows.pipeline, category, hardwareProfile);
+
+    if (workspaceWindows.animation) {
+      if (ImGui::Begin("Animation Timeline", &workspaceWindows.animation))
+        drawAnimationEditor(animationTimeline, renderStack, previewAnimation, inspectorGlobalScope);
+      ImGui::End();
     }
 
-    const float contentHeight = ImGui::GetContentRegionAvail().y;
-    constexpr float pipelineWidth = 200.0f;
-    ImGui::BeginChild("Pipeline", ImVec2(pipelineWidth, contentHeight), true);
-    if (importedModel != nullptr) {
-      ImGui::TextDisabled("GLOBAL SCENE MODEL");
-      ImGui::TextWrapped("%s", importedModel->name.c_str());
-      ImGui::TextDisabled("%zu triangles  %zu meshes", importedModel->triangleCount,
-        importedModel->sourceMeshCount);
-      ImGui::TextDisabled("%zu materials  %zu base-color textures", importedModel->materials.size(),
-        importedModel->textures.size());
-      ImGui::TextDisabled("UV0 %s   colors %s", importedModel->hasTextureCoordinates ? "yes" : "no",
-        importedModel->hasVertexColors ? "yes" : "no");
-      if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s\nLongest source bounds extent normalized to 3.0 lab units.",
-          importedModel->sourcePath.c_str());
-      if (!importedModel->importWarnings.empty()) {
-        ImGui::TextColored(ImVec4(0.95f, 0.58f, 0.34f, 1.0f), "%zu texture warning%s",
-          importedModel->importWarnings.size(), importedModel->importWarnings.size() == 1 ? "" : "s");
-        if (ImGui::IsItemHovered()) {
-          ImGui::BeginTooltip();
-          for (const std::string& warning : importedModel->importWarnings) ImGui::TextWrapped("%s", warning.c_str());
-          ImGui::EndTooltip();
-        }
-      }
-      if (scene != TestScene::ImportedModel && ImGui::Button("Use model", ImVec2(-1, 0)))
-        scene = TestScene::ImportedModel;
-      if (ImGui::Button("Unload model", ImVec2(-1, 0))) {
-        importedModel.reset();
-        renderer.clearImportedModel();
-        if (scene == TestScene::ImportedModel) scene = TestScene::Torus;
-      }
-      ImGui::Separator();
-    }
-    ImGui::TextDisabled("RENDER PASSES");
-    ImGui::Spacing();
-    for (std::size_t passIndex = 0; passIndex < renderStack.passes().size(); ++passIndex) {
-      RenderPass& pass = renderStack.passes()[passIndex];
-      ImGui::PushID(static_cast<int>(passIndex));
-      const bool passEnabledChanged = ImGui::Checkbox("##enabled", &pass.enabled);
-      animationKeyControl(pass, AnimationProperty::PassEnabled, animationTimeline, passEnabledChanged);
-      ImGui::SameLine();
-      const std::string passLabel = pass.name + "  [" + std::to_string(pass.overrides.size()) + " local, " +
-        std::to_string(pass.animation.tracks.size()) + " tracks]";
-      if (ImGui::Selectable(passLabel.c_str(), renderStack.selectedIndex() == passIndex, 0, ImVec2(0, 24))) {
-        renderStack.select(passIndex);
-        inspectorGlobalScope = false;
-      }
-      ImGui::PopID();
-    }
-    if (ImGui::Button("Duplicate pass", ImVec2(-1, 0))) {
-      renderStack.duplicateSelected();
-      inspectorGlobalScope = false;
-    }
-    if (ImGui::Button("Up")) renderStack.moveSelected(-1);
-    ImGui::SameLine();
-    if (ImGui::Button("Down")) renderStack.moveSelected(1);
-    ImGui::SameLine();
-    ImGui::BeginDisabled(renderStack.passes().size() <= 1);
-    if (ImGui::Button("Delete")) renderStack.removeSelected();
-    ImGui::EndDisabled();
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::TextDisabled("PIPELINE");
-    ImGui::Spacing();
-    constexpr std::array<Category, 11> categories = {Category::Geometry, Category::Camera, Category::Rasterization,
-      Category::Surface, Category::Texture, Category::Lighting, Category::Depth, Category::Stencil, Category::Color,
-      Category::Post, Category::Output};
-    for (Category candidate : categories) {
-      if (!categoryAvailableForHardwareProfile(hardwareProfile, candidate)) continue;
-      if (ImGui::Selectable(categoryName(candidate), category == candidate, 0, ImVec2(0, 28))) category = candidate;
-    }
-    ImGui::EndChild();
-    ImGui::SameLine(0, 5);
-
-    const float inspectorWidth = 340;
-    const float viewportWidth = std::max(100.0f, ImGui::GetContentRegionAvail().x - inspectorWidth - 5);
-    ImGui::BeginChild("Viewport", ImVec2(viewportWidth, contentHeight), true, ImGuiWindowFlags_NoScrollbar);
-    const ImVec2 available = ImGui::GetContentRegionAvail();
-    const ImVec2 paneOrigin = ImGui::GetCursorScreenPos();
-    constexpr float cameraWidth = 960.0f;
-    constexpr float cameraHeight = 720.0f;
-    const float presentationScale = std::min(available.x / cameraWidth, available.y / cameraHeight);
-    const ImVec2 presentationSize(cameraWidth * presentationScale, cameraHeight * presentationScale);
-    const ImVec2 origin(
-      paneOrigin.x + std::floor((available.x - presentationSize.x) * 0.5f),
-      paneOrigin.y + std::floor((available.y - presentationSize.y) * 0.5f));
-    const ImVec2 end(origin.x + presentationSize.x, origin.y + presentationSize.y);
     normalizeDocument(hardwareProfile);
     const bool evaluateAnimation = animationTimeline.playing || previewAnimation;
     RenderStack evaluatedStack = evaluateRenderStack(renderStack,
       evaluateAnimation ? animationTimeline.timeSeconds : 0.0f);
-    for (RenderPass& pass : evaluatedStack.passes()) normalizeForHardwareProfile(hardwareProfile, pass.renderer);
+    for (RenderPass& pass : evaluatedStack.passes())
+      normalizeForHardwareProfile(hardwareProfile, pass.renderer);
     std::array<GLuint, RenderStack::maximumPasses> passTextures{};
-    for (std::size_t passIndex = 0; passIndex < evaluatedStack.passes().size(); ++passIndex) {
+    for (std::size_t passIndex = 0; passIndex < evaluatedStack.passes().size(); ++passIndex)
       passTextures[passIndex] = renderer.renderPass(evaluatedStack.passes()[passIndex], camera, scene, passIndex);
-    }
     const GLuint selectedTexture = passTextures[renderStack.selectedIndex()];
     const GLuint baseTexture = passTextures.front();
     const GLuint renderedComposite = renderer.composite(evaluatedStack);
     const GLuint compositeTexture = renderedComposite != 0 ? renderedComposite : selectedTexture;
-    ImDrawList* draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(origin, end, IM_COL32(27, 29, 31, 255));
-    if (compare == CompareMode::Split) {
-      const float middle = origin.x + std::floor(presentationSize.x * 0.5f);
-      draw->PushClipRect(origin, ImVec2(middle, end.y), true);
-      draw->AddImage(static_cast<ImTextureID>(baseTexture), origin, end, ImVec2(0, 1), ImVec2(1, 0));
-      draw->PopClipRect();
-      draw->PushClipRect(ImVec2(middle + 1, origin.y), end, true);
-      draw->AddImage(static_cast<ImTextureID>(selectedTexture), origin, end, ImVec2(0, 1), ImVec2(1, 0));
-      draw->PopClipRect();
-      draw->AddLine(ImVec2(middle, origin.y), ImVec2(middle, end.y), IM_COL32(225, 225, 225, 210));
-      draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240,240,240,220), "BASE PASS");
-      draw->AddText(ImVec2(middle + 10, origin.y + 8), IM_COL32(240,240,240,220),
-        renderStack.selected().name.c_str());
-    } else {
-      const GLuint texture = compare == CompareMode::A ? selectedTexture
-        : compare == CompareMode::Relation ? compositeTexture : baseTexture;
-      draw->AddImage(static_cast<ImTextureID>(texture), origin, end, ImVec2(0, 1), ImVec2(1, 0));
-      const char* label = compare == CompareMode::A ? renderStack.selected().name.c_str()
-        : compare == CompareMode::B ? "BASE PASS" : "COMPOSITE STACK";
-      draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240,240,240,220), label);
-    }
-    ImGui::SetCursorScreenPos(origin);
-    ImGui::InvisibleButton("viewport-input", presentationSize);
-    viewportHovered = ImGui::IsItemHovered();
-    ImGui::EndChild();
-    ImGui::SameLine(0, 5);
+    viewportHovered = drawViewportWindow(workspaceWindows.viewport,
+      {selectedTexture, baseTexture, compositeTexture}, compare, renderStack);
 
-    ImGui::BeginChild("Inspector", ImVec2(inspectorWidth, contentHeight), true);
-      RenderStack inspectorStack = renderStack;
-      const float inspectorTime = (animationTimeline.playing || previewAnimation)
-        ? animationTimeline.timeSeconds : 0.0f;
-      const RenderPass displayedBefore = inspectorGlobalScope
-        ? evaluateRenderPass(renderStack.global(), inspectorTime)
-        : materializeRenderPass(renderStack, renderStack.selectedIndex(), inspectorTime);
-      inspectorStack.selected() = displayedBefore;
-      drawPassInspector(inspectorStack, animationTimeline, inspectorGlobalScope);
-      ImGui::Spacing();
-      ImGui::Separator();
-      drawInspector(category, inspectorStack.selected(), hardwareProfile, animationTimeline,
-        importedModel.get(), scene);
-      if (inspectorGlobalScope)
-        applyEditedPass(renderStack.global(), displayedBefore, inspectorStack.selected());
-      else
-        applyEditedLocalPass(renderStack, displayedBefore, inspectorStack.selected(), inspectorTime);
-    ImGui::EndChild();
-    ImGui::End();
+    if (workspaceWindows.inspector) {
+      if (ImGui::Begin("Pipeline Inspector", &workspaceWindows.inspector)) {
+        ImGui::TextDisabled("EDITING");
+        if (ImGui::RadioButton("Global base", inspectorGlobalScope)) inspectorGlobalScope = true;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Selected pass", !inspectorGlobalScope)) inspectorGlobalScope = false;
+        ImGui::SameLine();
+        ImGui::TextDisabled("/ %s", categoryName(category));
+        if (inspectorGlobalScope) {
+          if (ImGui::Button("Reset global renderer")) renderStack.global().renderer = RendererState{};
+        } else {
+          if (ImGui::Button("Clear pass overrides")) {
+            renderStack.selected().overrides.clear();
+            renderStack.selected().importedTextureOverride = false;
+            renderStack.selected().importedTexture.reset();
+          }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset scene setup")) {
+          if (inspectorGlobalScope) {
+            applyRecommendedSetup(scene, renderStack.global().renderer, camera);
+          } else {
+            RenderPass recommended = materializeRenderPass(renderStack, renderStack.selectedIndex(), 0.0f);
+            applyRecommendedSetup(scene, recommended.renderer, camera);
+            replaceRenderPassOverrides(renderStack.selected(), renderStack.global(), recommended);
+          }
+        }
+        ImGui::Separator();
+
+        RenderStack inspectorStack = renderStack;
+        const float inspectorTime = evaluateAnimation ? animationTimeline.timeSeconds : 0.0f;
+        const RenderPass displayedBefore = inspectorGlobalScope
+          ? evaluateRenderPass(renderStack.global(), inspectorTime)
+          : materializeRenderPass(renderStack, renderStack.selectedIndex(), inspectorTime);
+        inspectorStack.selected() = displayedBefore;
+        drawPassInspector(inspectorStack, animationTimeline, inspectorGlobalScope);
+        ImGui::Spacing();
+        ImGui::Separator();
+        drawInspector(category, inspectorStack.selected(), hardwareProfile, animationTimeline,
+          importedModel.get(), scene);
+        if (inspectorGlobalScope)
+          applyEditedPass(renderStack.global(), displayedBefore, inspectorStack.selected());
+        else
+          applyEditedLocalPass(renderStack, displayedBefore, inspectorStack.selected(), inspectorTime);
+      }
+      ImGui::End();
+    }
 
     const handbook::Action handbookAction = graphicsHandbook.draw(hardwareProfile);
-    drawPassDifferenceAudit(passDifferenceAuditOpen, renderStack);
+    drawPassDifferenceAudit(workspaceWindows.passDifferences, renderStack);
     if (handbookAction.type != handbook::ActionType::None && isNintendo64Example(handbookAction.example))
       hardwareProfile = HardwareProfile::Nintendo64;
     if (handbookAction.type == handbook::ActionType::ApplyToA) {
