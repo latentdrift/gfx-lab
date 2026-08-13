@@ -264,7 +264,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       if (renderer.composite(compositeValidation) == 0) fail("render-pass composite mask failed validation");
     }
     for (int source = static_cast<int>(CompositeSource::Accumulator);
-         source <= static_cast<int>(CompositeSource::FixedColor); ++source) {
+         source <= static_cast<int>(CompositeSource::PreviousFrame); ++source) {
       compositeValidation.passes()[2].composite.sourceA = static_cast<CompositeSource>(source);
       compositeValidation.passes()[2].composite.sourceB = static_cast<CompositeSource>(source);
       compositeValidation.passes()[2].composite.sourceAPass = 0;
@@ -272,9 +272,14 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       compositeValidation.passes()[2].composite.fixedColor = glm::vec4(0.8f, 0.2f, 0.6f, 1.0f);
       if (renderer.composite(compositeValidation) == 0) fail("render-pass composite source failed validation");
     }
+    renderer.resetFrameHistory();
+    compositeValidation.passes()[2].composite.operation = RelationOperator::BitwiseXor;
+    compositeValidation.passes()[2].composite.bitDepth = 5;
+    if (renderer.composite(compositeValidation) == 0 || renderer.composite(compositeValidation) == 0)
+      fail("quantized temporal compositing failed validation");
     const std::string stackConfig = renderStackConfigJson(compositeValidation, camera, scene,
       HardwareProfile::Unrestricted, nullptr, importedFixture.asset.get());
-    if (stackConfig.find("graphics-lab.render-stack.v3") == std::string::npos ||
+    if (stackConfig.find("graphics-lab.render-stack.v4") == std::string::npos ||
         stackConfig.find("global base, global track, local override, local track") == std::string::npos ||
         stackConfig.find("\"passes\"") == std::string::npos ||
         stackConfig.find("\"global_base\"") == std::string::npos ||
@@ -283,6 +288,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         stackConfig.find("\"composite_into_previous\"") == std::string::npos ||
         stackConfig.find("\"source_a\"") == std::string::npos ||
         stackConfig.find("\"fixed_color_rgba\"") == std::string::npos ||
+        stackConfig.find("\"previous_frame\"") == std::string::npos ||
         stackConfig.find("\"animation\"") == std::string::npos ||
         stackConfig.find("\"property_tracks\"") == std::string::npos ||
         stackConfig.find("\"value_kind\"") == std::string::npos ||
@@ -309,7 +315,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       }
     }
     for (int operation = static_cast<int>(RelationOperator::AbsoluteDifference);
-         operation <= static_cast<int>(RelationOperator::SignedColorOffset); ++operation)
+         operation <= static_cast<int>(RelationOperator::BitwiseXor); ++operation)
       renderer.renderRelation(static_cast<RelationOperator>(operation), 2.0f, 0.5f);
     const std::string relationConfig = relationConfigJson(current, reference, camera, scene,
       HardwareProfile::Unrestricted, RelationOperator::AbsoluteDifference, 4.0f, 0.0f);

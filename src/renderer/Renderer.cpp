@@ -186,6 +186,7 @@ public:
     sceneProgram_ = makeProgram(sceneVertexShader, sceneFragmentShader);
     outputProgram_ = makeProgram(outputVertexShader, outputFragmentShader);
     relationProgram_ = makeProgram(outputVertexShader, relationFragmentShader);
+    copyProgram_ = makeProgram(outputVertexShader, copyFragmentShader);
     shadowProgram_ = makeProgram(shadowVertexShader, shadowFragmentShader);
     overdrawProgram_ = makeProgram(overdrawVertexShader, overdrawFragmentShader);
     auto appendMesh = [this](const std::vector<Vertex>& mesh) {
@@ -231,6 +232,20 @@ public:
       if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         failRenderer("could not create render-algebra target");
     }
+    glGenFramebuffers(1, &historyFbo_);
+    glGenTextures(1, &historyTexture_);
+    glBindTexture(GL_TEXTURE_2D, historyTexture_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, relationWidth_, relationHeight_, 0, GL_RGBA,
+      GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindFramebuffer(GL_FRAMEBUFFER, historyFbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, historyTexture_, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+      failRenderer("could not create frame-history target");
+    resetFrameHistory();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glGetIntegerv(GL_MAX_SAMPLES, &maxSamples_);
     if (GLEW_EXT_texture_filter_anisotropic)
@@ -275,9 +290,12 @@ public:
     glDeleteVertexArrays(1, &fullscreenVao_);
     glDeleteFramebuffers(static_cast<GLsizei>(relationFbos_.size()), relationFbos_.data());
     glDeleteTextures(static_cast<GLsizei>(relationTextures_.size()), relationTextures_.data());
+    glDeleteFramebuffers(1, &historyFbo_);
+    glDeleteTextures(1, &historyTexture_);
     glDeleteProgram(sceneProgram_);
     glDeleteProgram(outputProgram_);
     glDeleteProgram(relationProgram_);
+    glDeleteProgram(copyProgram_);
     glDeleteProgram(shadowProgram_);
     glDeleteProgram(overdrawProgram_);
   }
@@ -762,6 +780,12 @@ public:
     glUniform1i(glGetUniformLocation(relationProgram_, "uSourceAMode"), static_cast<int>(step.sourceA));
     glUniform1i(glGetUniformLocation(relationProgram_, "uSourceBMode"), static_cast<int>(step.sourceB));
     glUniform4fv(glGetUniformLocation(relationProgram_, "uFixedColor"), 1, glm::value_ptr(step.fixedColor));
+    glUniform1i(glGetUniformLocation(relationProgram_, "uBitDepth"), std::clamp(step.bitDepth, 1, 8));
+    glUniform1f(glGetUniformLocation(relationProgram_, "uHistoryDecay"), step.historyDecay);
+    glUniform2fv(glGetUniformLocation(relationProgram_, "uHistoryUvOffset"), 1,
+      glm::value_ptr(step.historyUvOffset));
+    glUniform2fv(glGetUniformLocation(relationProgram_, "uHistoryUvScale"), 1,
+      glm::value_ptr(step.historyUvScale));
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, maskDepth);
     glUniform1i(glGetUniformLocation(relationProgram_, "uMaskDepth"), 2);
@@ -811,6 +835,7 @@ public:
           return passTargets_[index].outputTexture;
         }
         case CompositeSource::FixedColor: return passTexture;
+        case CompositeSource::PreviousFrame: return historyTexture_;
         }
         return passTexture;
       };
@@ -823,7 +848,16 @@ public:
       accumulated = compositeTextures(imageA, imageB, passTargets_[maskPassIndex].depthTexture,
         pass.renderer, pass.composite, compositeIndex++);
     }
+    if (accumulated != 0) copyToFrameHistory(accumulated);
     return accumulated;
+  }
+
+  void resetFrameHistory() {
+    glBindFramebuffer(GL_FRAMEBUFFER, historyFbo_);
+    glViewport(0, 0, relationWidth_, relationHeight_);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 
 private:
@@ -880,7 +914,23 @@ private:
       GL_STATIC_DRAW);
   }
 
-  GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0, shadowProgram_ = 0, overdrawProgram_ = 0;
+  void copyToFrameHistory(const GLuint sourceTexture) {
+    glBindFramebuffer(GL_FRAMEBUFFER, historyFbo_);
+    glViewport(0, 0, relationWidth_, relationHeight_);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glUseProgram(copyProgram_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, sourceTexture);
+    glUniform1i(glGetUniformLocation(copyProgram_, "uImage"), 0);
+    glBindVertexArray(fullscreenVao_);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  }
+
+  GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0, copyProgram_ = 0,
+    shadowProgram_ = 0, overdrawProgram_ = 0;
   GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, indexedTexture_ = 0,
     clutTexture_ = 0, normalTexture_ = 0, detailTexture_ = 0, whiteTexture_ = 0;
   GLint maxSamples_ = 1;
@@ -896,6 +946,7 @@ private:
   std::array<RenderTarget, RenderStack::maximumPasses> passTargets_;
   std::array<GLuint, 2> relationFbos_{};
   std::array<GLuint, 2> relationTextures_{};
+  GLuint historyFbo_ = 0, historyTexture_ = 0;
   static constexpr int relationWidth_ = 960;
   static constexpr int relationHeight_ = 720;
 
@@ -1047,6 +1098,7 @@ unsigned int Renderer::renderPass(const RenderPass& pass, const CameraOrbit& cam
 }
 
 unsigned int Renderer::composite(const RenderStack& stack) { return impl_->composite(stack); }
+void Renderer::resetFrameHistory() { impl_->resetFrameHistory(); }
 
 void Renderer::setImportedModel(const ModelAsset& asset) { impl_->setImportedModel(asset); }
 void Renderer::clearImportedModel() { impl_->clearImportedModel(); }

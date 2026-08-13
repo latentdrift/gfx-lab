@@ -73,6 +73,7 @@ enum class RelationOperator {
   HardwareReverseSubtract,
   QuarterAdd,
   SignedColorOffset,
+  BitwiseXor,
 };
 enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask, ImportedModel };
 

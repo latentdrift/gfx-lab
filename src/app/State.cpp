@@ -447,14 +447,15 @@ std::string relationConfigJson(const RendererState& a, const RendererState& b, c
   constexpr const char* operationIds[] = {
     "absolute_difference", "signed_a_minus_b", "positive_a_minus_b", "positive_b_minus_a", "multiply", "screen",
     "exclusion", "minimum", "maximum", "a_times_one_minus_b", "centered_sum", "relative_a_over_b",
-    "add", "average", "subtract", "reverse_subtract", "quarter_add_b", "signed_color_offset"
+    "add", "average", "subtract", "reverse_subtract", "quarter_add_b", "signed_color_offset", "bitwise_xor"
   };
   constexpr const char* equations[] = {
     "abs(a - b)", "a - b", "max(a - b, 0)", "max(b - a, 0)", "a * b", "1 - (1 - a) * (1 - b)",
     "a + b - 2 * a * b", "min(a, b)", "max(a, b)", "a * (1 - b)", "a + b - 1",
-    "a / max(b, 1/255) - 1", "a + b", "(a + b) / 2", "a - b", "b - a", "a + b / 4", "a + b - 1/2"
+    "a / max(b, 1/255) - 1", "a + b", "(a + b) / 2", "a - b", "b - a", "a + b / 4", "a + b - 1/2",
+    "quantize(a) XOR quantize(b)"
   };
-  const int index = std::clamp(static_cast<int>(operation), 0, 17);
+  const int index = std::clamp(static_cast<int>(operation), 0, 18);
   const auto nested = [](std::string value) {
     if (!value.empty() && value.back() == '\n') value.pop_back();
     std::string result;

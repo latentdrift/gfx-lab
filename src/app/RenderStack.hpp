@@ -19,7 +19,7 @@ enum class CompositeColorSpace { EncodedRgb, LinearLight };
 enum class CompositeRange { Clamp, Preserve, Wrap };
 enum class PassOutput { Color, Depth, Normals, VertexColor };
 enum class CompositeMask { None, PassLuminance, PassDepth, PassEdges };
-enum class CompositeSource { Accumulator, CurrentPass, RenderPass, FixedColor };
+enum class CompositeSource { Accumulator, CurrentPass, RenderPass, FixedColor, PreviousFrame };
 enum class TextureSource { SceneMaterial, BuiltInChecker, ImportedOverride, White };
 
 struct PassPerturbation {
@@ -41,6 +41,10 @@ struct CompositeStep {
   int sourceAPass = 0;
   int sourceBPass = 0;
   glm::vec4 fixedColor{1.0f};
+  int bitDepth = 8;
+  float historyDecay = 0.96f;
+  glm::vec2 historyUvOffset{0.0f};
+  glm::vec2 historyUvScale{1.0f};
   float gain = 4.0f;
   float bias = 0.0f;
   float opacity = 1.0f;

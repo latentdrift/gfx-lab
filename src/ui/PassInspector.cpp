@@ -88,11 +88,12 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
   ImGui::Spacing();
   ImGui::Separator();
   ImGui::TextDisabled("COMPOSITE OPERANDS");
-  constexpr const char* sourceLabels[] = {"Accumulated result", "Current pass", "Render pass", "Fixed color"};
+  constexpr const char* sourceLabels[] = {
+    "Accumulated result", "Current pass", "Render pass", "Fixed color", "Previous frame"};
   const auto sourceControl = [&](const char* label, CompositeSource& source, int& sourcePass,
       const AnimationProperty sourceProperty, const AnimationProperty passProperty) {
     int selectedSource = static_cast<int>(source);
-    const bool sourceChanged = ImGui::Combo(label, &selectedSource, sourceLabels, 4);
+    const bool sourceChanged = ImGui::Combo(label, &selectedSource, sourceLabels, 5);
     if (sourceChanged) source = static_cast<CompositeSource>(selectedSource);
     animationKeyControl(pass, sourceProperty, timeline, sourceChanged);
     if (source != CompositeSource::RenderPass) return;
@@ -120,12 +121,24 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
       ImGuiColorEditFlags_Float);
     animationKeyControl(pass, AnimationProperty::CompositeFixedColor, timeline, colorChanged);
   }
+  if (pass.composite.sourceA == CompositeSource::PreviousFrame ||
+      pass.composite.sourceB == CompositeSource::PreviousFrame) {
+    animationKeyControl(pass, AnimationProperty::CompositeHistoryDecay, timeline,
+      ImGui::SliderFloat("History decay", &pass.composite.historyDecay, 0.0f, 1.0f, "%.3f"));
+    animationKeyControl(pass, AnimationProperty::CompositeHistoryUvOffset, timeline,
+      ImGui::DragFloat2("History UV offset", &pass.composite.historyUvOffset.x, 1.0f / 1024.0f,
+        -1.0f, 1.0f, "%.5f"));
+    animationKeyControl(pass, AnimationProperty::CompositeHistoryUvScale, timeline,
+      ImGui::DragFloat2("History UV scale", &pass.composite.historyUvScale.x, 0.001f,
+        0.25f, 4.0f, "%.4f"));
+    description("Previous frame reads the last completed composite. Decay is applied before color arithmetic.");
+  }
   description("A and B are independent inputs. A render-pass source reads that pass's raw output, not its composited result.");
 
   ImGui::Spacing();
   ImGui::TextDisabled("COLOR ARITHMETIC");
   int operation = static_cast<int>(pass.composite.operation);
-  constexpr int operationCount = static_cast<int>(RelationOperator::SignedColorOffset) + 1;
+  constexpr int operationCount = static_cast<int>(RelationOperator::BitwiseXor) + 1;
   std::array<const char*, operationCount> operationLabels{};
   for (int index = 0; index < operationCount; ++index)
     operationLabels[static_cast<std::size_t>(index)] = relationOperatorLabel(static_cast<RelationOperator>(index));
@@ -134,6 +147,10 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
     resetCompositeTransform(pass.composite);
   }
   animationKeyControl(pass, AnimationProperty::CompositeOperation, timeline, ImGui::IsItemEdited());
+  if (pass.composite.operation == RelationOperator::BitwiseXor) {
+    const bool bitsChanged = ImGui::SliderInt("Integer channel bits", &pass.composite.bitDepth, 1, 8);
+    animationKeyControl(pass, AnimationProperty::CompositeBitDepth, timeline, bitsChanged);
+  }
   animationKeyControl(pass, AnimationProperty::CompositeOpacity, timeline,
     ImGui::SliderFloat("Opacity", &pass.composite.opacity, 0.0f, 1.0f, "%.2f"));
   animationKeyControl(pass, AnimationProperty::CompositeGain, timeline,

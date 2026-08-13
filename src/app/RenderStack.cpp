@@ -31,6 +31,10 @@ bool animationPropertyIsPassLocal(const AnimationProperty property) {
   case AnimationProperty::CompositeSourceAPass:
   case AnimationProperty::CompositeSourceBPass:
   case AnimationProperty::CompositeFixedColor:
+  case AnimationProperty::CompositeBitDepth:
+  case AnimationProperty::CompositeHistoryDecay:
+  case AnimationProperty::CompositeHistoryUvOffset:
+  case AnimationProperty::CompositeHistoryUvScale:
   case AnimationProperty::CompositeColorSpace:
   case AnimationProperty::CompositeRange:
   case AnimationProperty::CompositeMask:
@@ -141,22 +145,23 @@ bool RenderStack::moveSelected(const int direction) {
 }
 
 namespace {
-constexpr std::array<const char*, 18> labels = {
+constexpr std::array<const char*, 19> labels = {
   "Absolute difference", "Signed A - B", "Positive A - B", "Positive B - A", "Multiply", "Screen",
   "Exclusion", "Minimum", "Maximum", "A x (1 - B)", "Centered sum", "Relative A / B",
-  "Add", "Average (add + half)", "Subtract", "Reverse subtract", "Quarter-add B", "Signed color offset"
+  "Add", "Average (add + half)", "Subtract", "Reverse subtract", "Quarter-add B", "Signed color offset",
+  "Bitwise XOR"
 };
-constexpr std::array<const char*, 18> ids = {
+constexpr std::array<const char*, 19> ids = {
   "absolute_difference", "signed_a_minus_b", "positive_a_minus_b", "positive_b_minus_a", "multiply", "screen",
   "exclusion", "minimum", "maximum", "a_times_one_minus_b", "centered_sum", "relative_a_over_b",
-  "add", "average", "subtract", "reverse_subtract", "quarter_add_b", "signed_color_offset"
+  "add", "average", "subtract", "reverse_subtract", "quarter_add_b", "signed_color_offset", "bitwise_xor"
 };
-constexpr std::array<const char*, 18> equations = {
+constexpr std::array<const char*, 19> equations = {
   "|A - B|", "A - B", "max(A - B, 0)", "max(B - A, 0)", "A x B", "1 - (1 - A)(1 - B)",
   "A + B - 2AB", "min(A, B)", "max(A, B)", "A(1 - B)", "A + B - 1", "A / max(B, 1/255) - 1",
-  "A + B", "(A + B) / 2", "A - B", "B - A", "A + B / 4", "A + B - 1/2"
+  "A + B", "(A + B) / 2", "A - B", "B - A", "A + B / 4", "A + B - 1/2", "quantize(A) XOR quantize(B)"
 };
-constexpr std::array<const char*, 18> meanings = {
+constexpr std::array<const char*, 19> meanings = {
   "Black means agreement; RGB stores disagreement magnitude.",
   "Middle gray means agreement; direction says which input has more channel energy.",
   "Keeps only channel energy present in the accumulated image beyond this pass.",
@@ -173,7 +178,8 @@ constexpr std::array<const char*, 18> meanings = {
   "Subtracts B from A before the selected range behavior.",
   "Subtracts A from B before the selected range behavior.",
   "Adds one quarter of B to A, matching the PS1 quarter-add equation.",
-  "Treats B around middle gray as a signed offset: dark subtracts and bright adds."
+  "Treats B around middle gray as a signed offset: dark subtracts and bright adds.",
+  "Quantizes both inputs to an integer channel depth, applies bitwise XOR, then normalizes the result."
 };
 std::size_t relationIndex(const RelationOperator operation) {
   return static_cast<std::size_t>(std::clamp(static_cast<int>(operation), 0,
@@ -204,7 +210,7 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   constexpr const char* colorSpaceIds[] = {"encoded_rgb", "linear_light"};
   constexpr const char* rangeIds[] = {"clamp_0_to_1", "preserve_signed_hdr", "wrap_fractional_part"};
   constexpr const char* maskIds[] = {"none", "pass_luminance", "pass_depth_0_to_10_units", "pass_image_edges"};
-  constexpr const char* sourceIds[] = {"accumulated_result", "current_pass", "render_pass", "fixed_color"};
+  constexpr const char* sourceIds[] = {"accumulated_result", "current_pass", "render_pass", "fixed_color", "previous_frame"};
   constexpr const char* interpolationIds[] = {"step", "linear", "smooth_step"};
   constexpr const char* valueKindIds[] = {"float", "vec2", "vec3", "color3", "color4", "angle",
     "boolean", "integer", "enumeration"};
@@ -232,7 +238,7 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   std::ostringstream json;
   json << std::boolalpha << std::fixed << std::setprecision(5);
   json << "{\n";
-  json << "  \"schema\": \"graphics-lab.render-stack.v3\",\n";
+  json << "  \"schema\": \"graphics-lab.render-stack.v4\",\n";
   json << "  \"evaluation\": \"bottom_to_top_sequential_compositing\",\n";
   json << "  \"property_precedence\": \"global base, global track, local override, local track\",\n";
   json << "  \"seed_rule\": \"the first enabled pass becomes the accumulator; every later enabled pass applies its composite step\",\n";
@@ -348,6 +354,9 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
          << sourceIds[static_cast<int>(c.sourceB)] << "\", \"pass_index\": " << c.sourceBPass
          << "}, \"fixed_color_rgba\": [" << c.fixedColor.r << ", " << c.fixedColor.g << ", "
          << c.fixedColor.b << ", " << c.fixedColor.a << "]"
+         << ", \"bit_depth\": " << c.bitDepth << ", \"previous_frame\": {\"decay\": " << c.historyDecay
+         << ", \"uv_offset\": [" << c.historyUvOffset.x << ", " << c.historyUvOffset.y
+         << "], \"uv_scale\": [" << c.historyUvScale.x << ", " << c.historyUvScale.y << "]}"
          << ", \"gain\": " << c.gain << ", \"bias\": " << c.bias << ", \"opacity\": " << c.opacity
          << ", \"arithmetic_color_space\": \"" << colorSpaceIds[static_cast<int>(c.colorSpace)]
          << "\", \"range_behavior\": \"" << rangeIds[static_cast<int>(c.range)]

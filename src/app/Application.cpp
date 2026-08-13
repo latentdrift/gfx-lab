@@ -164,6 +164,9 @@ int runApplication() {
 
   RenderStack renderStack;
   renderStack.global().renderer = current;
+  TestScene historyScene = scene;
+  HardwareProfile historyProfile = hardwareProfile;
+  const ModelAsset* historyModel = nullptr;
   const auto normalizeDocument = [&renderStack](const HardwareProfile profile) {
     if (profile == HardwareProfile::Unrestricted) renderStack.global().renderer.n64.enabled = false;
     normalizeForHardwareProfile(profile, renderStack.global().renderer);
@@ -190,6 +193,7 @@ int runApplication() {
       if (importedModel != nullptr) renderer.setImportedModel(*importedModel);
       else renderer.clearImportedModel();
     }
+    renderer.resetFrameHistory();
     if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
   };
 
@@ -262,6 +266,7 @@ int runApplication() {
         &animationTimeline, importedModel.get());
       ImGui::SetClipboardText(exported.c_str());
     }
+    if (workspaceActions.resetFrameHistory) renderer.resetFrameHistory();
     if (workspaceActions.handbook) graphicsHandbook.open();
     if (workspaceActions.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
 
@@ -287,6 +292,13 @@ int runApplication() {
         ImGui::CloseCurrentPopup();
       }
       ImGui::EndPopup();
+    }
+
+    if (scene != historyScene || hardwareProfile != historyProfile || importedModel.get() != historyModel) {
+      renderer.resetFrameHistory();
+      historyScene = scene;
+      historyProfile = hardwareProfile;
+      historyModel = importedModel.get();
     }
 
     drawRenderPassesWindow(workspaceWindows.renderPasses, renderStack, animationTimeline,

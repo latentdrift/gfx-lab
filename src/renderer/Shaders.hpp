@@ -441,6 +441,10 @@ uniform sampler2D uImageB;
 uniform int uSourceAMode;
 uniform int uSourceBMode;
 uniform vec4 uFixedColor;
+uniform int uBitDepth;
+uniform float uHistoryDecay;
+uniform vec2 uHistoryUvOffset;
+uniform vec2 uHistoryUvScale;
 uniform int uOperator;
 uniform float uGain;
 uniform float uBias;
@@ -459,8 +463,13 @@ vec3 signedPow(vec3 value, float exponent) {
 }
 
 void main() {
-  vec3 storedA = uSourceAMode == 3 ? uFixedColor.rgb : texture(uImageA, vUv).rgb;
-  vec3 storedB = uSourceBMode == 3 ? uFixedColor.rgb : texture(uImageB, vUv).rgb;
+  vec2 historyUv = (vUv - 0.5) * uHistoryUvScale + 0.5 + uHistoryUvOffset;
+  vec3 storedA = uSourceAMode == 3 ? uFixedColor.rgb :
+    texture(uImageA, uSourceAMode == 4 ? historyUv : vUv).rgb;
+  vec3 storedB = uSourceBMode == 3 ? uFixedColor.rgb :
+    texture(uImageB, uSourceBMode == 4 ? historyUv : vUv).rgb;
+  if (uSourceAMode == 4) storedA *= uHistoryDecay;
+  if (uSourceBMode == 4) storedB *= uHistoryDecay;
   vec3 a = uColorSpace == 1 ? signedPow(storedA, 2.2) : storedA;
   vec3 b = uColorSpace == 1 ? signedPow(storedB, 2.2) : storedB;
   vec3 relation;
@@ -481,7 +490,13 @@ void main() {
   else if (uOperator == 14) relation = a - b;
   else if (uOperator == 15) relation = b - a;
   else if (uOperator == 16) relation = a + b * 0.25;
-  else relation = a + b - 0.5;
+  else if (uOperator == 17) relation = a + b - 0.5;
+  else {
+    float levels = exp2(float(uBitDepth)) - 1.0;
+    uvec3 qa = uvec3(round(clamp(a, 0.0, 1.0) * levels));
+    uvec3 qb = uvec3(round(clamp(b, 0.0, 1.0) * levels));
+    relation = vec3(qa ^ qb) / levels;
+  }
   relation = relation * uGain + uBias;
   if (uRangeMode == 0) relation = clamp(relation, 0.0, 1.0);
   else if (uRangeMode == 2) relation = fract(relation);
@@ -507,6 +522,14 @@ void main() {
   if (uColorSpace == 1) composed = signedPow(composed, 1.0 / 2.2);
   fragColor = vec4(composed, 1.0);
 }
+)GLSL";
+
+inline constexpr const char* copyFragmentShader = R"GLSL(
+#version 410 core
+in vec2 vUv;
+uniform sampler2D uImage;
+out vec4 fragColor;
+void main() { fragColor = texture(uImage, vUv); }
 )GLSL";
 
 inline constexpr const char* shadowVertexShader = R"GLSL(

@@ -32,6 +32,7 @@ struct WorkspaceActions {
   bool importModel = false;
   bool copyJson = false;
   bool handbook = false;
+  bool resetFrameHistory = false;
   bool quit = false;
 };
 

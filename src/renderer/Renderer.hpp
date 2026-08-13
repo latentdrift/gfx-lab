@@ -23,6 +23,7 @@ public:
   unsigned int renderPass(const RenderPass& pass, const CameraOrbit& camera, TestScene scene,
     std::size_t targetIndex);
   unsigned int composite(const RenderStack& stack);
+  void resetFrameHistory();
   void setImportedModel(const ModelAsset& asset);
   void clearImportedModel();
 

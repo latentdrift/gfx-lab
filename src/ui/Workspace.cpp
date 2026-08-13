@@ -100,6 +100,8 @@ WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, c
         ImGui::TextDisabled("Ctrl+- / Ctrl+= / Ctrl+0");
         ImGui::EndMenu();
       }
+      ImGui::Separator();
+      if (ImGui::MenuItem("Reset Frame History")) actions.resetFrameHistory = true;
       ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Window")) {
