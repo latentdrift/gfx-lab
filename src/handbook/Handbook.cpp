@@ -311,6 +311,12 @@ constexpr std::array articles = {
     "Near-duplicates reveal silhouettes, parallax, topology, texture parameterization, depth boundaries, sampling thresholds, and color extrema as controllable interference structures.",
     "A duplicated framebuffer can only receive image-space edits; a duplicated render pass can alter the 3D interpretation and rerasterize it. More passes increase render-target memory, scene submission, fill cost, and the difficulty of attributing a result to one mutation.",
     "Describe a pass by its scene inputs, renderer state, perturbation, output buffer, render-target format, and composite step. This resembles a layer stack but each layer may be a complete rerender rather than a stored bitmap.", Diagram::Comparison},
+  Article{"Animation", "Keyframes and parameter animation",
+    "A keyframe records parameter values at a named time. Evaluation finds the surrounding keys and computes the value between them using step, linear, or eased interpolation. Graphics Lab evaluates keys into a temporary render-pass stack, leaving the authored stack intact.",
+    "Animation timeline evaluation before render-pass submission",
+    "Camera parallax, UV drift, geometry inflation, changing light, fog boundaries, quantization thresholds, and composite extrema can move coherently through the rendered image.",
+    "Continuous numbers and colors interpolate naturally. Algorithm selections, resource choices, topology, enable switches, and pass ordering require discrete keys, transitions, or a different representation. Angle interpolation may also need explicit wrap handling for large rotations.",
+    "State the animated property, units, key times, interpolation curve, looping behavior, and whether evaluation changes source data or produces a temporary frame state. A timeline animates parameters; skeletal animation is the separate process that deforms a mesh through a bone hierarchy.", Diagram::Animation},
   Article{"Engine architecture", "Asset, scene, material, and renderer responsibilities",
     "Assets define authored data. The scene defines objects, transforms, cameras, and lights. Materials define surface inputs and shading. The renderer schedules passes and configures GPU state.",
     "Whole engine", "A coherent visual style emerges from constraints across all four responsibility areas.",
@@ -425,6 +431,7 @@ constexpr std::array quickReads = {
   QuickRead{"N64 Video Interface filtering", "After rendering is finished, the VI reconstructs and scales the framebuffer signal; this is separate from filtering a material texture."},
   QuickRead{"Render algebra between completed images", "Start with one completed pass, then make each later pass change the accumulated image according to an explicit per-pixel equation."},
   QuickRead{"Render-pass stacks and controlled perturbation", "Duplicate a 3D interpretation, make the copy slightly wrong, then composite the correlated disagreement into the passes below it."},
+  QuickRead{"Keyframes and parameter animation", "Record parameter values at specific times, then calculate the in-between value before rendering each frame."},
   QuickRead{"Asset, scene, material, and renderer responsibilities", "Assets provide data, the scene arranges it, materials describe surfaces, and the renderer schedules the work that produces a frame."},
   QuickRead{"Forward rendering and render passes", "A pass is one scheduled piece of rendering with declared inputs and outputs; a frame is usually made from several passes."},
   QuickRead{"Forward, deferred, and forward+ rendering", "These architectures mainly differ in when surface lighting happens and how visible surfaces find the lights that affect them."},
@@ -718,7 +725,8 @@ std::array<const char*, 4> branchesFor(std::string_view title) {
   if (title == "Asset, scene, material, and renderer responsibilities") return {"Material versus shader", "Render graphs and pass dependencies", "CPU submission and draw calls", nullptr};
   if (title == "Render graphs and pass dependencies") return {"Hardware capability profiles", "Forward, deferred, and forward+ rendering", nullptr, nullptr};
   if (title == "Render algebra between completed images") return {"Render-pass stacks and controlled perturbation", "Transparency and compositing", "Linear light and encoded RGB", "Color quantization and dithering"};
-  if (title == "Render-pass stacks and controlled perturbation") return {"Render algebra between completed images", "Forward rendering and render passes", "Render graphs and pass dependencies", "Material versus shader"};
+  if (title == "Render-pass stacks and controlled perturbation") return {"Render algebra between completed images", "Keyframes and parameter animation", "Forward rendering and render passes", "Render graphs and pass dependencies"};
+  if (title == "Keyframes and parameter animation") return {"Render-pass stacks and controlled perturbation", "Skeletal animation and skinning", "Morph targets and procedural deformation", "Render graphs and pass dependencies"};
   if (title == "Skeletal animation and skinning") return {"Vertex shaders", "Morph targets and procedural deformation", nullptr, nullptr};
   if (title == "Rasterization versus ray tracing") return {"Acceleration structures and path tracing", "The realtime rasterization pipeline", nullptr, nullptr};
   return {nullptr, nullptr, nullptr, nullptr};

@@ -97,11 +97,12 @@ void resetCompositeTransform(CompositeStep& step) {
 }
 
 std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& camera, const TestScene scene,
-    const HardwareProfile profile) {
+    const HardwareProfile profile, const AnimationTimeline* timeline) {
   constexpr const char* outputIds[] = {"color", "linear_depth_0_to_10_units", "normals", "vertex_colors"};
   constexpr const char* colorSpaceIds[] = {"encoded_rgb", "linear_light"};
   constexpr const char* rangeIds[] = {"clamp_0_to_1", "preserve_signed_hdr", "wrap_fractional_part"};
   constexpr const char* maskIds[] = {"none", "pass_luminance", "pass_depth_0_to_10_units", "pass_image_edges"};
+  constexpr const char* interpolationIds[] = {"step", "linear", "smooth_step"};
   const auto escape = [](const std::string& value) {
     std::string result;
     for (const char character : value) {
@@ -128,6 +129,11 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   json << "  \"evaluation\": \"bottom_to_top_sequential_compositing\",\n";
   json << "  \"seed_rule\": \"the first enabled pass becomes the accumulator; every later enabled pass applies its composite step\",\n";
   json << "  \"test_scene\": \"" << testSceneName(scene) << "\",\n";
+  if (timeline != nullptr) {
+    json << "  \"animation_timeline\": {\"duration_seconds\": " << timeline->durationSeconds
+         << ", \"playback_rate\": " << timeline->playbackRate << ", \"loop\": " << timeline->loop
+         << ", \"current_time_seconds\": " << timeline->timeSeconds << "},\n";
+  }
   json << "  \"passes\": [\n";
   for (std::size_t index = 0; index < stack.passes().size(); ++index) {
     const RenderPass& pass = stack.passes()[index];
@@ -154,6 +160,41 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
          << "\", \"range_behavior\": \"" << rangeIds[static_cast<int>(c.range)]
          << "\", \"mask\": \"" << maskIds[static_cast<int>(c.mask)]
          << "\", \"invert_mask\": " << c.invertMask << "},\n";
+    json << "      \"animation\": {\"enabled\": " << pass.animation.enabled
+         << ", \"interpolation\": \"" << interpolationIds[static_cast<int>(pass.animation.interpolation)]
+         << "\", \"keyframes\": [";
+    for (std::size_t keyIndex = 0; keyIndex < pass.animation.keyframes.size(); ++keyIndex) {
+      const PassKeyframe& keyframe = pass.animation.keyframes[keyIndex];
+      const PassAnimationValues& v = keyframe.values;
+      if (keyIndex != 0) json << ",";
+      json << "\n        {\"time_seconds\": " << keyframe.timeSeconds << ", \"values\": {";
+      json << "\"model_translation_units\": [" << v.modelTranslation.x << ", " << v.modelTranslation.y
+           << ", " << v.modelTranslation.z << "], \"model_scale\": " << v.modelScale
+           << ", \"normal_inflation_units\": " << v.normalInflation;
+      json << ", \"uv_offset\": [" << v.uvOffset.x << ", " << v.uvOffset.y << "], \"uv_scale\": ["
+           << v.uvScale.x << ", " << v.uvScale.y << "]";
+      json << ", \"camera_offsets\": {\"yaw_radians\": " << v.cameraYaw << ", \"pitch_radians\": "
+           << v.cameraPitch << ", \"distance_units\": " << v.cameraDistance << ", \"fov_degrees\": "
+           << v.fieldOfViewOffset << "}";
+      json << ", \"composite\": {\"gain\": " << v.compositeGain << ", \"bias\": " << v.compositeBias
+           << ", \"opacity\": " << v.compositeOpacity << "}";
+      json << ", \"vertex_quantization_step_units\": " << v.vertexQuantization
+           << ", \"normal_map_strength\": " << v.normalStrength;
+      json << ", \"lighting\": {\"ambient\": " << v.ambient << ", \"azimuth_degrees\": "
+           << v.lightAzimuth << ", \"elevation_degrees\": " << v.lightElevation
+           << ", \"specular_exponent\": " << v.shininess << "}";
+      json << ", \"depth_cue\": {\"start_units\": " << v.depthCueStart << ", \"end_units\": "
+           << v.depthCueEnd << ", \"far_color_rgb\": [" << v.farColor.r << ", " << v.farColor.g << ", "
+           << v.farColor.b << "]}";
+      json << ", \"fog\": {\"start_units\": " << v.fogStart << ", \"end_units\": " << v.fogEnd << "}";
+      json << ", \"n64_primitive_color_rgba\": [" << v.primitiveColor.r << ", " << v.primitiveColor.g
+           << ", " << v.primitiveColor.b << ", " << v.primitiveColor.a << "]";
+      json << ", \"n64_environment_color_rgba\": [" << v.environmentColor.r << ", " << v.environmentColor.g
+           << ", " << v.environmentColor.b << ", " << v.environmentColor.a << "]";
+      json << ", \"alpha_threshold\": " << v.alphaThreshold << "}}";
+    }
+    if (!pass.animation.keyframes.empty()) json << "\n      ";
+    json << "]},\n";
     json << "      \"renderer\": " << nested(configJson(pass.renderer, camera, scene, profile), 6) << "\n";
     json << "    }" << (index + 1 < stack.passes().size() ? "," : "") << "\n";
   }

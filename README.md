@@ -22,6 +22,7 @@ src/
   main.cpp                    process entry point only
   app/
     Application.cpp           GLFW/ImGui lifecycle and workspace orchestration
+    Animation.cpp             keyframe capture, interpolation, and stack evaluation
     HardwareProfile.cpp       target capabilities and state normalization
     RenderStack.cpp           pass definitions, compositing state, and stack export
     State.cpp                 explicit renderer state, scene setups, JSON export
@@ -31,6 +32,7 @@ src/
     TestGeometry.cpp          procedural diagnostic meshes
   ui/
     Inspector.cpp             pipeline-category controls and visual styling
+    AnimationEditor.cpp       transport, playhead, and selected-pass key controls
     PassInspector.cpp         pass perturbation and composite controls
   handbook/
     Handbook.cpp              searchable articles, diagrams, and live comparisons
@@ -46,11 +48,13 @@ src/
 
 The left panel is a bottom-to-top **render-pass stack**. Select a pass to edit its full renderer state, or press **Duplicate pass** to make a correlated copy and perturb its geometry, camera, UVs, or output buffer. Later passes combine sequentially with the accumulated image using explicit per-channel operations: absolute or signed difference, one-sided subtraction, multiply, screen, exclusion, minimum, maximum, `A x (1 - B)`, centered sum, or relative difference. Each step exposes opacity, gain, bias, encoded-RGB versus linear-light arithmetic, clamp/preserve/wrap range behavior, and optional luminance/depth/edge masks.
 
+The **Animation** strip keyframes the selected pass. It interpolates continuous pass perturbations, composite gain/bias/opacity, vertex precision, normal-map strength, lighting quantities, fog and depth cue distances/colors, and N64 primitive/environment colors. Algorithm choices and binary switches remain static. Build a state and set a key, move the playhead, use **Edit playhead sample**, alter the controls, set another key, then press **Play**. Playback evaluates a temporary stack and never overwrites the authored pass state.
+
 The **Target** selector defaults to **Unrestricted**. **PlayStation (PS1)** and **Nintendo 64** normalize every pass to target-representable state, remove unavailable categories and controls, narrow shared controls to supported choices, and display important forced values or labelled emulation substitutes as profile facts. Switching back to Unrestricted unlocks the controls but does not restore values discarded during normalization. Reset buttons are also normalized by the active target.
 
 The Nintendo 64 target exposes the standard RSP/RDP/VI model: one- or two-cycle `(A - B) x C + D` color combiners, named combiner sources, primitive/environment registers, RDP surface and alpha-compare modes, point/three-point/box texture filters, mip/trilinear/sharpen/detail modes, nine texture formats, tile addressing and calculated 4096-byte TMEM use, RSP texture generation and vertex fog, Z compare/update, coverage antialiasing, RGBA16/RGBA32 framebuffer state, color dithering, and VI reconstruction/divot filters. Coverage and VI behavior are explicitly labelled approximations; the combiner, format quantization, three-point filter, alpha comparison, and TMEM accounting are modeled directly.
 
-Use **Copy stack JSON** to place a human-readable `graphics-lab.render-stack.v1` document on the clipboard. It contains every complete renderer state, pass perturbation, selected output buffer, composite equation, mask, color space, range behavior, scene, and camera using explicit names suitable for sharing with other tools or coding agents.
+Use **Copy stack JSON** to place a human-readable `graphics-lab.render-stack.v1` document on the clipboard. It contains every complete renderer state, pass perturbation, selected output buffer, composite equation, mask, color space, range behavior, animation timeline and keyframe, scene, and camera using explicit names suitable for sharing with other tools or coding agents.
 
 Use **Handbook** to open the built-in technical reference. Start with **From mesh to pixel**, then follow its related-concept links or browse the knowledge map. Every article begins with a plain causal **Quick read** before preserving the precise definition, pipeline location, visible results, interactions, engine vocabulary, and technical diagram. The map groups the pipeline, shading, visibility and output, engine systems, animation, and ray tracing. Reading never changes renderer state; example buttons apply configurations deliberately.
 

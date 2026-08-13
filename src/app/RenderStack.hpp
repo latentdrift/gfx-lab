@@ -78,6 +78,6 @@ private:
 [[nodiscard]] const char* relationOperatorMeaning(RelationOperator operation);
 void resetCompositeTransform(CompositeStep& step);
 [[nodiscard]] std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& camera,
-  TestScene scene, HardwareProfile profile);
+  TestScene scene, HardwareProfile profile, const AnimationTimeline* timeline = nullptr);
 
 } // namespace gfxlab

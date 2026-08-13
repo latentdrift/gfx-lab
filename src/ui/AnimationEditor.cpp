@@ -40,7 +40,10 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
   if (ImGui::SliderFloat("Time", &timeline.timeSeconds, 0.0f, timeline.durationSeconds, "%.3f s"))
     timeline.playing = false;
   ImGui::SameLine();
-  if (ImGui::Button("Set / replace key")) setPassKeyframe(pass, timeline.timeSeconds);
+  if (ImGui::Button("Set / replace key")) {
+    setPassKeyframe(pass, timeline.timeSeconds);
+    previewAtPlayhead = true;
+  }
   ImGui::SameLine();
   const std::size_t nearby = keyframeIndexNear(pass, timeline.timeSeconds);
   ImGui::BeginDisabled(nearby == std::numeric_limits<std::size_t>::max());
@@ -48,12 +51,14 @@ void drawAnimationEditor(AnimationTimeline& timeline, RenderStack& stack, bool& 
   ImGui::EndDisabled();
   ImGui::SameLine();
   ImGui::BeginDisabled(pass.animation.keyframes.empty());
-  if (ImGui::Button("Load sampled values")) {
+  if (ImGui::Button("Edit playhead sample")) {
     const RenderStack sampled = evaluateRenderStack(stack, timeline.timeSeconds);
     applyAnimationValues(pass, captureAnimationValues(sampled.selected()));
     previewAtPlayhead = false;
     timeline.playing = false;
   }
+  if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("Copy the evaluated values at this time into the controls, then disable preview so you can alter them and set a new key.");
   ImGui::EndDisabled();
 
   ImGui::SameLine();

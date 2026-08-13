@@ -80,7 +80,7 @@ int runApplication() {
   HardwareProfile hardwareProfile = HardwareProfile::Unrestricted;
   bool viewportHovered = false;
   bool animationPanelOpen = true;
-  bool previewAnimation = false;
+  bool previewAnimation = true;
   AnimationTimeline animationTimeline;
   double previousFrameTime = glfwGetTime();
   double configCopiedAt = -10.0;
@@ -132,7 +132,8 @@ int runApplication() {
     if (stackConfig.find("graphics-lab.render-stack.v1") == std::string::npos ||
         stackConfig.find("\"passes\"") == std::string::npos ||
         stackConfig.find("\"perturbation\"") == std::string::npos ||
-        stackConfig.find("\"composite_into_previous\"") == std::string::npos)
+        stackConfig.find("\"composite_into_previous\"") == std::string::npos ||
+        stackConfig.find("\"animation\"") == std::string::npos)
       fail("render-pass stack missing from config export");
     constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,
       handbook::Example::AffineMapping, handbook::Example::TextureMinification, handbook::Example::NormalMapping,
@@ -304,7 +305,8 @@ int runApplication() {
       ImGui::SetTooltip("Apply the recommended renderer state and camera framing for the selected scene.");
     ImGui::SameLine();
     if (ImGui::Button("Copy stack JSON")) {
-      const std::string exportedConfig = renderStackConfigJson(renderStack, camera, scene, hardwareProfile);
+      const std::string exportedConfig = renderStackConfigJson(renderStack, camera, scene, hardwareProfile,
+        &animationTimeline);
       ImGui::SetClipboardText(exportedConfig.c_str());
       configCopiedAt = glfwGetTime();
     }
@@ -387,6 +389,7 @@ int runApplication() {
     const bool evaluateAnimation = animationTimeline.playing || previewAnimation;
     RenderStack evaluatedStack = evaluateAnimation
       ? evaluateRenderStack(renderStack, animationTimeline.timeSeconds) : renderStack;
+    for (RenderPass& pass : evaluatedStack.passes()) normalizeForHardwareProfile(hardwareProfile, pass.renderer);
     std::array<GLuint, RenderStack::maximumPasses> passTextures{};
     for (std::size_t passIndex = 0; passIndex < evaluatedStack.passes().size(); ++passIndex) {
       passTextures[passIndex] = renderer.renderPass(evaluatedStack.passes()[passIndex], camera, scene, passIndex);
