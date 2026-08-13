@@ -7,7 +7,11 @@
 namespace gfxlab::ui {
 
 void keepCurrentWindowVisible() {
-  if (ImGui::IsWindowDocked()) return;
+  // Recover restored windows once, rather than continuously constraining live windows. A
+  // per-frame correction can move a platform window between combo press and release when the
+  // desktop reports transient XWayland/mixed-DPI coordinates, separating the popup from its
+  // pointer target and making the window appear to move by itself.
+  if (ImGui::IsWindowDocked() || !ImGui::IsWindowAppearing()) return;
   const ImVec2 position = ImGui::GetWindowPos();
   const ImVec2 size = ImGui::GetWindowSize();
   const float titleHeight = ImGui::GetFrameHeight();

@@ -78,8 +78,11 @@ void drawPassDifferenceAudit(bool& open, RenderStack& stack) {
   ImGui::SameLine();
   ImGui::SetNextItemWidth(180.0f);
   if (ImGui::BeginCombo("##audit-reference", stack.passes()[referenceIndex].name.c_str())) {
-    for (std::size_t index = 0; index < stack.passes().size(); ++index)
+    for (std::size_t index = 0; index < stack.passes().size(); ++index) {
+      ImGui::PushID(stack.passes()[index].id);
       if (ImGui::Selectable(stack.passes()[index].name.c_str(), referenceIndex == index)) referenceIndex = index;
+      ImGui::PopID();
+    }
     ImGui::EndCombo();
   }
   static bool animatedOnly = false;

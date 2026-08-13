@@ -69,6 +69,7 @@ SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& 
     }
     ImGui::SeparatorText("RAW RENDER PASS");
     for (const RenderPass& candidate : stack.passes()) {
+      ImGui::PushID(candidate.id);
       const bool selected = source == CompositeSource::RenderPass && sourcePassId == candidate.id;
       if (ImGui::Selectable(candidate.name.c_str(), selected)) {
         result.sourceChanged = source != CompositeSource::RenderPass;
@@ -76,11 +77,13 @@ SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& 
         source = CompositeSource::RenderPass;
         sourcePassId = candidate.id;
       }
+      ImGui::PopID();
     }
     ImGui::SeparatorText("FIELD BUFFER");
     for (const RenderPass& candidate : stack.passes()) {
       if (candidate.kind != StackOperationKind::Render &&
           candidate.kind != StackOperationKind::LegacyRenderComposite) continue;
+      ImGui::PushID(candidate.id);
       const bool selected = source == CompositeSource::RenderPassField && sourcePassId == candidate.id;
       const std::string fieldLabel = candidate.name + " field";
       if (ImGui::Selectable(fieldLabel.c_str(), selected)) {
@@ -89,11 +92,13 @@ SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& 
         source = CompositeSource::RenderPassField;
         sourcePassId = candidate.id;
       }
+      ImGui::PopID();
     }
     ImGui::SeparatorText("SPECTRAL RADIANCE (16 BANDS)");
     for (const RenderPass& candidate : stack.passes()) {
       if (candidate.kind != StackOperationKind::Render &&
           candidate.kind != StackOperationKind::LegacyRenderComposite) continue;
+      ImGui::PushID(candidate.id);
       const bool selected = source == CompositeSource::RenderPassSpectrum && sourcePassId == candidate.id;
       const std::string spectrumLabel = candidate.name + " spectrum";
       if (ImGui::Selectable(spectrumLabel.c_str(), selected)) {
@@ -102,6 +107,7 @@ SourceNodeResult sourceNode(const char* id, const char* title, CompositeSource& 
         source = CompositeSource::RenderPassSpectrum;
         sourcePassId = candidate.id;
       }
+      ImGui::PopID();
     }
     ImGui::EndPopup();
   }
@@ -238,11 +244,13 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
       for (const RenderPass& candidate : stack.passes()) {
         if (candidate.kind != StackOperationKind::Render &&
             candidate.kind != StackOperationKind::LegacyRenderComposite) continue;
+        ImGui::PushID(candidate.id);
         if (ImGui::Selectable(candidate.name.c_str(), candidate.id == pass.composite.sourceAPassId)) {
           pass.composite.sourceA = CompositeSource::RenderPassSpectrum;
           pass.composite.sourceAPassId = candidate.id;
           sourceChanged = true;
         }
+        ImGui::PopID();
       }
       ImGui::EndCombo();
     }
@@ -281,10 +289,12 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
         ? selectedSource->name.c_str() : "Select an earlier operation")) {
       for (std::size_t index = 0; index < stack.selectedIndex(); ++index) {
         const RenderPass& candidate = stack.passes()[index];
+        ImGui::PushID(candidate.id);
         if (ImGui::Selectable(candidate.name.c_str(), candidate.id == pass.composite.sourceAPassId)) {
           pass.composite.sourceA = CompositeSource::RenderPass;
           pass.composite.sourceAPassId = candidate.id;
         }
+        ImGui::PopID();
       }
       ImGui::EndCombo();
     }
@@ -304,10 +314,12 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
         for (const RenderPass& candidate : stack.passes()) {
           if (candidate.kind != StackOperationKind::Render &&
               candidate.kind != StackOperationKind::LegacyRenderComposite) continue;
+          ImGui::PushID(candidate.id);
           if (ImGui::Selectable(candidate.name.c_str(), candidate.id == sourceId)) {
             sourceId = candidate.id;
             changed = true;
           }
+          ImGui::PopID();
         }
         ImGui::EndCombo();
       }

@@ -208,9 +208,12 @@ SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStac
     if (profile == HardwareProfile::Unrestricted &&
         ImGui::Selectable(sceneLabels[8], scene == TestScene::SpectralMetamers))
       scene = TestScene::SpectralMetamers;
-    if (importedModel != nullptr &&
-        ImGui::Selectable(importedModel->name.c_str(), scene == TestScene::ImportedModel))
-      scene = TestScene::ImportedModel;
+    if (importedModel != nullptr) {
+      ImGui::PushID("imported-model-scene");
+      if (ImGui::Selectable(importedModel->name.c_str(), scene == TestScene::ImportedModel))
+        scene = TestScene::ImportedModel;
+      ImGui::PopID();
+    }
     ImGui::EndCombo();
   }
   if (ImGui::Button("Import Model...", ImVec2(-1, 0))) result.importModel = true;
