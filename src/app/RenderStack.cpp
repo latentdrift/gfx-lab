@@ -12,8 +12,10 @@ namespace gfxlab {
 RenderStack::RenderStack() {
   global_.name = "Global base";
   RenderPass a;
+  a.id = 1;
   a.name = "Pass A";
   RenderPass b = a;
+  b.id = 2;
   b.name = "Pass B";
   passes_ = {std::move(a), std::move(b)};
 }
@@ -81,6 +83,7 @@ void replaceRenderPassOverrides(RenderPass& pass, const RenderPass& global, cons
 
 namespace {
 void applyPassDefinition(RenderPass& materialized, const RenderPass& definition) {
+  materialized.id = definition.id;
   materialized.name = definition.name;
   materialized.enabled = definition.enabled;
   materialized.output = definition.output;
@@ -122,6 +125,7 @@ void RenderStack::select(const std::size_t index) {
 bool RenderStack::duplicateSelected() {
   if (passes_.size() >= maximumPasses) return false;
   RenderPass duplicate = selected();
+  duplicate.id = nextPassId_++;
   duplicate.name = "Pass " + std::to_string(nextPassNumber_++);
   passes_.insert(passes_.begin() + static_cast<std::ptrdiff_t>(selected_ + 1), std::move(duplicate));
   ++selected_;
@@ -238,7 +242,7 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
   std::ostringstream json;
   json << std::boolalpha << std::fixed << std::setprecision(5);
   json << "{\n";
-  json << "  \"schema\": \"graphics-lab.render-stack.v5\",\n";
+  json << "  \"schema\": \"graphics-lab.render-stack.v6\",\n";
   json << "  \"evaluation\": \"bottom_to_top_sequential_compositing\",\n";
   json << "  \"property_precedence\": \"global base, global track, local override, local track\",\n";
   json << "  \"seed_rule\": \"the first enabled pass becomes the accumulator; every later enabled pass applies its composite step\",\n";
@@ -320,7 +324,8 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
     const PassPerturbation& p = effective.perturbation;
     const CompositeStep& c = pass.composite;
     json << "    {\n";
-    json << "      \"name\": \"" << escape(pass.name) << "\", \"enabled\": " << pass.enabled << ",\n";
+    json << "      \"id\": " << pass.id << ", \"name\": \"" << escape(pass.name)
+         << "\", \"enabled\": " << pass.enabled << ",\n";
     json << "      \"output_buffer\": \"" << outputIds[static_cast<int>(pass.output)] << "\",\n";
     json << "      \"texture_source\": \"" << textureSourceIds[static_cast<int>(effective.textureSource)] << "\"";
     if (effective.importedTexture != nullptr) {
@@ -359,8 +364,8 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
     json << "      \"composite_into_previous\": {\"operation\": \"" << relationOperatorId(c.operation)
          << "\", \"equation_per_rgb_channel\": \"" << relationOperatorEquation(c.operation)
          << "\", \"source_a\": {\"type\": \"" << sourceIds[static_cast<int>(c.sourceA)]
-         << "\", \"pass_index\": " << c.sourceAPass << "}, \"source_b\": {\"type\": \""
-         << sourceIds[static_cast<int>(c.sourceB)] << "\", \"pass_index\": " << c.sourceBPass
+         << "\", \"pass_id\": " << c.sourceAPassId << "}, \"source_b\": {\"type\": \""
+         << sourceIds[static_cast<int>(c.sourceB)] << "\", \"pass_id\": " << c.sourceBPassId
          << "}, \"fixed_color_rgba\": [" << c.fixedColor.r << ", " << c.fixedColor.g << ", "
          << c.fixedColor.b << ", " << c.fixedColor.a << "]"
          << ", \"bit_depth\": " << c.bitDepth << ", \"previous_frame\": {\"decay\": " << c.historyDecay

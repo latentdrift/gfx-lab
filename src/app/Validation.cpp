@@ -62,6 +62,15 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         validationStack.passes().size() != 3 || !validationStack.moveSelected(-1) ||
         !validationStack.removeSelected() || validationStack.passes().size() != 2)
       fail("render-pass stack operations failed validation");
+    RenderStack identityValidation;
+    identityValidation.select(0);
+    if (!identityValidation.duplicateSelected()) fail("render-pass identity setup failed validation");
+    const int referencedId = identityValidation.passes().back().id;
+    identityValidation.selected().composite.sourceA = CompositeSource::RenderPass;
+    identityValidation.selected().composite.sourceAPassId = referencedId;
+    if (!identityValidation.moveSelected(1) ||
+        identityValidation.selected().composite.sourceAPassId != referencedId)
+      fail("render-pass operand identity changed during reorder");
     validationStack.global().renderer.lighting.ambient = 0.31f;
     validationStack.global().perturbation.modelTranslation = {0.2f, 0.0f, 0.0f};
     setRenderPassOverride(validationStack.selected(), AnimationProperty::Ambient, glm::vec4(0.77f));
@@ -267,8 +276,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
          source <= static_cast<int>(CompositeSource::PreviousFrame); ++source) {
       compositeValidation.passes()[2].composite.sourceA = static_cast<CompositeSource>(source);
       compositeValidation.passes()[2].composite.sourceB = static_cast<CompositeSource>(source);
-      compositeValidation.passes()[2].composite.sourceAPass = 0;
-      compositeValidation.passes()[2].composite.sourceBPass = 1;
+      compositeValidation.passes()[2].composite.sourceAPassId = compositeValidation.passes()[0].id;
+      compositeValidation.passes()[2].composite.sourceBPassId = compositeValidation.passes()[1].id;
       compositeValidation.passes()[2].composite.fixedColor = glm::vec4(0.8f, 0.2f, 0.6f, 1.0f);
       if (renderer.composite(compositeValidation) == 0) fail("render-pass composite source failed validation");
     }
@@ -289,7 +298,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     if (glGetError() != GL_NO_ERROR) fail("display reconstruction produced an OpenGL error");
     const std::string stackConfig = renderStackConfigJson(compositeValidation, camera, scene,
       HardwareProfile::Unrestricted, nullptr, importedFixture.asset.get());
-    if (stackConfig.find("graphics-lab.render-stack.v5") == std::string::npos ||
+    if (stackConfig.find("graphics-lab.render-stack.v6") == std::string::npos ||
         stackConfig.find("global base, global track, local override, local track") == std::string::npos ||
         stackConfig.find("\"passes\"") == std::string::npos ||
         stackConfig.find("\"global_base\"") == std::string::npos ||
@@ -297,6 +306,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         stackConfig.find("\"perturbation\"") == std::string::npos ||
         stackConfig.find("\"composite_into_previous\"") == std::string::npos ||
         stackConfig.find("\"source_a\"") == std::string::npos ||
+        stackConfig.find("\"pass_id\"") == std::string::npos ||
         stackConfig.find("\"fixed_color_rgba\"") == std::string::npos ||
         stackConfig.find("\"previous_frame\"") == std::string::npos ||
         stackConfig.find("\"display_reconstruction\"") == std::string::npos ||

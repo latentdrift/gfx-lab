@@ -48,8 +48,8 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   STEP("composite_operation", "Composite operation", "Composite", K::Enumeration, 0, 18),
   STEP("composite_source_a", "Composite source A", "Composite operands", K::Enumeration, 0, 4),
   STEP("composite_source_b", "Composite source B", "Composite operands", K::Enumeration, 0, 4),
-  STEP("composite_source_a_pass", "Source A render pass", "Composite operands", K::Integer, 0, 7),
-  STEP("composite_source_b_pass", "Source B render pass", "Composite operands", K::Integer, 0, 7),
+  STEP("composite_source_a_pass", "Source A render-pass ID", "Composite operands", K::Integer, 1, 65535),
+  STEP("composite_source_b_pass", "Source B render-pass ID", "Composite operands", K::Integer, 1, 65535),
   CONT("composite_fixed_color", "Composite fixed color", "Composite operands", 4, K::Color4, 0, 1),
   STEP("composite_bit_depth", "Composite bit depth", "Composite arithmetic", K::Integer, 1, 8),
   CONT("composite_history_decay", "Previous-frame decay", "Composite history", 1, K::Float, 0, 1),
@@ -263,8 +263,8 @@ glm::vec4 animationPropertyValue(const RenderPass& pass, const AnimationProperty
   case AnimationProperty::CompositeOperation: return glm::vec4(static_cast<float>(pass.composite.operation));
   case AnimationProperty::CompositeSourceA: return glm::vec4(static_cast<float>(pass.composite.sourceA));
   case AnimationProperty::CompositeSourceB: return glm::vec4(static_cast<float>(pass.composite.sourceB));
-  case AnimationProperty::CompositeSourceAPass: return glm::vec4(pass.composite.sourceAPass);
-  case AnimationProperty::CompositeSourceBPass: return glm::vec4(pass.composite.sourceBPass);
+  case AnimationProperty::CompositeSourceAPass: return glm::vec4(pass.composite.sourceAPassId);
+  case AnimationProperty::CompositeSourceBPass: return glm::vec4(pass.composite.sourceBPassId);
   case AnimationProperty::CompositeFixedColor: return pass.composite.fixedColor;
   case AnimationProperty::CompositeBitDepth: return glm::vec4(pass.composite.bitDepth);
   case AnimationProperty::CompositeHistoryDecay: return glm::vec4(pass.composite.historyDecay);
@@ -392,8 +392,8 @@ void setAnimationPropertyValue(RenderPass& pass, const AnimationProperty propert
   case AnimationProperty::CompositeOperation: pass.composite.operation = static_cast<RelationOperator>(static_cast<int>(std::round(value.x))); break;
   case AnimationProperty::CompositeSourceA: pass.composite.sourceA = static_cast<CompositeSource>(static_cast<int>(std::round(value.x))); break;
   case AnimationProperty::CompositeSourceB: pass.composite.sourceB = static_cast<CompositeSource>(static_cast<int>(std::round(value.x))); break;
-  case AnimationProperty::CompositeSourceAPass: pass.composite.sourceAPass = static_cast<int>(std::round(value.x)); break;
-  case AnimationProperty::CompositeSourceBPass: pass.composite.sourceBPass = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::CompositeSourceAPass: pass.composite.sourceAPassId = static_cast<int>(std::round(value.x)); break;
+  case AnimationProperty::CompositeSourceBPass: pass.composite.sourceBPassId = static_cast<int>(std::round(value.x)); break;
   case AnimationProperty::CompositeFixedColor: pass.composite.fixedColor = value; break;
   case AnimationProperty::CompositeBitDepth: pass.composite.bitDepth = static_cast<int>(std::round(value.x)); break;
   case AnimationProperty::CompositeHistoryDecay: pass.composite.historyDecay = value.x; break;

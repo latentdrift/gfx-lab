@@ -90,7 +90,7 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
   ImGui::TextDisabled("COMPOSITE OPERANDS");
   constexpr const char* sourceLabels[] = {
     "Accumulated result", "Current pass", "Render pass", "Fixed color", "Previous frame"};
-  const auto sourceControl = [&](const char* label, CompositeSource& source, int& sourcePass,
+  const auto sourceControl = [&](const char* label, CompositeSource& source, int& sourcePassId,
       const AnimationProperty sourceProperty, const AnimationProperty passProperty) {
     int selectedSource = static_cast<int>(source);
     const bool sourceChanged = ImGui::Combo(label, &selectedSource, sourceLabels, 5);
@@ -100,19 +100,28 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
     std::array<const char*, RenderStack::maximumPasses> passLabels{};
     for (std::size_t index = 0; index < stack.passes().size(); ++index)
       passLabels[index] = stack.passes()[index].name.c_str();
-    sourcePass = std::clamp(sourcePass, 0, static_cast<int>(stack.passes().size()) - 1);
+    int selectedPass = 0;
+    bool foundPass = false;
+    for (std::size_t index = 0; index < stack.passes().size(); ++index) {
+      if (stack.passes()[index].id != sourcePassId) continue;
+      selectedPass = static_cast<int>(index);
+      foundPass = true;
+      break;
+    }
     ImGui::Indent();
-    const bool passChanged = ImGui::Combo("Render pass", &sourcePass, passLabels.data(),
+    const bool passChanged = ImGui::Combo("Render pass", &selectedPass, passLabels.data(),
       static_cast<int>(stack.passes().size()));
+    if (passChanged) sourcePassId = stack.passes()[static_cast<std::size_t>(selectedPass)].id;
     animationKeyControl(pass, passProperty, timeline, passChanged);
+    if (!foundPass) ImGui::TextDisabled("Referenced pass no longer exists; using %s.", passLabels[0]);
     ImGui::Unindent();
   };
   ImGui::PushID("source-a");
-  sourceControl("Source A", pass.composite.sourceA, pass.composite.sourceAPass,
+  sourceControl("Source A", pass.composite.sourceA, pass.composite.sourceAPassId,
     AnimationProperty::CompositeSourceA, AnimationProperty::CompositeSourceAPass);
   ImGui::PopID();
   ImGui::PushID("source-b");
-  sourceControl("Source B", pass.composite.sourceB, pass.composite.sourceBPass,
+  sourceControl("Source B", pass.composite.sourceB, pass.composite.sourceBPassId,
     AnimationProperty::CompositeSourceB, AnimationProperty::CompositeSourceBPass);
   ImGui::PopID();
   if (pass.composite.sourceA == CompositeSource::FixedColor ||

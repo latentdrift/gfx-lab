@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <iterator>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -844,26 +845,27 @@ public:
         accumulated = passTexture;
         continue;
       }
-      const auto sourceTexture = [&](const CompositeSource source, const int sourcePass) {
+      const auto passIndexForId = [&](const int sourcePassId) {
+        const auto found = std::find_if(stack.passes().begin(), stack.passes().end(),
+          [sourcePassId](const RenderPass& candidate) { return candidate.id == sourcePassId; });
+        return found == stack.passes().end() ? passIndex :
+          static_cast<std::size_t>(std::distance(stack.passes().begin(), found));
+      };
+      const auto sourceTexture = [&](const CompositeSource source, const int sourcePassId) {
         switch (source) {
         case CompositeSource::Accumulator: return accumulated;
         case CompositeSource::CurrentPass: return passTexture;
-        case CompositeSource::RenderPass: {
-          const std::size_t index = static_cast<std::size_t>(std::clamp(sourcePass, 0,
-            static_cast<int>(stack.passes().size()) - 1));
-          return passTargets_[index].outputTexture;
-        }
+        case CompositeSource::RenderPass: return passTargets_[passIndexForId(sourcePassId)].outputTexture;
         case CompositeSource::FixedColor: return passTexture;
         case CompositeSource::PreviousFrame: return historyTexture_;
         }
         return passTexture;
       };
-      const GLuint imageA = sourceTexture(pass.composite.sourceA, pass.composite.sourceAPass);
-      const GLuint imageB = sourceTexture(pass.composite.sourceB, pass.composite.sourceBPass);
+      const GLuint imageA = sourceTexture(pass.composite.sourceA, pass.composite.sourceAPassId);
+      const GLuint imageB = sourceTexture(pass.composite.sourceB, pass.composite.sourceBPassId);
       std::size_t maskPassIndex = passIndex;
       if (pass.composite.sourceB == CompositeSource::RenderPass)
-        maskPassIndex = static_cast<std::size_t>(std::clamp(pass.composite.sourceBPass, 0,
-          static_cast<int>(stack.passes().size()) - 1));
+        maskPassIndex = passIndexForId(pass.composite.sourceBPassId);
       accumulated = compositeTextures(imageA, imageB, passTargets_[maskPassIndex].depthTexture,
         pass.renderer, pass.composite, compositeIndex++);
     }

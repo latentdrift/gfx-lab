@@ -50,8 +50,8 @@ struct CompositeStep {
   RelationOperator operation = RelationOperator::AbsoluteDifference;
   CompositeSource sourceA = CompositeSource::Accumulator;
   CompositeSource sourceB = CompositeSource::CurrentPass;
-  int sourceAPass = 0;
-  int sourceBPass = 0;
+  int sourceAPassId = 1;
+  int sourceBPassId = 1;
   glm::vec4 fixedColor{1.0f};
   int bitDepth = 8;
   float historyDecay = 0.96f;
@@ -72,6 +72,7 @@ struct PropertyOverride {
 };
 
 struct RenderPass {
+  int id = 0;
   std::string name;
   bool enabled = true;
   RendererState renderer;
@@ -113,6 +114,7 @@ private:
   std::vector<RenderPass> passes_;
   std::size_t selected_ = 0;
   unsigned int nextPassNumber_ = 3;
+  int nextPassId_ = 3;
 };
 
 [[nodiscard]] bool animationPropertyIsPassLocal(AnimationProperty property);
