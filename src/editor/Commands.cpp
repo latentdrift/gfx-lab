@@ -26,7 +26,8 @@ bool referencesOperation(const document::Operation& operation,
   };
   std::visit([&](const auto& data) {
     using Type = std::decay_t<decltype(data)>;
-    if constexpr (std::is_same_v<Type, document::InterpretOperation>) check(data.spectrum);
+    if constexpr (std::is_same_v<Type, document::RenderOperation>) check(data.field);
+    else if constexpr (std::is_same_v<Type, document::InterpretOperation>) check(data.spectrum);
     else if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
       check(data.a); check(data.b); check(data.mask);
     } else if constexpr (std::is_same_v<Type, document::StereoOperation>) {
@@ -49,7 +50,9 @@ document::SignalRef* inputSignal(document::Operation& operation, const InputSock
   document::SignalRef* result = nullptr;
   std::visit([&](auto& data) {
     using Type = std::decay_t<decltype(data)>;
-    if constexpr (std::is_same_v<Type, document::InterpretOperation>) {
+    if constexpr (std::is_same_v<Type, document::RenderOperation>) {
+      if (socket == InputSocket::Field) result = &data.field;
+    } else if constexpr (std::is_same_v<Type, document::InterpretOperation>) {
       if (socket == InputSocket::Primary) result = &data.spectrum;
     } else if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
       if (socket == InputSocket::A) result = &data.a;
@@ -112,7 +115,9 @@ std::string duplicateOperation(document::Document& document,
   };
   std::visit([&](auto& operationData) {
     using OperationType = std::decay_t<decltype(operationData)>;
-    if constexpr (std::is_same_v<OperationType, document::InterpretOperation>)
+    if constexpr (std::is_same_v<OperationType, document::RenderOperation>)
+      remapSelf(operationData.field);
+    else if constexpr (std::is_same_v<OperationType, document::InterpretOperation>)
       remapSelf(operationData.spectrum);
     else if constexpr (std::is_same_v<OperationType, document::CompositeOperation>) {
       remapSelf(operationData.a);
@@ -260,15 +265,17 @@ std::string mutate(document::Document& document, const Command& command) {
       document::SignalRef* input = inputSignal(*operation, data.socket);
       if (input == nullptr) return "That input socket does not exist on the target operation.";
       *input = data.signal;
+      document::synchronizeOperationSignalMetadata(*operation);
     } else if constexpr (std::is_same_v<Type, DisconnectSignal>) {
       document::Operation* operation = document::findOperation(document, data.operation);
       if (operation == nullptr) return "The target operation no longer exists.";
       document::SignalRef* input = inputSignal(*operation, data.socket);
       if (input == nullptr) return "That input socket does not exist on the target operation.";
       if (*input != data.expectedSignal) return "That connection has already changed.";
-      if (data.socket != InputSocket::Mask)
+      if (data.socket != InputSocket::Mask && data.socket != InputSocket::Field)
         return "That input is required. Rewire it or delete the operation instead.";
       *input = {};
+      document::synchronizeOperationSignalMetadata(*operation);
     } else if constexpr (std::is_same_v<Type, SetFinalSignal>) {
       document.presentation.input = data.signal;
     } else if constexpr (std::is_same_v<Type, SetRenderOverride>) {

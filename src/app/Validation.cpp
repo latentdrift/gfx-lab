@@ -90,6 +90,35 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
           typedFixture.graphLayout.outputPosition) > 0.0001f ||
         !evaluation::compileDocument(*typedRoundTrip.document).valid())
       fail("typed document round-trip validation failed");
+    document::Document sdfGraph = document::makeDefaultDocument();
+    document::Operation sdfField = document::makeSdfFieldOperation({2}, "Animated volume");
+    auto& sdfDefinition = std::get<document::SdfFieldOperation>(sdfField.data);
+    sdfDefinition.a.type = 3;
+    sdfDefinition.a.parameters = {1.8f, 0.7f, 1.25f};
+    sdfDefinition.combination = 2;
+    const document::SignalRef worldDistance = document::primaryOutput(sdfField);
+    sdfGraph.operations.push_back(std::move(sdfField));
+    sdfGraph.nextOperationIdentity = 3;
+    std::get<document::RenderOperation>(sdfGraph.operations.front().data).field = worldDistance;
+    const document::SignalDescriptor* worldDistanceDescriptor =
+      document::findSignal(sdfGraph, worldDistance.id);
+    const evaluation::EvaluationPlan sdfPlan = evaluation::compileDocument(sdfGraph);
+    const std::filesystem::path sdfGraphPath = "graphics-lab-sdf-graph-validation.json";
+    std::string sdfSaveError;
+    const bool sdfSaved = document::saveDocumentFile(sdfGraphPath.string(), sdfGraph, sdfSaveError);
+    const document::DocumentLoadResult sdfRoundTrip = sdfSaved
+      ? document::loadDocumentFile(sdfGraphPath.string()) : document::DocumentLoadResult{};
+    std::error_code sdfRemoveError;
+    std::filesystem::remove(sdfGraphPath, sdfRemoveError);
+    if (!sdfPlan.valid() || worldDistanceDescriptor == nullptr ||
+        worldDistanceDescriptor->metadata.domain != document::SignalDomain::World3D ||
+        worldDistanceDescriptor->metadata.semantic != document::SignalSemantic::SignedDistance ||
+        !sdfRoundTrip || sdfRoundTrip.document->operations.size() != 2 ||
+        std::get<document::RenderOperation>(sdfRoundTrip.document->operations.front().data).field !=
+          worldDistance ||
+        std::get<document::SdfFieldOperation>(sdfRoundTrip.document->operations.back().data)
+          .combination != 2 || !evaluation::compileDocument(*sdfRoundTrip.document).valid())
+      fail("world-space SDF graph typing, connection, or persistence failed validation");
     document::Document workingSignals = document::makeDefaultDocument();
     workingSignals.renderDefaults.renderer.output.width = 384;
     workingSignals.renderDefaults.renderer.output.height = 216;

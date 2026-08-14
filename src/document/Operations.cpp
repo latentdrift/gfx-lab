@@ -32,6 +32,10 @@ SignalMetadata metadataFor(const SignalSemantic semantic) {
     metadata.encoding = SignalEncoding::UnsignedNormalized;
   if (semantic == SignalSemantic::DeviceDepth) metadata.units = "device depth";
   if (semantic == SignalSemantic::SignedDistance) metadata.units = "world units";
+  if (semantic == SignalSemantic::SignedDistance) {
+    metadata.domain = SignalDomain::World3D;
+    metadata.space = SignalSpace::World;
+  }
   if (semantic == SignalSemantic::Luminance || semantic == SignalSemantic::EdgeStrength ||
       semantic == SignalSemantic::MaskCoverage) metadata.units = "unitless";
   if (semantic == SignalSemantic::DeviceDepth || semantic == SignalSemantic::MaskCoverage ||
@@ -66,6 +70,7 @@ const char* operationTypeLabel(const Operation& operation) {
   return std::visit([](const auto& data) -> const char* {
     using Type = std::decay_t<decltype(data)>;
     if constexpr (std::is_same_v<Type, RenderOperation>) return "Render";
+    if constexpr (std::is_same_v<Type, SdfFieldOperation>) return "SDF Field";
     if constexpr (std::is_same_v<Type, InterpretOperation>) return "Interpret";
     if constexpr (std::is_same_v<Type, CompositeOperation>) return "Composite";
     if constexpr (std::is_same_v<Type, ConstantOperation>) return "Constant";
@@ -91,6 +96,16 @@ void synchronizeOperationSignalMetadata(Operation& operation) {
     const glm::ivec3 extent = output.metadata.extent;
     output.metadata = metadataFor(output.metadata.semantic);
     output.metadata.extent = extent;
+  }
+  if (const auto* render = std::get_if<RenderOperation>(&operation.data)) {
+    for (SignalDescriptor& output : operation.outputs) {
+      if (output.key != "field") continue;
+      if (render->field) output.metadata = metadataFor(SignalSemantic::SignedDistance);
+      // Render publishes a camera-sampled image of its world field. The
+      // connected SDF definition itself remains a separate World3D signal.
+      output.metadata.domain = SignalDomain::Screen2D;
+      output.metadata.space = SignalSpace::Screen;
+    }
   }
   if (const auto* constant = std::get_if<ConstantOperation>(&operation.data)) {
     if (!operation.outputs.empty()) {
@@ -124,6 +139,14 @@ Operation makeRenderOperation(const OperationId id, std::string name) {
     {"normal", SignalShape::Vector3, SignalSemantic::Normal, "World normal"},
     {"field", SignalShape::Scalar, SignalSemantic::FieldStrength, "Field"},
     {"spectrum16", SignalShape::Spectrum16, SignalSemantic::Spectrum, "Spectrum16"}});
+}
+
+Operation makeSdfFieldOperation(const OperationId id, std::string name) {
+  SdfFieldOperation field;
+  field.a = {0, {-0.85f, 0.0f, 0.0f}, {1.15f, 0.35f, 0.35f}};
+  field.b = {2, {0.85f, 0.0f, 0.0f}, {0.85f, 0.28f, 0.28f}};
+  return operation(id, std::move(name), std::move(field),
+    {{"distance", SignalShape::Scalar, SignalSemantic::SignedDistance, "Signed distance"}});
 }
 
 Operation makeInterpretOperation(const OperationId id, std::string name,

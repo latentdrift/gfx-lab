@@ -179,7 +179,8 @@ bool signalPicker(const char* label, document::Document& document,
     editor::EditorState& editorState, const document::OperationId consumer,
     document::SignalRef& selected,
     const std::optional<document::SignalShape> requiredShape = std::nullopt,
-    const std::optional<document::SignalSemantic> requiredSemantic = std::nullopt) {
+    const std::optional<document::SignalSemantic> requiredSemantic = std::nullopt,
+    const std::optional<document::SignalDomain> requiredDomain = std::nullopt) {
   bool changed = false;
   const document::SignalDescriptor* current = descriptor(document, selected);
   const document::Operation* currentProducer = current == nullptr ? nullptr
@@ -192,7 +193,8 @@ bool signalPicker(const char* label, document::Document& document,
       for (const document::SignalDescriptor& output : operation.outputs) {
         if (requiredShape.has_value() && output.shape != *requiredShape) continue;
         if (requiredSemantic.has_value() && output.metadata.semantic != *requiredSemantic) continue;
-        if (requiredShape == document::SignalShape::Scalar &&
+        if (requiredDomain.has_value() && output.metadata.domain != *requiredDomain) continue;
+        if (!requiredDomain.has_value() && requiredShape == document::SignalShape::Scalar &&
             output.metadata.domain != document::SignalDomain::Screen2D) continue;
         const std::string name = operation.name + " / " + output.name;
         const std::string widgetLabel = name + "##signal_" +
@@ -208,8 +210,10 @@ bool signalPicker(const char* label, document::Document& document,
   if (current != nullptr) {
     ImGui::PushID(label);
     ImGui::SameLine();
-    if (ImGui::SmallButton("View")) editorState.viewer.viewed = selected;
-    ImGui::SameLine();
+    if (current->metadata.domain == document::SignalDomain::Screen2D) {
+      if (ImGui::SmallButton("View")) editorState.viewer.viewed = selected;
+      ImGui::SameLine();
+    }
     if (ImGui::SmallButton("Go"))
       editorState.selection = {editor::SelectionKind::Operation, current->producer};
     ImGui::PopID();
@@ -220,7 +224,46 @@ bool signalPicker(const char* label, document::Document& document,
 bool drawOperation(document::Document& document, document::Operation& operation,
     editor::EditorState& editorState, const SignalMeasurement* measurement) {
   bool changed = false;
-  if (auto* composite = std::get_if<document::CompositeOperation>(&operation.data)) {
+  if (auto* sdf = std::get_if<document::SdfFieldOperation>(&operation.data)) {
+    constexpr const char* primitiveTypes[] = {"Sphere", "Box", "Torus", "4D Hypersphere Slice",
+      "Pulsating Sphere"};
+    const auto primitive = [&](const char* id, const char* heading,
+        RendererState::Field::SdfProducer& producer) {
+      ImGui::PushID(id);
+      ImGui::SeparatorText(heading);
+      changed |= ImGui::Combo("Primitive", &producer.type, primitiveTypes, 5);
+      changed |= ImGui::DragFloat3("Position", &producer.position.x, 0.01f, -8.0f, 8.0f, "%.2f");
+      if (producer.type == 0) {
+        changed |= ImGui::DragFloat("Radius", &producer.parameters.x, 0.01f, 0.01f, 8.0f, "%.2f units");
+      } else if (producer.type == 1) {
+        changed |= ImGui::DragFloat3("Half extents", &producer.parameters.x,
+          0.01f, 0.01f, 8.0f, "%.2f units");
+      } else if (producer.type == 2) {
+        changed |= ImGui::DragFloat("Major radius", &producer.parameters.x,
+          0.01f, 0.01f, 8.0f, "%.2f units");
+        changed |= ImGui::DragFloat("Tube radius", &producer.parameters.y,
+          0.01f, 0.01f, 8.0f, "%.2f units");
+      } else {
+        changed |= ImGui::DragFloat(producer.type == 3 ? "4D radius" : "Base radius",
+          &producer.parameters.x, 0.01f, 0.01f, 8.0f, "%.2f units");
+        changed |= ImGui::DragFloat("Evolution speed", &producer.parameters.y,
+          0.01f, -8.0f, 8.0f, "%.2f");
+        changed |= ImGui::DragFloat(producer.type == 3 ? "Fourth-axis span" : "Pulse amplitude",
+          &producer.parameters.z, 0.01f, 0.0f, 8.0f, "%.2f units");
+      }
+      ImGui::PopID();
+    };
+    ImGui::TextWrapped("Produces signed distance throughout world space. Negative is inside; zero is the surface.");
+    primitive("a", "PRIMITIVE A", sdf->a);
+    primitive("b", "PRIMITIVE B", sdf->b);
+    ImGui::SeparatorText("RELATIONSHIP");
+    constexpr const char* combinations[] = {"Union", "Intersection", "A subtract B", "Smooth union"};
+    changed |= ImGui::Combo("Combination", &sdf->combination, combinations, 4);
+    ImGui::BeginDisabled(sdf->combination != 3);
+    changed |= ImGui::DragFloat("Smooth radius", &sdf->smoothness,
+      0.005f, 0.001f, 4.0f, "%.3f units");
+    ImGui::EndDisabled();
+  } else if (auto* composite = std::get_if<document::CompositeOperation>(&operation.data)) {
     ImGui::SeparatorText("INPUTS");
     changed |= signalPicker("Source A", document, editorState, operation.id, composite->a);
     changed |= signalPicker("Source B", document, editorState, operation.id, composite->b);
@@ -443,7 +486,10 @@ void drawDocumentInspector(bool& open, document::Document& document,
       }
       const document::SignalRef primary = document::primaryOutput(*authored);
       const document::SignalDescriptor* primaryDescriptor = document::findSignal(document, primary.id);
+      ImGui::BeginDisabled(primaryDescriptor == nullptr ||
+        primaryDescriptor->metadata.domain != document::SignalDomain::Screen2D);
       if (ImGui::Button("View Output")) editorState.viewer.viewed = primary;
+      ImGui::EndDisabled();
       ImGui::SameLine();
       if (ImGui::Button("Duplicate")) {
         const document::OperationId duplicate = document::nextOperationId(document);
@@ -536,6 +582,28 @@ void drawDocumentInspector(bool& open, document::Document& document,
               {owner, property}, timeline.timeSeconds, glm::vec4(value)}));
         };
 
+        ImGui::TextDisabled("WORLD FIELD");
+        changed |= signalPicker("Signed distance", edited, editorState, *operation, render->field,
+          document::SignalShape::Scalar, document::SignalSemantic::SignedDistance,
+          document::SignalDomain::World3D);
+        if (render->field) {
+          if (ImGui::SmallButton("Disconnect##render-field")) {
+            render->field = {};
+            changed = true;
+          }
+          animationKeyControl(view, AnimationProperty::IsoSurfaceEnabled, timeline,
+            ImGui::Checkbox("Render field surface", &view.renderer.field.isoSurfaceEnabled));
+          ImGui::BeginDisabled(!view.renderer.field.isoSurfaceEnabled);
+          animationKeyControl(view, AnimationProperty::IsoLevel, timeline,
+            ImGui::DragFloat("Surface level", &view.renderer.field.isoLevel,
+              0.005f, -4.0f, 4.0f, "%.3f units"));
+          animationKeyControl(view, AnimationProperty::IsoColor, timeline,
+            ImGui::ColorEdit3("Surface color", &view.renderer.field.isoColor.x));
+          ImGui::EndDisabled();
+        }
+        ImGui::TextDisabled("A connected field drives iso-surfaces and field-aware surface controls.");
+        ImGui::Separator();
+
         ImGui::TextDisabled("OBJECT VARIATION");
         animationKeyControl(view, AnimationProperty::ModelTranslation, timeline,
           ImGui::DragFloat3("Position", &view.perturbation.modelTranslation.x,
@@ -623,11 +691,48 @@ void drawDocumentInspector(bool& open, document::Document& document,
         Category::Rasterization, Category::Surface, Category::Texture, Category::Depth,
         Category::Stencil, Category::Field, Category::Spectral, Category::Post,
         Category::Color, Category::Output};
+      const auto* selectedRender = operation.has_value() ? std::get_if<document::RenderOperation>(
+        &document::findOperation(edited, *operation)->data) : nullptr;
       for (const Category category : categories) {
         if (!categoryAvailableForHardwareProfile(edited.hardwareProfile, category) ||
             !propertyGroupFilter.PassFilter(categoryName(category))) continue;
         ImGui::PushID(static_cast<int>(category));
-        if (ImGui::CollapsingHeader(categoryName(category)))
+        if (category == Category::Field && selectedRender != nullptr && selectedRender->field) {
+          if (ImGui::CollapsingHeader("Field Sampling")) {
+            ImGui::TextWrapped("The SDF definition belongs to its connected node. These controls describe how this Render samples and displays it.");
+            animationKeyControl(view, AnimationProperty::SdfPreviewRange, timeline,
+              ImGui::DragFloat("Preview range", &view.renderer.field.sdfPreviewRange,
+                0.01f, 0.01f, 10.0f, "%.2f units"));
+            ImGui::SeparatorText("ISO-SURFACE QUALITY");
+            animationKeyControl(view, AnimationProperty::IsoMaximumSteps, timeline,
+              ImGui::DragInt("Maximum march steps", &view.renderer.field.isoMaxSteps, 1.0f, 8, 512));
+            animationKeyControl(view, AnimationProperty::IsoHitEpsilon, timeline,
+              ImGui::DragFloat("Hit epsilon", &view.renderer.field.isoEpsilon,
+                0.0001f, 0.0001f, 0.1f, "%.4f units"));
+            animationKeyControl(view, AnimationProperty::IsoMaximumDistance, timeline,
+              ImGui::DragFloat("Maximum ray distance", &view.renderer.field.isoMaxDistance,
+                0.1f, 1.0f, 100.0f, "%.1f units"));
+            ImGui::SeparatorText("SURFACE CONSUMERS");
+            animationKeyControl(view, AnimationProperty::FieldVertexDisplacement, timeline,
+              ImGui::DragFloat("Vertex normal displacement",
+                &view.renderer.field.vertexDisplacement, 0.005f, -2.0f, 2.0f, "%.3f units"));
+            animationKeyControl(view, AnimationProperty::FieldSignedDisplacement, timeline,
+              ImGui::Checkbox("Signed displacement", &view.renderer.field.signedDisplacement));
+            animationKeyControl(view, AnimationProperty::FieldDiscardEnabled, timeline,
+              ImGui::Checkbox("Discard below threshold", &view.renderer.field.discardBelowEnabled));
+            ImGui::BeginDisabled(!view.renderer.field.discardBelowEnabled);
+            animationKeyControl(view, AnimationProperty::FieldDiscardThreshold, timeline,
+              ImGui::SliderFloat("Discard threshold", &view.renderer.field.discardThreshold,
+                0.0f, 1.0f, "%.3f"));
+            ImGui::EndDisabled();
+            animationKeyControl(view, AnimationProperty::FieldSurfaceColorInfluence, timeline,
+              ImGui::SliderFloat("Surface color influence",
+                &view.renderer.field.surfaceColorInfluence, 0.0f, 1.0f, "%.2f"));
+            animationKeyControl(view, AnimationProperty::FieldEmissionInfluence, timeline,
+              ImGui::SliderFloat("Emission influence", &view.renderer.field.emissionInfluence,
+                0.0f, 8.0f, "%.2fx", ImGuiSliderFlags_Logarithmic));
+          }
+        } else if (ImGui::CollapsingHeader(categoryName(category)))
           drawInspector(category, view, edited.hardwareProfile, timeline,
             edited.scene.importedModel.get(), edited.scene.testScene);
         ImGui::PopID();

@@ -31,11 +31,23 @@ struct TimeTransform {
 };
 
 struct RenderOperation {
+  SignalRef field;
   std::vector<PropertyOverride> overrides;
   PassPerturbation perturbation;
   PassOutput presentedOutput = PassOutput::Color;
   TextureBinding texture;
   TimeTransform time;
+};
+
+// An authored analytic world-space field. The renderer currently evaluates two
+// primitives and one relationship as a single semantic execution unit; keeping
+// that boundary explicit avoids pretending the GPU backend supports arbitrary
+// SDF expression trees yet.
+struct SdfFieldOperation {
+  RendererState::Field::SdfProducer a{};
+  RendererState::Field::SdfProducer b{};
+  int combination = 3;
+  float smoothness = 0.45f;
 };
 
 struct InterpretOperation {
@@ -143,7 +155,7 @@ struct MeasureOperation {
   bool absoluteMagnitude = true;
 };
 
-using OperationData = std::variant<RenderOperation, InterpretOperation, CompositeOperation,
+using OperationData = std::variant<RenderOperation, SdfFieldOperation, InterpretOperation, CompositeOperation,
   ConstantOperation, StereoOperation, MeasureOperation, LuminanceOperation, RemapOperation,
   EdgeOperation, BlurOperation, ThresholdOperation, GradientMapOperation, WarpOperation>;
 
@@ -159,6 +171,7 @@ struct Operation {
 [[nodiscard]] SignalRef primaryOutput(const Operation& operation);
 void synchronizeOperationSignalMetadata(Operation& operation);
 [[nodiscard]] Operation makeRenderOperation(OperationId id, std::string name);
+[[nodiscard]] Operation makeSdfFieldOperation(OperationId id, std::string name);
 [[nodiscard]] Operation makeInterpretOperation(OperationId id, std::string name, SignalRef spectrum);
 [[nodiscard]] Operation makeCompositeOperation(OperationId id, std::string name,
   SignalRef a, SignalRef b);

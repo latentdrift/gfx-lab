@@ -17,6 +17,7 @@ std::vector<document::SignalRef> operationInputs(const document::Operation& oper
   std::vector<document::SignalRef> result;
   std::visit([&](const auto& data) {
     using Type = std::decay_t<decltype(data)>;
+    if constexpr (std::is_same_v<Type, document::RenderOperation>) addInput(result, data.field);
     if constexpr (std::is_same_v<Type, document::InterpretOperation>) addInput(result, data.spectrum);
     if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
       addInput(result, data.a);
@@ -124,6 +125,15 @@ EvaluationPlan compileDocument(const document::Document& document) {
       if (!signal) result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
         std::string(label) + " is not connected."});
     };
+    if (const auto* render = std::get_if<document::RenderOperation>(&operation.data);
+        render != nullptr && render->field) {
+      const auto* field = descriptorOf(render->field);
+      if (field != nullptr && (field->metadata.domain != document::SignalDomain::World3D ||
+          field->shape != document::SignalShape::Scalar ||
+          field->metadata.semantic != document::SignalSemantic::SignedDistance))
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+          "Render Field requires a World3D Scalar with Signed distance semantics."});
+    }
     if (const auto* composite = std::get_if<document::CompositeOperation>(&operation.data)) {
       requireInput(composite->a, "Composite Input A");
       requireInput(composite->b, "Composite Input B");
@@ -238,6 +248,10 @@ EvaluationPlan compileDocument(const document::Document& document) {
   if (!result.finalSignal || descriptors.find(result.finalSignal.id) == descriptors.end())
     result.diagnostics.push_back({{}, DiagnosticSeverity::Error,
       "Presentation does not reference a valid final signal."});
+  else if (descriptors.at(result.finalSignal.id)->metadata.domain ==
+      document::SignalDomain::World3D)
+    result.diagnostics.push_back({result.finalSignal.id.producer, DiagnosticSeverity::Error,
+      "Presentation requires a screen-space signal. World fields must be sampled by a Render first."});
 
   const auto validateTarget = [&](const document::PropertyAddress& target,
       const char* context) {

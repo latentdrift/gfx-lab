@@ -1506,6 +1506,7 @@ public:
       if (std::holds_alternative<document::RenderOperation>(operation->data)) {
         renderSlots.emplace(operation->id, allocateSlot(renderSlotRelease, index, release));
       } else if (!std::holds_alternative<document::ConstantOperation>(operation->data) &&
+          !std::holds_alternative<document::SdfFieldOperation>(operation->data) &&
           !std::holds_alternative<document::MeasureOperation>(operation->data)) {
         relationSlots.emplace(operation->id, allocateSlot(relationSlotRelease, index, release));
       }
@@ -1654,6 +1655,11 @@ public:
         carrier.stereoAnalysis = data->mode;
         carrier.stereoMaximumDisparityPixels = data->maximumDisparityPixels;
         carrier.stereoOcclusionTolerance = data->occlusionTolerance;
+      } else if (const auto* data = std::get_if<document::SdfFieldOperation>(&source.data)) {
+        carrier.renderer.field.sdfA = data->a;
+        carrier.renderer.field.sdfB = data->b;
+        carrier.renderer.field.sdfOperation = data->combination;
+        carrier.renderer.field.sdfSmoothness = data->smoothness;
       }
       applyTracks(carrier, document::operationObject(source.id));
       result.enabled = carrier.enabled;
@@ -1677,6 +1683,11 @@ public:
         data->mode = carrier.stereoAnalysis;
         data->maximumDisparityPixels = carrier.stereoMaximumDisparityPixels;
         data->occlusionTolerance = carrier.stereoOcclusionTolerance;
+      } else if (auto* data = std::get_if<document::SdfFieldOperation>(&result.data)) {
+        data->a = carrier.renderer.field.sdfA;
+        data->b = carrier.renderer.field.sdfB;
+        data->combination = carrier.renderer.field.sdfOperation;
+        data->smoothness = carrier.renderer.field.sdfSmoothness;
       }
       return result;
     };
@@ -1706,6 +1717,23 @@ public:
       glm::ivec2 outputExtent(relationWidth_, relationHeight_);
       if (const auto* data = std::get_if<document::RenderOperation>(&operation->data)) {
         RenderPass pass = renderState(*operation, *data);
+        if (data->field) {
+          const document::SignalDescriptor* fieldSignal = document::findSignal(document, data->field.id);
+          const document::Operation* fieldProducer = fieldSignal == nullptr ? nullptr
+            : document::findOperation(document, fieldSignal->producer);
+          const document::Operation evaluatedField = fieldProducer == nullptr
+            ? document::Operation{} : evaluatedOperation(*fieldProducer);
+          const auto* sdf = fieldProducer == nullptr ? nullptr
+            : std::get_if<document::SdfFieldOperation>(&evaluatedField.data);
+          if (sdf != nullptr) {
+            pass.renderer.field.enabled = true;
+            pass.renderer.field.producerKind = 1;
+            pass.renderer.field.sdfA = sdf->a;
+            pass.renderer.field.sdfB = sdf->b;
+            pass.renderer.field.sdfOperation = sdf->combination;
+            pass.renderer.field.sdfSmoothness = sdf->smoothness;
+          }
+        }
         document::TimeTransform time = data->time;
         for (const document::AnimationTrack& track : document.automation.animation) {
           if (track.target.owner != document::operationObject(operation->id) || track.keyframes.empty()) continue;
@@ -1721,7 +1749,8 @@ public:
           renderSlot, pass.perturbation, pass.output, pass.textureSource,
           pass.importedTexture.get(), pass.importedTextureSrgb, time.apply(timeSeconds));
         outputExtent = {passTargets_[renderSlot].width, passTargets_[renderSlot].height};
-      } else if (std::holds_alternative<document::ConstantOperation>(operation->data)) {
+      } else if (std::holds_alternative<document::ConstantOperation>(operation->data) ||
+          std::holds_alternative<document::SdfFieldOperation>(operation->data)) {
         for (const document::SignalDescriptor& descriptor : operation->outputs) {
           evaluation::SignalResource resource;
           resource.descriptor = descriptor;

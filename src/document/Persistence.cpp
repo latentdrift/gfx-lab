@@ -213,9 +213,18 @@ Json operation(const Operation& value) {
     using Type = std::decay_t<decltype(data)>;
     if constexpr (std::is_same_v<Type, RenderOperation>) {
       result["type"] = "render"; result["overrides"] = overrides(data.overrides);
+      if (data.field) result["field_input"] = signal(data.field);
       result["perturbation"] = perturbation(data.perturbation);
       result["output"] = static_cast<int>(data.presentedOutput); result["texture"] = texture(data.texture);
       result["time"] = {{"scale", data.time.scale}, {"offset_seconds", data.time.offsetSeconds}};
+    } else if constexpr (std::is_same_v<Type, SdfFieldOperation>) {
+      result["type"] = "sdf_field";
+      const auto producer = [](const RendererState::Field::SdfProducer& value) {
+        return Json{{"type", value.type}, {"position", vector(glm::vec4(value.position, 0.0f), 3)},
+          {"parameters", vector(glm::vec4(value.parameters, 0.0f), 3)}};
+      };
+      result["a"] = producer(data.a); result["b"] = producer(data.b);
+      result["combination"] = data.combination; result["smoothness"] = data.smoothness;
     } else if constexpr (std::is_same_v<Type, InterpretOperation>) {
       result["type"] = "interpret"; result["input"] = signal(data.spectrum);
       result["observer"] = static_cast<int>(data.observer); result["exposure"] = data.exposureStops;
@@ -296,6 +305,7 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
   if (type == "render") {
     result = makeRenderOperation(id, name);
     auto& data = std::get<RenderOperation>(result.data);
+    if (source.contains("field_input")) data.field = signal(source.at("field_input"));
     data.overrides = overrides(source.value("overrides", Json::array()));
     data.perturbation = perturbation(source.value("perturbation", Json::object()));
     data.presentedOutput = static_cast<PassOutput>(source.value("output", 0));
@@ -303,6 +313,20 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
     const Json time = source.value("time", Json::object());
     data.time.scale = time.value("scale", data.time.scale);
     data.time.offsetSeconds = time.value("offset_seconds", data.time.offsetSeconds);
+  } else if (type == "sdf_field") {
+    result = makeSdfFieldOperation(id, name);
+    auto& data = std::get<SdfFieldOperation>(result.data);
+    const auto readProducer = [](const Json& value,
+        RendererState::Field::SdfProducer fallback) {
+      fallback.type = value.value("type", fallback.type);
+      if (value.contains("position")) fallback.position = glm::vec3(vector(value.at("position"), 3));
+      if (value.contains("parameters")) fallback.parameters = glm::vec3(vector(value.at("parameters"), 3));
+      return fallback;
+    };
+    if (source.contains("a")) data.a = readProducer(source.at("a"), data.a);
+    if (source.contains("b")) data.b = readProducer(source.at("b"), data.b);
+    data.combination = source.value("combination", data.combination);
+    data.smoothness = source.value("smoothness", data.smoothness);
   } else if (type == "interpret") {
     result = makeInterpretOperation(id, name, signal(source.at("input")));
     auto& data = std::get<InterpretOperation>(result.data);
@@ -431,7 +455,7 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
 
 std::string documentJson(const Document& document) {
   Json root;
-  root["schema"] = "graphics-lab.document.v12";
+  root["schema"] = "graphics-lab.document.v13";
   root["next_operation_id"] = document.nextOperationIdentity;
   root["scene"] = {{"type", static_cast<int>(document.scene.testScene)},
     {"model", document.scene.importedModel != nullptr ? document.scene.importedModel->sourcePath : ""},
@@ -498,7 +522,7 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
     Json root; input >> root;
     const std::string schema = root.value("schema", "");
     if (schema != "graphics-lab.document.v10" && schema != "graphics-lab.document.v11" &&
-        schema != "graphics-lab.document.v12")
+        schema != "graphics-lab.document.v12" && schema != "graphics-lab.document.v13")
       return {std::nullopt, "Unsupported typed document schema."};
     Document result;
     result.nextOperationIdentity = root.value("next_operation_id", std::uint64_t{1});
@@ -525,9 +549,46 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
     for (const Json& source : root.at("operations")) result.operations.push_back(operation(source, documentPath));
     for (const Operation& authored : result.operations)
       result.nextOperationIdentity = std::max(result.nextOperationIdentity, authored.id.value + 1);
+    std::vector<std::pair<ObjectId, ObjectId>> sdfOwnerMigrations;
+    const auto isSdfDefinitionProperty = [](const AnimationProperty property) {
+      return property == AnimationProperty::SdfAType ||
+        property == AnimationProperty::SdfAPosition ||
+        property == AnimationProperty::SdfAParameters ||
+        property == AnimationProperty::SdfBType ||
+        property == AnimationProperty::SdfBPosition ||
+        property == AnimationProperty::SdfBParameters ||
+        property == AnimationProperty::SdfOperation ||
+        property == AnimationProperty::SdfSmoothness;
+    };
+    if (schema != "graphics-lab.document.v13") {
+      const std::size_t authoredCount = result.operations.size();
+      for (std::size_t index = 0; index < authoredCount; ++index) {
+        Operation& operation = result.operations[index];
+        auto* render = std::get_if<RenderOperation>(&operation.data);
+        if (render == nullptr) continue;
+        RenderPass effective;
+        effective.renderer = result.renderDefaults.renderer;
+        for (const PropertyOverride& overrideValue : render->overrides)
+          setAnimationPropertyValue(effective, overrideValue.property, overrideValue.value);
+        if (!effective.renderer.field.enabled || effective.renderer.field.producerKind != 1) continue;
+        const OperationId fieldId{result.nextOperationIdentity++};
+        Operation field = makeSdfFieldOperation(fieldId, operation.name + " SDF");
+        auto& definition = std::get<SdfFieldOperation>(field.data);
+        definition.a = effective.renderer.field.sdfA;
+        definition.b = effective.renderer.field.sdfB;
+        definition.combination = effective.renderer.field.sdfOperation;
+        definition.smoothness = effective.renderer.field.sdfSmoothness;
+        render->field = primaryOutput(field);
+        std::erase_if(render->overrides, [&](const PropertyOverride& value) {
+          return isSdfDefinitionProperty(value.property);
+        });
+        sdfOwnerMigrations.push_back({operationObject(operation.id), operationObject(fieldId)});
+        result.operations.push_back(std::move(field));
+      }
+    }
     if (schema == "graphics-lab.document.v10") {
       const Json& sources = root.at("operations");
-      const std::size_t originalCount = result.operations.size();
+      const std::size_t originalCount = sources.size();
       for (std::size_t index = 0; index < originalCount; ++index) {
         if (sources[index].value("type", "") != "composite") continue;
         const CompositeMask legacyMask = static_cast<CompositeMask>(sources[index].value("mask", 0));
@@ -572,6 +633,11 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
         throw std::runtime_error("Animation references an unknown property: " + name);
       AnimationTrack track;
       track.target = {object(source.at("owner")), property->id};
+      if (isSdfDefinitionProperty(property->rendererProperty)) {
+        const auto migratedOwner = std::find_if(sdfOwnerMigrations.begin(), sdfOwnerMigrations.end(),
+          [&](const auto& migration) { return migration.first == track.target.owner; });
+        if (migratedOwner != sdfOwnerMigrations.end()) track.target.owner = migratedOwner->second;
+      }
       track.interpolation = static_cast<KeyframeInterpolation>(source.value("interpolation", 1));
       for (const Json& key : source.value("keys", Json::array()))
         track.keyframes.push_back({key.value("time", 0.0f), vector(key.at("value"), property->components)});
@@ -611,7 +677,13 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
     for (const Operation& operation : result.operations)
       result.nextOperationIdentity = std::max(result.nextOperationIdentity, operation.id.value + 1);
     const evaluation::EvaluationPlan plan = evaluation::compileDocument(result);
-    if (!plan.valid()) return {std::nullopt, "Typed document contains an invalid operation graph."};
+    if (!plan.valid()) {
+      std::string message = "Typed document contains an invalid operation graph:";
+      for (const evaluation::OperationDiagnostic& diagnostic : plan.diagnostics)
+        if (diagnostic.severity == evaluation::DiagnosticSeverity::Error)
+          message += " " + diagnostic.message;
+      return {std::nullopt, std::move(message)};
+    }
     return {std::move(result), {}};
   } catch (const std::exception& exception) {
     return {std::nullopt, std::string("Could not load typed document: ") + exception.what()};

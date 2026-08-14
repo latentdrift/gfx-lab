@@ -94,6 +94,7 @@ const char* executionClass(const document::Operation& operation) {
   return std::visit([](const auto& data) -> const char* {
     using Type = std::decay_t<decltype(data)>;
     if constexpr (std::is_same_v<Type, document::RenderOperation>) return "SCENE RENDER";
+    if constexpr (std::is_same_v<Type, document::SdfFieldOperation>) return "ANALYTIC WORLD FIELD";
     if constexpr (std::is_same_v<Type, document::MeasureOperation>) return "GPU READBACK";
     if constexpr (std::is_same_v<Type, document::ConstantOperation>) return "VALUE";
     if constexpr (std::is_same_v<Type, document::EdgeOperation>) return "2 FULLSCREEN PASSES · 2 OUTPUTS";
@@ -110,7 +111,9 @@ std::vector<InputPort> inputsFor(const document::Operation& operation) {
   };
   std::visit([&](const auto& data) {
     using Type = std::decay_t<decltype(data)>;
-    if constexpr (std::is_same_v<Type, document::InterpretOperation>)
+    if constexpr (std::is_same_v<Type, document::RenderOperation>)
+      add(editor::InputSocket::Field, "Field", data.field);
+    else if constexpr (std::is_same_v<Type, document::InterpretOperation>)
       add(editor::InputSocket::Primary, "Spectrum", data.spectrum);
     else if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
       add(editor::InputSocket::A, "Input A", data.a);
@@ -142,6 +145,11 @@ bool accepts(const document::Document& document, const InputPort& input,
   const document::Operation* producer = document::findOperation(document, output.signal.id.producer);
   if (target == nullptr || producer == nullptr) return false;
   const document::SignalDescriptor& descriptor = output.descriptor;
+  if (std::holds_alternative<document::RenderOperation>(target->data))
+    return input.socket == editor::InputSocket::Field &&
+      descriptor.metadata.domain == document::SignalDomain::World3D &&
+      descriptor.shape == document::SignalShape::Scalar &&
+      descriptor.metadata.semantic == document::SignalSemantic::SignedDistance;
   if (std::holds_alternative<document::InterpretOperation>(target->data))
     return descriptor.shape == document::SignalShape::Spectrum16;
   if (std::holds_alternative<document::CompositeOperation>(target->data) &&
@@ -286,6 +294,30 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
     if (ImGui::MenuItem("Render")) {
       const document::OperationId id = document::nextOperationId(document);
       add(document::makeRenderOperation(id, "Render"), true);
+    }
+    if (ImGui::MenuItem("SDF Field")) {
+      const document::OperationId id = document::nextOperationId(document);
+      const document::OperationId selectedOperationId =
+        editorState.selection.kind == editor::SelectionKind::Operation
+        ? editorState.selection.operation : document::OperationId{};
+      const document::Operation* selectedOperation = document::findOperation(document,
+        selectedOperationId);
+      if (selectedOperation != nullptr &&
+          std::holds_alternative<document::RenderOperation>(selectedOperation->data)) {
+        document::Document edited = document;
+        document::Operation field = document::makeSdfFieldOperation(id,
+          selectedOperation->name + " SDF");
+        const document::SignalRef distance = document::primaryOutput(field);
+        edited.operations.push_back(std::move(field));
+        edited.nextOperationIdentity = id.value + 1;
+        auto& render = std::get<document::RenderOperation>(
+          document::findOperation(edited, selectedOperationId)->data);
+        render.field = distance;
+        document::synchronizeOperationSignalMetadata(
+          *document::findOperation(edited, selectedOperationId));
+        if (execute(editor::ReplaceDocument{std::move(edited)}))
+          editorState.selection = {editor::SelectionKind::Operation, id};
+      } else add(document::makeSdfFieldOperation(id, "SDF Field"), false);
     }
     if (ImGui::MenuItem("Composite")) {
       const document::OperationId id = document::nextOperationId(document);
@@ -487,9 +519,9 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
       const document::SignalRef primary = document::primaryOutput(operation);
       const document::SignalDescriptor* primaryDescriptor = document::findSignal(document, primary.id);
       ImGui::TextDisabled("%s", document::operationTypeLabel(operation));
-      if (ImGui::MenuItem("View Primary Output")) deferredViewedSignal = primary;
       ImGui::BeginDisabled(primaryDescriptor == nullptr ||
-        primaryDescriptor->metadata.domain == document::SignalDomain::Document);
+        primaryDescriptor->metadata.domain != document::SignalDomain::Screen2D);
+      if (ImGui::MenuItem("View Primary Output")) deferredViewedSignal = primary;
       if (ImGui::MenuItem("Set Primary Output as Final")) {
         deferredSignalCommand = editor::SetFinalSignal{primary};
         deferredViewedSignal = primary;
@@ -555,17 +587,19 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
       ImGui::PushID(pin);
       const bool viewed = editorState.viewer.viewed.id == output.id;
       if (viewed) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.9f, 1.0f, 1.0f));
-      if (ImGui::Selectable(output.name.c_str(), viewed, 0, ImVec2(120.0f, 0.0f))) {
-        const document::SignalRef signal{output.id, 0};
-        if (ImGui::GetIO().KeyShift) editorState.viewer.comparison = signal;
-        else editorState.viewer.viewed = signal;
-      }
+      if (output.metadata.domain == document::SignalDomain::Screen2D) {
+        if (ImGui::Selectable(output.name.c_str(), viewed, 0, ImVec2(120.0f, 0.0f))) {
+          const document::SignalRef signal{output.id, 0};
+          if (ImGui::GetIO().KeyShift) editorState.viewer.comparison = signal;
+          else editorState.viewer.viewed = signal;
+        }
+      } else ImGui::TextUnformatted(output.name.c_str());
       signalTooltip(output);
       if (ImGui::BeginPopupContextItem("signal-actions")) {
         const document::SignalRef signal{output.id, 0};
         ImGui::TextDisabled("%s", document::signalDescriptorSummary(output).c_str());
+        ImGui::BeginDisabled(output.metadata.domain != document::SignalDomain::Screen2D);
         if (ImGui::MenuItem("View Signal")) deferredViewedSignal = signal;
-        ImGui::BeginDisabled(output.metadata.domain == document::SignalDomain::Document);
         if (ImGui::MenuItem("Set as Final Output")) {
           deferredSignalCommand = editor::SetFinalSignal{signal};
           deferredViewedSignal = signal;
@@ -703,8 +737,8 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
     const int destinationPin = outputPins.contains(firstPin) ? secondPin : firstPin;
     if (output == outputPins.end()) message = "Connections must run from an output to an input.";
     else if (destinationPin == outputInputPinId) {
-      if (output->second.descriptor.metadata.domain == document::SignalDomain::Document)
-        message = "Output requires an image or field, not a Scalar.";
+      if (output->second.descriptor.metadata.domain != document::SignalDomain::Screen2D)
+        message = "Output requires a screen-space signal. Connect world fields to a Render first.";
       else if (execute(editor::SetFinalSignal{output->second.signal}))
         editorState.viewer.viewed = document.presentation.input;
     } else if (const auto input = inputPins.find(destinationPin); input == inputPins.end()) {
