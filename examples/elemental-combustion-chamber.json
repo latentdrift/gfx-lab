@@ -35,8 +35,8 @@
       "field_source_a": [-2.6, 0.0, -1.7],
       "field_wavelength": [0.82],
       "field_phase_offset": [0.28],
-      "field_amplitude_a": [0.0],
-      "field_amplitude_b": [0.0],
+      "field_amplitude_a": [0.9],
+      "field_amplitude_b": [0.65],
       "field_falloff": [1.2],
       "field_visualization": [6.0],
       "field_low_color": [0.004, 0.008, 0.022],
@@ -56,7 +56,7 @@
         "property": "field_amplitude_a",
         "interpolation": "smooth_step",
         "keys": [
-          {"time_seconds": 0.0, "value": [0.0]},
+          {"time_seconds": 0.0, "value": [0.9]},
           {"time_seconds": 0.35, "value": [2.8]},
           {"time_seconds": 1.65, "value": [1.15]},
           {"time_seconds": 3.2, "value": [0.0]},
@@ -69,7 +69,7 @@
         "property": "field_amplitude_b",
         "interpolation": "smooth_step",
         "keys": [
-          {"time_seconds": 0.0, "value": [0.0]},
+          {"time_seconds": 0.0, "value": [0.65]},
           {"time_seconds": 0.22, "value": [2.2]},
           {"time_seconds": 2.4, "value": [0.65]},
           {"time_seconds": 3.2, "value": [0.0]},
@@ -131,6 +131,42 @@
       "animation": {"enabled": true, "property_tracks": []}
     },
     {
+      "id": 6,
+      "name": "Combustion drives heat contrast",
+      "enabled": true,
+      "operation_kind": "measure",
+      "output_buffer": "field_signal",
+      "overrides": [],
+      "composite_into_previous": {
+        "operation": "absolute_difference",
+        "source_a": {"type": "render_pass_field", "pass_id": 3},
+        "source_b": {"type": "fixed_color", "pass_id": 3},
+        "fixed_color_rgba": [0.0, 0.0, 0.0, 1.0],
+        "gain": 1.0,
+        "bias": 0.0,
+        "opacity": 1.0,
+        "arithmetic_color_space": "linear_light",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "measurement": {
+        "threshold": 0.08,
+        "absolute_magnitude": true,
+        "metric": "coverage_above_threshold",
+        "modulation": {
+          "enabled": true,
+          "target_pass_id": 4,
+          "target_property": "composite_gain",
+          "input_range": [0.0, 0.12],
+          "output_range": [0.75, 3.5],
+          "clamp": true,
+          "smoothing_seconds": 0.22
+        }
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    },
+    {
       "id": 4,
       "name": "Fire carried by smoke",
       "enabled": true,
@@ -169,42 +205,6 @@
         "range_behavior": "clamp_0_to_1",
         "mask": "none",
         "invert_mask": false
-      },
-      "animation": {"enabled": true, "property_tracks": []}
-    },
-    {
-      "id": 6,
-      "name": "Combustion drives heat contrast",
-      "enabled": true,
-      "operation_kind": "measure",
-      "output_buffer": "field_signal",
-      "overrides": [],
-      "composite_into_previous": {
-        "operation": "absolute_difference",
-        "source_a": {"type": "render_pass_field", "pass_id": 3},
-        "source_b": {"type": "fixed_color", "pass_id": 3},
-        "fixed_color_rgba": [0.0, 0.0, 0.0, 1.0],
-        "gain": 1.0,
-        "bias": 0.0,
-        "opacity": 1.0,
-        "arithmetic_color_space": "linear_light",
-        "range_behavior": "clamp_0_to_1",
-        "mask": "none",
-        "invert_mask": false
-      },
-      "measurement": {
-        "threshold": 0.08,
-        "absolute_magnitude": true,
-        "metric": "coverage_above_threshold",
-        "modulation": {
-          "enabled": true,
-          "target_pass_id": 4,
-          "target_property": "composite_gain",
-          "input_range": [0.0, 0.12],
-          "output_range": [0.75, 3.5],
-          "clamp": true,
-          "smoothing_seconds": 0.22
-        }
       },
       "animation": {"enabled": true, "property_tracks": []}
     }

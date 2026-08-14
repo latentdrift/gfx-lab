@@ -520,11 +520,12 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         elementalDocument.document->renderStack.passes().size() != 6 ||
         elementalDocument.document->renderStack.global().animation.tracks.size() != 3 ||
         elementalDocument.document->renderStack.passes()[0].output != PassOutput::FieldSignal ||
-        elementalDocument.document->renderStack.passes()[5].kind != StackOperationKind::Measure ||
-        elementalDocument.document->renderStack.passes()[5].composite.sourceA !=
+        elementalDocument.document->renderStack.passes()[3].kind != StackOperationKind::Measure ||
+        elementalDocument.document->renderStack.passes()[3].composite.sourceA !=
           CompositeSource::RenderPassField ||
-        elementalDocument.document->renderStack.passes()[5].measurementTargetProperty !=
-          AnimationProperty::CompositeGain)
+        elementalDocument.document->renderStack.passes()[3].measurementTargetProperty !=
+          AnimationProperty::CompositeGain ||
+        elementalDocument.document->renderStack.passes()[5].kind != StackOperationKind::Composite)
       fail("elemental combustion chamber example failed document loading validation");
     ElementalSimulation elementalSimulation;
     RendererState::Field elementalControls;

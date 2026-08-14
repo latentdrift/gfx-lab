@@ -237,7 +237,26 @@ uniform float uFieldSurfaceColorInfluence;
 uniform float uFieldEmissionInfluence;
 uniform vec3 uFieldLowColor;
 uniform vec3 uFieldHighColor;
+uniform int uFieldProducerKind;
+uniform sampler2D uSimulationMatter;
+uniform sampler2D uSimulationDynamics;
+uniform int uSimulationChannel;
 out vec4 fragColor;
+
+float sampleSimulationField(vec3 worldPosition) {
+  vec2 simulationUv = worldPosition.xz / vec2(12.0, 8.0) + 0.5;
+  if (any(lessThan(simulationUv, vec2(0.0))) || any(greaterThan(simulationUv, vec2(1.0)))) return 0.0;
+  vec4 matter = texture(uSimulationMatter, simulationUv);
+  vec4 dynamics = texture(uSimulationDynamics, simulationUv);
+  if (dynamics.a < 0.0) return 0.0;
+  if (uSimulationChannel == 0) return clamp(matter.r / 2.0, 0.0, 1.0);
+  if (uSimulationChannel == 1) return clamp(matter.g, 0.0, 1.0);
+  if (uSimulationChannel == 2) return clamp(matter.b, 0.0, 1.0);
+  if (uSimulationChannel == 3) return clamp(abs(dynamics.b) * 2.0, 0.0, 1.0);
+  if (uSimulationChannel == 4) return clamp(length(dynamics.rg), 0.0, 1.0);
+  if (uSimulationChannel == 5) return clamp(matter.a, 0.0, 1.0);
+  return clamp(dynamics.a, 0.0, 1.0);
+}
 
 vec4 sampleSurfaceTexture(vec2 uv) {
   if (uTextureColorMode == 0) return texture(uTexture, uv);
@@ -357,7 +376,8 @@ float shadowAmount() {
 }
 
 void main() {
-  if (vFieldConsumerAffects != 0 && uFieldDiscardEnabled && vFieldSignal < uFieldDiscardThreshold) discard;
+  float fieldSignal = uFieldProducerKind == 2 ? sampleSimulationField(vWorldPosition) : vFieldSignal;
+  if (vFieldConsumerAffects != 0 && uFieldDiscardEnabled && fieldSignal < uFieldDiscardThreshold) discard;
   vec2 uv = (uAffineMapping ? vUvAffine : vUvPerspective);
   float uvCos = cos(uUvRotation);
   float uvSin = sin(uUvRotation);
@@ -420,12 +440,12 @@ void main() {
   }
 
   vec3 fieldMiddle = mix(vec3(0.10, 0.42, 0.88), uFieldHighColor, 0.28);
-  vec3 fieldColor = vFieldSignal < 0.5
-    ? mix(uFieldLowColor, fieldMiddle, vFieldSignal * 2.0)
-    : mix(fieldMiddle, uFieldHighColor, vFieldSignal * 2.0 - 1.0);
+  vec3 fieldColor = fieldSignal < 0.5
+    ? mix(uFieldLowColor, fieldMiddle, fieldSignal * 2.0)
+    : mix(fieldMiddle, uFieldHighColor, fieldSignal * 2.0 - 1.0);
   if (vFieldConsumerAffects != 0) {
     color = mix(color, fieldColor, uFieldSurfaceColorInfluence);
-    color += fieldColor * vFieldSignal * uFieldEmissionInfluence;
+    color += fieldColor * fieldSignal * uFieldEmissionInfluence;
   }
 
   if (uWireframe) {
