@@ -1256,6 +1256,19 @@ public:
       0);
   }
 
+  GLuint compareSignals(const GLuint a, const GLuint b, const RelationOperator operation,
+      const float gain, const float bias) {
+    if (a == 0 || b == 0) return 0;
+    CompositeStep step;
+    step.sourceA = CompositeSource::RenderPass;
+    step.sourceB = CompositeSource::RenderPass;
+    step.operation = operation;
+    step.gain = gain;
+    step.bias = bias;
+    step.colorSpace = CompositeColorSpace::LinearLight;
+    return compositeTextures(a, b, 0, 0, {}, {}, RendererState{}, step, RenderStack::maximumPasses);
+  }
+
   GLuint analyzeStereo(const RenderTarget& left, const RenderTarget& right, const RenderPass& operation,
       const std::size_t outputIndex) {
     glBindFramebuffer(GL_FRAMEBUFFER, relationFbos_[outputIndex]);
@@ -1525,8 +1538,8 @@ private:
   GLuint shadowFbo_ = 0, shadowTexture_ = 0;
   int shadowResolution_ = 0;
   std::array<RenderTarget, RenderStack::maximumPasses> passTargets_;
-  std::array<GLuint, RenderStack::maximumPasses> relationFbos_{};
-  std::array<GLuint, RenderStack::maximumPasses> relationTextures_{};
+  std::array<GLuint, RenderStack::maximumPasses + 1> relationFbos_{};
+  std::array<GLuint, RenderStack::maximumPasses + 1> relationTextures_{};
   std::array<GLuint, RenderStack::maximumPasses> operationTextures_{};
   GLuint historyFbo_ = 0, historyTexture_ = 0;
   std::array<GLuint, 3> displayFbos_{};
@@ -1673,6 +1686,10 @@ unsigned int Renderer::render(const RendererState& state, const CameraOrbit& cam
 
 unsigned int Renderer::renderRelation(RelationOperator operation, float gain, float bias) {
   return impl_->renderRelation(operation, gain, bias);
+}
+unsigned int Renderer::compareSignals(const unsigned int a, const unsigned int b,
+    const RelationOperator operation, const float gain, const float bias) {
+  return impl_->compareSignals(a, b, operation, gain, bias);
 }
 
 unsigned int Renderer::renderPass(const RenderPass& pass, const CameraOrbit& camera, const TestScene scene,

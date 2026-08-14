@@ -179,7 +179,16 @@ void drawContextInspector(bool& open, RenderStack& stack, AnimationTimeline& tim
   }
   keepCurrentWindowVisible();
 
-  if (selection.kind == EditorSelectionKind::FinalOutput) {
+  if (selection.kind == EditorSelectionKind::Scene) {
+    ImGui::TextDisabled("SCENE");
+    ImGui::TextUnformatted("World, assets, and document camera");
+    ImGui::Separator();
+    ImGui::TextWrapped("Scene selection is independent from the signal shown in the viewer. Scene and asset editing will move into this object as the typed document migration continues.");
+    ImGui::End();
+    return;
+  }
+
+  if (selection.kind == EditorSelectionKind::Presentation) {
     ImGui::TextDisabled("FINAL OUTPUT");
     ImGui::TextUnformatted("Stack result and presentation");
     ImGui::Separator();
@@ -188,7 +197,7 @@ void drawContextInspector(bool& open, RenderStack& stack, AnimationTimeline& tim
     return;
   }
 
-  const bool sceneDefaults = selection.kind == EditorSelectionKind::SceneDefaults;
+  const bool sceneDefaults = selection.kind == EditorSelectionKind::RenderDefaults;
   const bool selectedRenders = sceneDefaults || rendersScene(stack.selected());
   ImGui::TextDisabled("%s", sceneDefaults ? "SCENE DEFAULTS" : stackOperationKindLabel(stack.selected().kind));
   ImGui::TextUnformatted(sceneDefaults ? "Inherited render state" : stack.selected().name.c_str());

@@ -4,6 +4,8 @@
 #include "app/HardwareProfile.hpp"
 #include "app/RenderStack.hpp"
 #include "app/State.hpp"
+#include "document/Document.hpp"
+#include "editor/EditorState.hpp"
 namespace gfxlab {
 struct ModelAsset;
 }
@@ -12,12 +14,8 @@ namespace gfxlab::ui {
 
 enum class WorkspaceLayout { Edit, Animate, Analyze };
 
-enum class EditorSelectionKind { SceneDefaults, Operation, FinalOutput };
-
-struct EditorSelection {
-  EditorSelectionKind kind = EditorSelectionKind::SceneDefaults;
-  int operationId = 0;
-};
+using EditorSelection = editor::ObjectSelection;
+using EditorSelectionKind = editor::SelectionKind;
 
 struct WorkspaceWindows {
   bool document = true;
@@ -50,11 +48,12 @@ struct SceneWindowResult {
 };
 
 struct ViewportImages {
-  unsigned int selected = 0;
-  unsigned int base = 0;
-  unsigned int composite = 0;
-  unsigned int leftEye = 0;
-  unsigned int rightEye = 0;
+  unsigned int viewed = 0;
+  unsigned int comparison = 0;
+  unsigned int difference = 0;
+  unsigned int final = 0;
+  const char* viewedLabel = "Viewed signal";
+  const char* comparisonLabel = "Comparison signal";
 };
 
 struct ViewportWindowResult {
@@ -66,10 +65,10 @@ struct ViewportWindowResult {
 WorkspaceActions beginWorkspace(WorkspaceWindows& windows, bool canUndo, bool canRedo, float& uiScale,
   bool viewportRecording, double recordingDurationSeconds, HardwareProfile& profile);
 SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStack& stack,
-  AnimationTimeline& timeline, EditorSelection& selection, HardwareProfile profile,
-  const ModelAsset* importedModel);
-ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& compare,
-  const RenderStack& stack, RenderPass& displayedPass, const CameraOrbit& camera,
+  AnimationTimeline& timeline, editor::EditorState& editorState, const document::Document& document,
+  HardwareProfile profile, const ModelAsset* importedModel);
+ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images,
+  editor::SignalViewerState& viewer, RenderPass& displayedPass, const CameraOrbit& camera,
   AnimationTimeline& timeline, bool globalScope, bool canEditTransform = true);
 
 } // namespace gfxlab::ui

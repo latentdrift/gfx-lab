@@ -38,6 +38,7 @@ add_executable(graphics-lab
   src/evaluation/Compiler.cpp
   src/evaluation/LegacyBridge.cpp
   src/evaluation/SignalRegistry.cpp
+  src/editor/EditorState.cpp
   src/handbook/Handbook.cpp
   src/renderer/Renderer.cpp
   src/renderer/TestGeometry.cpp

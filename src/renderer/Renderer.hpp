@@ -22,6 +22,8 @@ public:
   unsigned int render(const RendererState& state, const CameraOrbit& camera, TestScene scene,
     bool referenceTarget);
   unsigned int renderRelation(RelationOperator operation, float gain, float bias);
+  unsigned int compareSignals(unsigned int a, unsigned int b, RelationOperator operation,
+    float gain = 1.0f, float bias = 0.0f);
   unsigned int renderPass(const RenderPass& pass, const CameraOrbit& camera, TestScene scene,
     std::size_t targetIndex);
   unsigned int composite(const RenderStack& stack);

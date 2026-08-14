@@ -24,11 +24,11 @@ void drawTextureInspector(bool& open, const ViewportImages& images, const std::s
   }
   keepCurrentWindowVisible();
 
-  enum class Source { Selected, Base, Composite };
-  static Source source = Source::Selected;
+  enum class Source { Viewed, Comparison, Final };
+  static Source source = Source::Viewed;
   static float zoom = 1.0f;
   static ImVec2 center(0.5f, 0.5f);
-  constexpr std::array<const char*, 3> sourceLabels = {"Selected pass", "Base pass", "Composite"};
+  constexpr std::array<const char*, 3> sourceLabels = {"Viewed signal", "Comparison signal", "Final output"};
   int sourceIndex = static_cast<int>(source);
   ImGui::SetNextItemWidth(150.0f);
   if (ImGui::Combo("##texture-source", &sourceIndex, sourceLabels.data(), sourceLabels.size()))
@@ -39,11 +39,11 @@ void drawTextureInspector(bool& open, const ViewportImages& images, const std::s
     center = ImVec2(0.5f, 0.5f);
   }
 
-  const unsigned int texture = source == Source::Selected ? images.selected
-    : source == Source::Base ? images.base : images.composite;
+  const unsigned int texture = source == Source::Viewed ? images.viewed
+    : source == Source::Comparison ? images.comparison : images.final;
   const TextureDimensions dimensions = textureDimensions(texture);
-  const std::string label = source == Source::Selected ? std::string(selectedPassName)
-    : source == Source::Base ? "Base pass" : "Composite stack";
+  const std::string label = source == Source::Viewed ? std::string(selectedPassName)
+    : source == Source::Comparison ? images.comparisonLabel : "Final output";
   ImGui::TextDisabled("%s   %d x %d texels   Wheel zoom   MMB/RMB pan", label.c_str(),
     dimensions.width, dimensions.height);
   ImGui::Separator();

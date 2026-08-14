@@ -25,7 +25,7 @@ namespace {
 // Dear ImGui otherwise restores the previous topology and leaves the unknown
 // tool as a detached platform window, which is especially fragile across DPI
 // scales and mixed-monitor coordinate spaces.
-constexpr const char* workspaceId = "Graphics Lab Workspace v11";
+constexpr const char* workspaceId = "Graphics Lab Workspace v12";
 
 void buildDefaultLayout(const ImGuiID dockspace, const WorkspaceLayout layout) {
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -46,7 +46,7 @@ void buildDefaultLayout(const ImGuiID dockspace, const WorkspaceLayout layout) {
   ImGuiID centerTop = center;
   const float timelineRatio = layout == WorkspaceLayout::Animate ? 0.46f : 0.30f;
   ImGui::DockBuilderSplitNode(centerTop, ImGuiDir_Down, timelineRatio, &centerBottom, &centerTop);
-  ImGui::DockBuilderDockWindow("Viewport", centerTop);
+  ImGui::DockBuilderDockWindow("Signal Viewer", centerTop);
   ImGui::DockBuilderDockWindow("Timeline", centerBottom);
   ImGui::DockBuilderDockWindow("Inspector", right);
   if (layout == WorkspaceLayout::Analyze) {
@@ -77,7 +77,7 @@ void windowMenu(WorkspaceWindows& windows) {
   }
   ImGui::Separator();
   ImGui::MenuItem("Document", nullptr, &windows.document);
-  ImGui::MenuItem("Viewport", nullptr, &windows.viewport);
+  ImGui::MenuItem("Signal Viewer", nullptr, &windows.viewport);
   ImGui::MenuItem("Inspector", nullptr, &windows.inspector);
   ImGui::MenuItem("Timeline", nullptr, &windows.animation);
   ImGui::MenuItem("Property Comparison", nullptr, &windows.passDifferences);
@@ -174,8 +174,8 @@ WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, c
 }
 
 SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStack& stack,
-    AnimationTimeline& timeline, EditorSelection& selection, const HardwareProfile profile,
-    const ModelAsset* importedModel) {
+    AnimationTimeline& timeline, editor::EditorState& editorState, const document::Document& document,
+    const HardwareProfile profile, const ModelAsset* importedModel) {
   SceneWindowResult result;
   if (!open) return result;
   if (!ImGui::Begin("Document", &open)) {
@@ -245,55 +245,87 @@ SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStac
     if (ImGui::Button("Unload Model", ImVec2(-1, 0))) result.unloadModel = true;
   }
   ImGui::Separator();
+  EditorSelection& selection = editorState.selection;
   if (selection.kind == EditorSelectionKind::Operation) {
     bool found = false;
     for (std::size_t index = 0; index < stack.passes().size(); ++index) {
-      if (stack.passes()[index].id != selection.operationId) continue;
+      if (static_cast<std::uint64_t>(std::max(stack.passes()[index].id, 1)) != selection.operation.value) continue;
       stack.select(index);
       found = true;
       break;
     }
-    if (!found) selection.operationId = stack.selected().id;
+    if (!found) selection = {EditorSelectionKind::RenderDefaults, {}};
   }
-  ImGui::TextDisabled("SCENE DEFAULTS");
-  if (ImGui::Selectable("Scene defaults", selection.kind == EditorSelectionKind::SceneDefaults,
-      0, ImVec2(0.0f, 26.0f))) selection.kind = EditorSelectionKind::SceneDefaults;
+  ImGui::TextDisabled("DOCUMENT OBJECTS");
+  if (ImGui::Selectable("Scene", selection.kind == EditorSelectionKind::Scene,
+      0, ImVec2(0.0f, 24.0f))) selection = {EditorSelectionKind::Scene, {}};
+  if (ImGui::Selectable("Render Defaults", selection.kind == EditorSelectionKind::RenderDefaults,
+      0, ImVec2(0.0f, 24.0f))) selection = {EditorSelectionKind::RenderDefaults, {}};
   ImGui::TextDisabled("Inherited by every Render operation unless locally overridden.");
   ImGui::Separator();
-  ImGui::TextDisabled("STACK — TOP TO BOTTOM");
-  for (std::size_t index = 0; index < stack.passes().size(); ++index) {
-    RenderPass& pass = stack.passes()[index];
-    ImGui::PushID(static_cast<int>(index));
-    const bool selected = selection.kind == EditorSelectionKind::Operation && pass.id == selection.operationId;
-    if (ImGui::Selectable(pass.name.c_str(), selected, 0, ImVec2(0.0f, 22.0f))) {
-      stack.select(index);
-      selection = {EditorSelectionKind::Operation, pass.id};
+  ImGui::TextDisabled("OPERATIONS — EXECUTION ORDER");
+  for (std::size_t index = 0; index < document.operations.size(); ++index) {
+    const document::Operation& operation = document.operations[index];
+    ImGui::PushID(static_cast<int>(operation.id.value));
+    const bool selected = selection.kind == EditorSelectionKind::Operation &&
+      selection.operation == operation.id;
+    if (ImGui::Selectable(operation.name.c_str(), selected, 0, ImVec2(0.0f, 22.0f))) {
+      selection = {EditorSelectionKind::Operation, operation.id};
+      for (std::size_t passIndex = 0; passIndex < stack.passes().size(); ++passIndex)
+        if (static_cast<std::uint64_t>(std::max(stack.passes()[passIndex].id, 1)) == operation.id.value)
+          stack.select(passIndex);
     }
     const float rowTop = ImGui::GetItemRectMin().y;
-    const char* signalSummary = pass.kind == StackOperationKind::Render
-      ? "Color · Depth · Field · Spectrum16"
-      : pass.kind == StackOperationKind::Interpret ? "Spectrum16  ->  Color"
-      : pass.kind == StackOperationKind::Composite ? "A + B  ->  Color"
-      : pass.kind == StackOperationKind::StereoAnalysis ? "Left depth + Right depth  ->  analysis"
-      : pass.kind == StackOperationKind::Measure ? "Named signal  ->  property control"
-      : "Color  ->  accumulator";
-    ImGui::TextDisabled("%s", stackOperationKindLabel(pass.kind));
-    if (pass.kind == StackOperationKind::Render || pass.kind == StackOperationKind::LegacyRenderComposite) {
+    ImGui::TextDisabled("%s", document::operationTypeLabel(operation));
+    const auto legacyPass = std::find_if(stack.passes().begin(), stack.passes().end(),
+      [&operation](const RenderPass& pass) {
+        return static_cast<std::uint64_t>(std::max(pass.id, 1)) == operation.id.value;
+      });
+    if (legacyPass != stack.passes().end() &&
+        (legacyPass->kind == StackOperationKind::Render ||
+         legacyPass->kind == StackOperationKind::LegacyRenderComposite)) {
       ImGui::SameLine();
-      ImGui::TextDisabled("· %zu override%s · %zu track%s", pass.overrides.size(),
-        pass.overrides.size() == 1 ? "" : "s", pass.animation.tracks.size(),
-        pass.animation.tracks.size() == 1 ? "" : "s");
+      ImGui::TextDisabled("· %zu overrides · %zu tracks", legacyPass->overrides.size(),
+        legacyPass->animation.tracks.size());
     }
-    ImGui::TextDisabled("%s", signalSummary);
-    const float right = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
-    const ImVec2 restoreCursor = ImGui::GetCursorScreenPos();
-    ImGui::SetCursorScreenPos(ImVec2(right - 48.0f, rowTop + 2.0f));
-    const bool changed = ImGui::Checkbox("##enabled", &pass.enabled);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Operation enabled");
-    animationKeyControl(pass, AnimationProperty::PassEnabled, timeline, changed);
-    ImGui::SetCursorScreenPos(restoreCursor);
-    ImGui::Dummy(ImVec2(0.0f, 0.0f));
-    if (index + 1 < stack.passes().size()) ImGui::Separator();
+    ImGui::TextDisabled("Outputs:");
+    ImGui::SameLine();
+    for (std::size_t outputIndex = 0; outputIndex < operation.outputs.size(); ++outputIndex) {
+      const document::SignalDescriptor& output = operation.outputs[outputIndex];
+      if (outputIndex > 0) ImGui::SameLine();
+      const document::SignalRef signal{output.id, 0};
+      const bool viewed = editorState.viewer.viewed.id == output.id;
+      const bool compared = editorState.viewer.comparison.has_value() &&
+        editorState.viewer.comparison->id == output.id;
+      if (viewed) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.48f, 1.0f));
+      else if (compared) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.48f, 0.34f, 0.14f, 1.0f));
+      if (ImGui::SmallButton(document::signalKindLabel(output.kind))) {
+        if (ImGui::GetIO().KeyShift) editorState.viewer.comparison = signal;
+        else editorState.viewer.viewed = signal;
+      }
+      if (viewed) ImGui::PopStyleColor();
+      else if (compared) ImGui::PopStyleColor();
+      if (ImGui::BeginPopupContextItem("signal-actions")) {
+        ImGui::TextDisabled("%s / %s", operation.name.c_str(), output.name.c_str());
+        if (ImGui::MenuItem("View signal")) editorState.viewer.viewed = signal;
+        if (ImGui::MenuItem("Use as comparison")) editorState.viewer.comparison = signal;
+        if (compared && ImGui::MenuItem("Clear comparison")) editorState.viewer.comparison.reset();
+        ImGui::EndPopup();
+      }
+      if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+        "Click: view %s / %s\nShift-click: use as comparison\nRight-click: signal actions",
+        operation.name.c_str(), output.name.c_str());
+    }
+    if (legacyPass != stack.passes().end()) {
+      const float right = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+      const ImVec2 restoreCursor = ImGui::GetCursorScreenPos();
+      ImGui::SetCursorScreenPos(ImVec2(right - 28.0f, rowTop + 2.0f));
+      const bool changed = ImGui::Checkbox("##enabled", &legacyPass->enabled);
+      if (ImGui::IsItemHovered()) ImGui::SetTooltip("Operation enabled");
+      animationKeyControl(*legacyPass, AnimationProperty::PassEnabled, timeline, changed);
+      ImGui::SetCursorScreenPos(restoreCursor);
+    }
+    if (index + 1 < document.operations.size()) ImGui::Separator();
     ImGui::PopID();
   }
   if (ImGui::Button("Add operation", ImVec2(-1, 0))) ImGui::OpenPopup("add-operation");
@@ -301,29 +333,35 @@ SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStac
     ImGui::TextDisabled("PRODUCE OR TRANSFORM A SIGNAL");
     if (ImGui::Selectable("Render scene")) {
       stack.addOperation(StackOperationKind::Render);
-      selection = {EditorSelectionKind::Operation, stack.selected().id};
+      selection = {EditorSelectionKind::Operation,
+        {static_cast<std::uint64_t>(std::max(stack.selected().id, 1))}};
     }
     if (ImGui::Selectable("Interpret spectrum")) {
       stack.addOperation(StackOperationKind::Interpret);
-      selection = {EditorSelectionKind::Operation, stack.selected().id};
+      selection = {EditorSelectionKind::Operation,
+        {static_cast<std::uint64_t>(std::max(stack.selected().id, 1))}};
     }
     if (ImGui::Selectable("Composite two signals")) {
       stack.addOperation(StackOperationKind::Composite);
-      selection = {EditorSelectionKind::Operation, stack.selected().id};
+      selection = {EditorSelectionKind::Operation,
+        {static_cast<std::uint64_t>(std::max(stack.selected().id, 1))}};
     }
     if (ImGui::Selectable("Analyze binocular views")) {
       stack.addOperation(StackOperationKind::StereoAnalysis);
-      selection = {EditorSelectionKind::Operation, stack.selected().id};
+      selection = {EditorSelectionKind::Operation,
+        {static_cast<std::uint64_t>(std::max(stack.selected().id, 1))}};
     }
     if (ImGui::Selectable("Measure a signal")) {
       stack.addOperation(StackOperationKind::Measure);
-      selection = {EditorSelectionKind::Operation, stack.selected().id};
+      selection = {EditorSelectionKind::Operation,
+        {static_cast<std::uint64_t>(std::max(stack.selected().id, 1))}};
     }
     ImGui::EndPopup();
   }
   if (ImGui::Button("Duplicate selected", ImVec2(-1, 0))) {
     stack.duplicateSelected();
-    selection = {EditorSelectionKind::Operation, stack.selected().id};
+    selection = {EditorSelectionKind::Operation,
+      {static_cast<std::uint64_t>(std::max(stack.selected().id, 1))}};
   }
   if (ImGui::Button("Up")) stack.moveSelected(-1);
   ImGui::SameLine();
@@ -331,23 +369,26 @@ SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStac
   ImGui::SameLine();
   ImGui::BeginDisabled(stack.passes().size() <= 1);
   if (ImGui::Button("Delete") && stack.removeSelected())
-    selection = {EditorSelectionKind::Operation, stack.selected().id};
+    selection = {EditorSelectionKind::Operation,
+      {static_cast<std::uint64_t>(std::max(stack.selected().id, 1))}};
   ImGui::EndDisabled();
   ImGui::Separator();
   ImGui::TextDisabled("PRESENTATION");
-  if (ImGui::Selectable("Final output", selection.kind == EditorSelectionKind::FinalOutput,
-      0, ImVec2(0.0f, 26.0f))) selection.kind = EditorSelectionKind::FinalOutput;
-  ImGui::TextDisabled("Stack result followed by display reconstruction.");
+  if (ImGui::Selectable("Presentation", selection.kind == EditorSelectionKind::Presentation,
+      0, ImVec2(0.0f, 26.0f))) selection = {EditorSelectionKind::Presentation, {}};
+  const document::SignalDescriptor* finalSignal = document::findSignal(document,
+    document.presentation.input.id);
+  ImGui::TextDisabled("Input: %s", finalSignal != nullptr ? finalSignal->name.c_str() : "invalid signal");
   ImGui::End();
   return result;
 }
 
-ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images, CompareMode& compare,
-    const RenderStack& stack, RenderPass& displayedPass, const CameraOrbit& camera,
+ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images,
+    editor::SignalViewerState& viewer, RenderPass& displayedPass, const CameraOrbit& camera,
     AnimationTimeline& timeline, const bool globalScope, const bool canEditTransform) {
   ViewportWindowResult result;
   if (!open) return result;
-  if (!ImGui::Begin("Viewport", &open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
+  if (!ImGui::Begin("Signal Viewer", &open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
     ImGui::End();
     return result;
   }
@@ -356,19 +397,29 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   enum class Tool { Orbit, Translate, Scale };
   static Tool tool = Tool::Orbit;
 
-  if (ImGui::RadioButton("Selected result", compare == CompareMode::A)) compare = CompareMode::A;
+  if (ImGui::RadioButton("Signal", viewer.mode == editor::ViewerMode::Single))
+    viewer.mode = editor::ViewerMode::Single;
   ImGui::SameLine();
-  if (ImGui::RadioButton("First render", compare == CompareMode::B)) compare = CompareMode::B;
+  const bool hasComparison = viewer.comparison.has_value() && images.comparison != 0;
+  ImGui::BeginDisabled(!hasComparison);
+  if (ImGui::RadioButton("Split", viewer.mode == editor::ViewerMode::Split))
+    viewer.mode = editor::ViewerMode::Split;
   ImGui::SameLine();
-  if (ImGui::RadioButton("Split", compare == CompareMode::Split)) compare = CompareMode::Split;
+  if (ImGui::RadioButton("Difference", viewer.mode == editor::ViewerMode::AbsoluteDifference))
+    viewer.mode = editor::ViewerMode::AbsoluteDifference;
   ImGui::SameLine();
-  if (ImGui::RadioButton("Final output", compare == CompareMode::Relation)) compare = CompareMode::Relation;
-  ImGui::SameLine();
-  const bool hasStereoPair = images.leftEye != 0 && images.rightEye != 0;
-  ImGui::BeginDisabled(!hasStereoPair);
-  if (ImGui::RadioButton("Stereo pair", compare == CompareMode::StereoPair)) compare = CompareMode::StereoPair;
+  if (ImGui::RadioButton("Flicker", viewer.mode == editor::ViewerMode::Flicker))
+    viewer.mode = editor::ViewerMode::Flicker;
   ImGui::EndDisabled();
-  if (!hasStereoPair && compare == CompareMode::StereoPair) compare = CompareMode::A;
+  if (!hasComparison && viewer.mode != editor::ViewerMode::Single) viewer.mode = editor::ViewerMode::Single;
+  ImGui::SameLine();
+  ImGui::Checkbox("Presentation", &viewer.applyPresentation);
+  ImGui::SameLine();
+  ImGui::TextDisabled("%s", images.viewedLabel);
+  if (hasComparison) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("vs %s", images.comparisonLabel);
+  }
   ImGui::SameLine();
   ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
   ImGui::SameLine();
@@ -376,7 +427,8 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   ImGui::SameLine();
   const bool selectedRenders = displayedPass.kind == StackOperationKind::Render ||
     displayedPass.kind == StackOperationKind::LegacyRenderComposite;
-  ImGui::BeginDisabled(!canEditTransform || compare != CompareMode::A || (!globalScope && !selectedRenders));
+  ImGui::BeginDisabled(!canEditTransform || viewer.mode != editor::ViewerMode::Single ||
+    (!globalScope && !selectedRenders));
   if (ImGui::RadioButton("Translate", tool == Tool::Translate)) tool = Tool::Translate;
   ImGui::SameLine();
   if (ImGui::RadioButton("Scale", tool == Tool::Scale)) tool = Tool::Scale;
@@ -398,14 +450,14 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   const ImVec2 end(origin.x + size.x, origin.y + size.y);
   ImDrawList* draw = ImGui::GetWindowDrawList();
   draw->AddRectFilled(origin, end, IM_COL32(27, 29, 31, 255));
-  if (compare == CompareMode::Split || compare == CompareMode::StereoPair) {
-    const float eyeHeight = compare == CompareMode::StereoPair ? std::floor(size.x * 0.375f) : size.y;
-    const float pairTop = origin.y + std::floor((size.y - eyeHeight) * 0.5f);
+  if (viewer.mode == editor::ViewerMode::Split) {
+    const float eyeHeight = size.y;
+    const float pairTop = origin.y;
     const ImVec2 pairOrigin(origin.x, pairTop);
     const ImVec2 pairEnd(end.x, pairTop + eyeHeight);
     const float middle = pairOrigin.x + std::floor(size.x * 0.5f);
-    const unsigned int leftTexture = compare == CompareMode::StereoPair ? images.leftEye : images.base;
-    const unsigned int rightTexture = compare == CompareMode::StereoPair ? images.rightEye : images.selected;
+    const unsigned int leftTexture = images.comparison;
+    const unsigned int rightTexture = images.viewed;
     draw->PushClipRect(pairOrigin, ImVec2(middle, pairEnd.y), true);
     draw->AddImage(static_cast<ImTextureID>(leftTexture), pairOrigin, ImVec2(middle, pairEnd.y),
       ImVec2(0, 1), ImVec2(1, 0));
@@ -415,16 +467,15 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
       ImVec2(0, 1), ImVec2(1, 0));
     draw->PopClipRect();
     draw->AddLine(ImVec2(middle, pairOrigin.y), ImVec2(middle, pairEnd.y), IM_COL32(225, 225, 225, 210));
-    draw->AddText(ImVec2(pairOrigin.x + 9, pairOrigin.y + 8), IM_COL32(240, 240, 240, 220),
-      compare == CompareMode::StereoPair ? "LEFT EYE" : "FIRST RENDER");
-    draw->AddText(ImVec2(middle + 10, pairOrigin.y + 8), IM_COL32(240, 240, 240, 220),
-      compare == CompareMode::StereoPair ? "RIGHT EYE" : stack.selected().name.c_str());
+    draw->AddText(ImVec2(pairOrigin.x + 9, pairOrigin.y + 8), IM_COL32(240, 240, 240, 220), "COMPARISON");
+    draw->AddText(ImVec2(middle + 10, pairOrigin.y + 8), IM_COL32(240, 240, 240, 220), "VIEWED SIGNAL");
   } else {
-    const unsigned int texture = compare == CompareMode::A ? images.selected
-      : compare == CompareMode::Relation ? images.composite : images.base;
+    const unsigned int texture = viewer.mode == editor::ViewerMode::AbsoluteDifference ? images.difference
+      : viewer.mode == editor::ViewerMode::Flicker && std::fmod(ImGui::GetTime(), 0.6) < 0.3
+        ? images.comparison : images.viewed;
     draw->AddImage(static_cast<ImTextureID>(texture), origin, end, ImVec2(0, 1), ImVec2(1, 0));
-    const char* label = compare == CompareMode::A ? stack.selected().name.c_str()
-      : compare == CompareMode::B ? "FIRST RENDER" : "FINAL OUTPUT";
+    const char* label = viewer.mode == editor::ViewerMode::AbsoluteDifference ? "ABSOLUTE DIFFERENCE"
+      : viewer.mode == editor::ViewerMode::Flicker ? "FLICKER COMPARISON" : "VIEWED SIGNAL";
     draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240, 240, 240, 220), label);
   }
   // ImGuizmo deliberately refuses activation while a normal ImGui item is hovered. Keep the viewport
@@ -432,7 +483,7 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   // makes a visible gizmo impossible to grab.
   result.hovered = ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(origin, end);
 
-  const bool gizmoVisible = canEditTransform && compare == CompareMode::A && tool != Tool::Orbit;
+  const bool gizmoVisible = canEditTransform && viewer.mode == editor::ViewerMode::Single && tool != Tool::Orbit;
   result.acceptsCameraInput = result.hovered && !gizmoVisible;
   if (gizmoVisible) {
     const RendererState& state = displayedPass.renderer;
