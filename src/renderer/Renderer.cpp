@@ -19,6 +19,7 @@
 #include <iterator>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace gfxlab {
@@ -1442,7 +1443,76 @@ public:
       evaluation::SignalRegistry& signals, const std::uint64_t revision,
       const float timeSeconds) {
     signals.clear();
-    ensureGraphTargets(plan.nodes.size());
+    std::unordered_map<document::SignalId, std::size_t> lastUse;
+    for (std::size_t index = 0; index < plan.nodes.size(); ++index) {
+      for (const document::SignalId& output : plan.nodes[index].outputs)
+        lastUse.insert_or_assign(output, index);
+      for (const document::SignalRef& input : plan.nodes[index].inputs)
+        if (input.frameOffset >= 0) lastUse[input.id] = index;
+    }
+    const std::unordered_set<document::SignalId> retained(plan.retainedSignals.begin(),
+      plan.retainedSignals.end());
+    if (plan.retainAllSignals) {
+      for (auto& [signal, end] : lastUse) end = plan.nodes.size();
+    } else {
+      for (const document::SignalId& signal : retained) {
+        const auto found = lastUse.find(signal);
+        if (found != lastUse.end()) found->second = plan.nodes.size();
+      }
+    }
+    for (const evaluation::EvaluationNode& node : plan.nodes) {
+      const document::Operation* operation = document::findOperation(document, node.operation);
+      const auto* measure = operation == nullptr ? nullptr
+        : std::get_if<document::MeasureOperation>(&operation->data);
+      if (measure == nullptr || measure->input.frameOffset < 0) continue;
+      std::size_t aliasLastUse = lastUse[measure->input.id];
+      for (const document::SignalId& output : node.outputs)
+        if (const auto found = lastUse.find(output); found != lastUse.end())
+          aliasLastUse = std::max(aliasLastUse, found->second);
+      lastUse[measure->input.id] = aliasLastUse;
+    }
+    std::vector<std::vector<document::SignalId>> transientSignalsEndingAt(plan.nodes.size());
+    if (!plan.retainAllSignals) {
+      for (const auto& [signal, end] : lastUse)
+        if (end < plan.nodes.size()) transientSignalsEndingAt[end].push_back(signal);
+    }
+
+    std::unordered_map<document::OperationId, std::size_t> renderSlots;
+    std::unordered_map<document::OperationId, std::size_t> relationSlots;
+    std::unordered_map<document::OperationId, std::size_t> directionSlots;
+    std::vector<std::size_t> renderSlotRelease;
+    std::vector<std::size_t> relationSlotRelease;
+    std::vector<std::size_t> directionSlotRelease;
+    const auto allocateSlot = [](std::vector<std::size_t>& releases,
+        const std::size_t nodeIndex, const std::size_t release) {
+      const auto available = std::find_if(releases.begin(), releases.end(),
+        [nodeIndex](const std::size_t occupiedThrough) { return occupiedThrough < nodeIndex; });
+      if (available == releases.end()) {
+        releases.push_back(release);
+        return releases.size() - 1;
+      }
+      *available = release;
+      return static_cast<std::size_t>(std::distance(releases.begin(), available));
+    };
+    for (std::size_t index = 0; index < plan.nodes.size(); ++index) {
+      const evaluation::EvaluationNode& node = plan.nodes[index];
+      const document::Operation* operation = document::findOperation(document, node.operation);
+      if (operation == nullptr) continue;
+      std::size_t release = index;
+      for (const document::SignalId& output : node.outputs)
+        if (const auto found = lastUse.find(output); found != lastUse.end())
+          release = std::max(release, found->second);
+      if (std::holds_alternative<document::RenderOperation>(operation->data)) {
+        renderSlots.emplace(operation->id, allocateSlot(renderSlotRelease, index, release));
+      } else if (!std::holds_alternative<document::ConstantOperation>(operation->data) &&
+          !std::holds_alternative<document::MeasureOperation>(operation->data)) {
+        relationSlots.emplace(operation->id, allocateSlot(relationSlotRelease, index, release));
+      }
+      if (std::holds_alternative<document::EdgeOperation>(operation->data))
+        directionSlots.emplace(operation->id, allocateSlot(directionSlotRelease, index, release));
+    }
+    ensureGraphTargets(std::max({renderSlotRelease.size(), relationSlotRelease.size(),
+      directionSlotRelease.size()}));
     std::unordered_map<document::SignalId, std::size_t> targetBySignal;
 
     const auto applyTracks = [&](RenderPass& pass, const document::ObjectId owner) {
@@ -1516,8 +1586,9 @@ public:
       return constant == nullptr ? std::nullopt : std::optional{constant->value};
     };
     const auto publish = [&](const document::Operation& operation,
-        const std::size_t targetIndex, const GLuint primaryTexture, const GLuint auxiliaryTexture,
+        const std::size_t renderTargetIndex, const GLuint primaryTexture, const GLuint auxiliaryTexture,
         const glm::ivec2 extent) {
+      const bool rendered = std::holds_alternative<document::RenderOperation>(operation.data);
       for (const document::SignalDescriptor& descriptor : operation.outputs) {
         evaluation::SignalResource resource;
         resource.descriptor = descriptor;
@@ -1526,19 +1597,19 @@ public:
           resource.extent = {extent.x, extent.y, 1};
           resource.descriptor.metadata.extent = resource.extent;
         }
-        if (descriptor.metadata.semantic == document::SignalSemantic::Normal) {
-            resource.textures[0] = passTargets_[targetIndex].normalTexture;
+        if (rendered && descriptor.metadata.semantic == document::SignalSemantic::Normal) {
+            resource.textures[0] = passTargets_[renderTargetIndex].normalTexture;
             resource.textureCount = resource.textures[0] == 0 ? 0 : 1;
-        } else if (descriptor.metadata.semantic == document::SignalSemantic::DeviceDepth) {
-            resource.textures[0] = passTargets_[targetIndex].depthTexture;
+        } else if (rendered && descriptor.metadata.semantic == document::SignalSemantic::DeviceDepth) {
+            resource.textures[0] = passTargets_[renderTargetIndex].depthTexture;
             resource.textureCount = resource.textures[0] == 0 ? 0 : 1;
-        } else if (std::holds_alternative<document::RenderOperation>(operation.data) &&
+        } else if (rendered &&
             (descriptor.metadata.semantic == document::SignalSemantic::FieldStrength ||
              descriptor.metadata.semantic == document::SignalSemantic::SignedDistance)) {
-            resource.textures[0] = passTargets_[targetIndex].fieldTexture;
+            resource.textures[0] = passTargets_[renderTargetIndex].fieldTexture;
             resource.textureCount = resource.textures[0] == 0 ? 0 : 1;
-        } else if (descriptor.shape == document::SignalShape::Spectrum16) {
-            resource.textures = passTargets_[targetIndex].spectralTextures;
+        } else if (rendered && descriptor.shape == document::SignalShape::Spectrum16) {
+            resource.textures = passTargets_[renderTargetIndex].spectralTextures;
             resource.textureCount = resource.textures[0] == 0 ? 0 : 4;
         } else if (descriptor.metadata.semantic == document::SignalSemantic::EdgeDirection) {
             resource.textures[0] = auxiliaryTexture;
@@ -1548,7 +1619,7 @@ public:
             resource.textureCount = primaryTexture == 0 ? 0 : 1;
         }
         signals.publish(std::move(resource));
-        targetBySignal[descriptor.id] = targetIndex;
+        if (rendered) targetBySignal[descriptor.id] = renderTargetIndex;
       }
     };
     const auto evaluatedOperation = [&](const document::Operation& source) {
@@ -1615,7 +1686,20 @@ public:
       if (authored == nullptr) continue;
       const document::Operation evaluated = evaluatedOperation(*authored);
       const document::Operation* operation = &evaluated;
-      if (!operation->enabled) continue;
+      const auto releaseTransientSignals = [&] {
+        for (const document::SignalId& signal : transientSignalsEndingAt[nodeIndex])
+          signals.erase(signal);
+      };
+      if (!operation->enabled) {
+        releaseTransientSignals();
+        continue;
+      }
+      const std::size_t renderSlot = renderSlots.contains(operation->id)
+        ? renderSlots.at(operation->id) : 0;
+      const std::size_t relationSlot = relationSlots.contains(operation->id)
+        ? relationSlots.at(operation->id) : 0;
+      const std::size_t directionSlot = directionSlots.contains(operation->id)
+        ? directionSlots.at(operation->id) : 0;
       GLuint output = 0;
       GLuint auxiliaryOutput = 0;
       glm::ivec2 outputExtent(relationWidth_, relationHeight_);
@@ -1633,9 +1717,9 @@ public:
         }
         normalizeForHardwareProfile(document.hardwareProfile, pass.renderer);
         output = render(pass.renderer, document.scene.authoredCamera, document.scene.testScene,
-          nodeIndex, pass.perturbation, pass.output, pass.textureSource,
+          renderSlot, pass.perturbation, pass.output, pass.textureSource,
           pass.importedTexture.get(), pass.importedTextureSrgb, time.apply(timeSeconds));
-        outputExtent = {passTargets_[nodeIndex].width, passTargets_[nodeIndex].height};
+        outputExtent = {passTargets_[renderSlot].width, passTargets_[renderSlot].height};
       } else if (std::holds_alternative<document::ConstantOperation>(operation->data)) {
         for (const document::SignalDescriptor& descriptor : operation->outputs) {
           evaluation::SignalResource resource;
@@ -1643,6 +1727,7 @@ public:
           resource.revision = revision;
           signals.publish(std::move(resource));
         }
+        releaseTransientSignals();
         continue;
       } else if (const auto* data = std::get_if<document::InterpretOperation>(&operation->data)) {
         CompositeStep step;
@@ -1658,7 +1743,7 @@ public:
         const auto spectrum = signalSpectrum(data->spectrum);
         outputExtent = signalExtent(data->spectrum);
         output = compositeTextures(signalTexture(data->spectrum), signalTexture(data->spectrum),
-          0, 0, 0, spectrum, spectrum, RendererState{}, step, nodeIndex,
+          0, 0, 0, spectrum, spectrum, RendererState{}, step, relationSlot,
           outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::CompositeOperation>(&operation->data)) {
         CompositeStep step;
@@ -1699,7 +1784,7 @@ public:
         output = compositeTextures(signalTexture(data->a), signalTexture(data->b),
           signalTexture(data->mask), 0, 0,
           signalSpectrum(data->a), signalSpectrum(data->b), document.renderDefaults.renderer,
-          step, nodeIndex, outputExtent.x, outputExtent.y);
+          step, relationSlot, outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::StereoOperation>(&operation->data)) {
         const RenderTarget* left = signalTarget(data->left);
         const RenderTarget* right = signalTarget(data->right);
@@ -1708,7 +1793,7 @@ public:
           settings.stereoAnalysis = data->mode;
           settings.stereoMaximumDisparityPixels = data->maximumDisparityPixels;
           settings.stereoOcclusionTolerance = data->occlusionTolerance;
-          output = analyzeStereo(*left, *right, settings, nodeIndex);
+          output = analyzeStereo(*left, *right, settings, relationSlot);
           outputExtent = {left->width, left->height};
         }
       } else if (const auto* data = std::get_if<document::MeasureOperation>(&operation->data)) {
@@ -1716,44 +1801,45 @@ public:
         outputExtent = signalExtent(data->input);
       } else if (const auto* data = std::get_if<document::LuminanceOperation>(&operation->data)) {
         outputExtent = signalExtent(data->input);
-        output = processImage(signalTexture(data->input), 0, false, {}, {}, {}, nodeIndex,
+        output = processImage(signalTexture(data->input), 0, false, {}, {}, {}, relationSlot,
           false, 0, outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::RemapOperation>(&operation->data)) {
         outputExtent = signalExtent(data->input);
         output = processImage(signalTexture(data->input), 1, true,
           {data->inputLow, data->inputHigh, 0.0f, data->clamp ? 1.0f : 0.0f},
-          glm::vec4(data->outputLow), glm::vec4(data->outputHigh), nodeIndex,
+          glm::vec4(data->outputLow), glm::vec4(data->outputHigh), relationSlot,
           false, 0, outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::EdgeOperation>(&operation->data)) {
         outputExtent = signalExtent(data->input);
         output = processImage(signalTexture(data->input), 2, isScalarImage(data->input),
-          glm::vec4(data->strength, 0.0f, 0.0f, 0.0f), {}, {}, nodeIndex,
+          glm::vec4(data->strength, 0.0f, 0.0f, 0.0f), {}, {}, relationSlot,
           false, 0, outputExtent.x, outputExtent.y);
         auxiliaryOutput = processImage(signalTexture(data->input), 6, isScalarImage(data->input),
-          {}, {}, {}, nodeIndex, true, 0, outputExtent.x, outputExtent.y);
+          {}, {}, {}, directionSlot, true, 0, outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::BlurOperation>(&operation->data)) {
         outputExtent = signalExtent(data->input);
         output = processImage(signalTexture(data->input), 3,
           data->outputShape == document::SignalShape::Scalar,
-          glm::vec4(data->radiusPixels, 0.0f, 0.0f, 0.0f), {}, {}, nodeIndex,
+          glm::vec4(data->radiusPixels, 0.0f, 0.0f, 0.0f), {}, {}, relationSlot,
           false, 0, outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::ThresholdOperation>(&operation->data)) {
         outputExtent = signalExtent(data->input);
         output = processImage(signalTexture(data->input), 4, true,
-          {data->threshold, data->softness, 0.0f, 0.0f}, {}, {}, nodeIndex,
+          {data->threshold, data->softness, 0.0f, 0.0f}, {}, {}, relationSlot,
           false, 0, outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::GradientMapOperation>(&operation->data)) {
         outputExtent = signalExtent(data->input);
         output = processImage(signalTexture(data->input), 5, true, {},
-          data->lowColor, data->highColor, nodeIndex, false, 0,
+          data->lowColor, data->highColor, relationSlot, false, 0,
           outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::WarpOperation>(&operation->data)) {
         outputExtent = signalExtent(data->image);
         output = processImage(signalTexture(data->image), 7, false,
-          glm::vec4(data->strengthPixels, 0.0f, 0.0f, 0.0f), {}, {}, nodeIndex, false,
+          glm::vec4(data->strengthPixels, 0.0f, 0.0f, 0.0f), {}, {}, relationSlot, false,
           signalTexture(data->displacement), outputExtent.x, outputExtent.y);
       }
-      publish(*operation, nodeIndex, output, auxiliaryOutput, outputExtent);
+      publish(*operation, renderSlot, output, auxiliaryOutput, outputExtent);
+      releaseTransientSignals();
     }
     const GLuint finalTexture = signals.displayTexture(document.presentation.input.id);
     if (finalTexture != 0) copyToFrameHistory(finalTexture);

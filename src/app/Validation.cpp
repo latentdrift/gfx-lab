@@ -204,8 +204,9 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     if (!longFullPlan.valid() || longFullPlan.nodes.size() != longGraphOperationCount + 1 ||
         longReachablePlan.nodes.size() != longGraphOperationCount ||
         renderer.evaluate(longGraph, longReachablePlan, longGraphResources, 100, 0.0f) == 0 ||
+        longGraphResources.find(document::primaryOutput(longGraph.operations[1]).id) != nullptr ||
         longGraphResources.find(document::primaryOutput(longGraph.operations.back()).id) != nullptr)
-      fail("dynamic reachable evaluation did not exceed the former operation cap or prune a disconnected branch");
+      fail("dynamic reachable evaluation did not exceed the former operation cap, release transients, or prune a branch");
     const auto referenceA = spectral::humanResponse(spectral::reflectanceA, spectral::daylight);
     const auto referenceB = spectral::humanResponse(spectral::reflectanceB, spectral::daylight);
     float referenceDelta = 0.0f;

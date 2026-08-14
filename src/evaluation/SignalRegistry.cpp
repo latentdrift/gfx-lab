@@ -4,6 +4,8 @@ namespace gfxlab::evaluation {
 
 void SignalRegistry::clear() { resources_.clear(); }
 
+void SignalRegistry::erase(const document::SignalId id) { resources_.erase(id); }
+
 void SignalRegistry::publish(SignalResource resource) {
   resources_.insert_or_assign(resource.descriptor.id, std::move(resource));
 }

@@ -25,6 +25,8 @@ struct EvaluationPlan {
   std::vector<EvaluationNode> nodes;
   std::vector<OperationDiagnostic> diagnostics;
   document::SignalRef finalSignal;
+  std::vector<document::SignalId> retainedSignals;
+  bool retainAllSignals = true;
 
   [[nodiscard]] bool valid() const;
 };

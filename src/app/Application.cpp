@@ -598,9 +598,11 @@ int runApplication() {
     requiredSignals.insert(requiredSignals.end(), editorState.pinnedSignals.begin(),
       editorState.pinnedSignals.end());
     for (const document::Operation& operation : evaluatedDocument.operations) {
-      if (!operation.enabled || !std::holds_alternative<document::MeasureOperation>(operation.data))
-        continue;
+      if (!operation.enabled) continue;
+      const auto* measure = std::get_if<document::MeasureOperation>(&operation.data);
+      if (measure == nullptr) continue;
       requiredSignals.push_back(document::primaryOutput(operation));
+      requiredSignals.push_back(measure->input);
     }
     for (const document::ModulationRoute& route : evaluatedDocument.automation.modulation)
       requiredSignals.push_back(route.source);

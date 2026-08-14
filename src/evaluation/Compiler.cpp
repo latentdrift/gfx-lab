@@ -298,6 +298,12 @@ EvaluationPlan restrictEvaluationPlan(const EvaluationPlan& plan,
   EvaluationPlan result;
   result.finalSignal = plan.finalSignal;
   result.diagnostics = plan.diagnostics;
+  result.retainAllSignals = false;
+  for (const document::SignalRef& signal : requiredSignals)
+    if (signal && signal.frameOffset >= 0 &&
+        std::find(result.retainedSignals.begin(), result.retainedSignals.end(), signal.id) ==
+          result.retainedSignals.end())
+      result.retainedSignals.push_back(signal.id);
   result.nodes.reserve(plan.nodes.size());
   for (std::size_t index = 0; index < plan.nodes.size(); ++index)
     if (required[index]) result.nodes.push_back(plan.nodes[index]);

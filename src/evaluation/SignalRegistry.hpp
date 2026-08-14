@@ -20,6 +20,7 @@ struct SignalResource {
 class SignalRegistry {
 public:
   void clear();
+  void erase(document::SignalId id);
   void publish(SignalResource resource);
   [[nodiscard]] const SignalResource* find(document::SignalId id) const;
   [[nodiscard]] unsigned int displayTexture(document::SignalId id) const;
