@@ -34,6 +34,7 @@
 #include "ui/ContextInspector.hpp"
 #include "ui/Inspector.hpp"
 #include "ui/PassDifferenceAudit.hpp"
+#include "ui/ScopePanel.hpp"
 #include "ui/TextureInspector.hpp"
 #include "ui/Workspace.hpp"
 #include "ui/Windowing.hpp"
@@ -621,6 +622,7 @@ int runApplication() {
       hardwareProfile, importedModel.get(), scene, camera, inspectorTime, importedTexturePreview,
       category, pipelineFocusRequested, selectedMeasurementPointer, selectedSmoothedControl,
       selectedMappedOutput, selectedModulationApplied);
+    drawScopePanel(workspaceWindows.scope, typedDocument, evaluationPlan, signalRegistry, editorState);
     pipelineFocusRequested = false;
 
     const handbook::Action handbookAction = graphicsHandbook.draw(hardwareProfile);

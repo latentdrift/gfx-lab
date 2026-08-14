@@ -21,6 +21,7 @@ struct WorkspaceWindows {
   bool document = true;
   bool viewport = true;
   bool inspector = true;
+  bool scope = true;
   bool animation = false;
   bool passDifferences = false;
   bool textureInspector = false;

@@ -52,6 +52,7 @@ add_executable(graphics-lab
   src/ui/InstrumentWidgets.cpp
   src/ui/PassInspector.cpp
   src/ui/PassDifferenceAudit.cpp
+  src/ui/ScopePanel.cpp
   src/ui/TextureInspector.cpp
   src/ui/TextureMappingEditor.cpp
   src/ui/Windowing.cpp

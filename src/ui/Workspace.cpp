@@ -47,6 +47,7 @@ void buildDefaultLayout(const ImGuiID dockspace, const WorkspaceLayout layout) {
   const float timelineRatio = layout == WorkspaceLayout::Animate ? 0.46f : 0.30f;
   ImGui::DockBuilderSplitNode(centerTop, ImGuiDir_Down, timelineRatio, &centerBottom, &centerTop);
   ImGui::DockBuilderDockWindow("Signal Viewer", centerTop);
+  ImGui::DockBuilderDockWindow("Scope", centerBottom);
   ImGui::DockBuilderDockWindow("Timeline", centerBottom);
   ImGui::DockBuilderDockWindow("Inspector", right);
   if (layout == WorkspaceLayout::Analyze) {
@@ -79,6 +80,7 @@ void windowMenu(WorkspaceWindows& windows) {
   ImGui::MenuItem("Document", nullptr, &windows.document);
   ImGui::MenuItem("Signal Viewer", nullptr, &windows.viewport);
   ImGui::MenuItem("Inspector", nullptr, &windows.inspector);
+  ImGui::MenuItem("Scope", nullptr, &windows.scope);
   ImGui::MenuItem("Timeline", nullptr, &windows.animation);
   ImGui::MenuItem("Property Comparison", nullptr, &windows.passDifferences);
   ImGui::MenuItem("Signal Inspector", nullptr, &windows.textureInspector);
