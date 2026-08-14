@@ -467,7 +467,6 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
   std::optional<document::SignalRef> deferredComparisonSignal;
   bool deferredClearSelection = false;
   document::SignalRef deferredViewedSignal;
-  ImNodes::GetIO().LinkDetachWithModifierClick.Modifier = &ImGui::GetIO().KeyCtrl;
   ImNodes::BeginNodeEditor();
   placeGraph(document, arrange);
   if (frameSelection) {
@@ -551,6 +550,7 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
       const int pin = outputPin(operation.id, static_cast<int>(index));
       outputPins[pin] = {{output.id, 0}, output, pin};
       ImNodes::PushColorStyle(ImNodesCol_Pin, signalColor(output));
+      ImNodes::PushAttributeFlag(ImNodesAttributeFlags_EnableLinkDetachWithDragClick);
       ImNodes::BeginOutputAttribute(pin);
       ImGui::PushID(pin);
       const bool viewed = editorState.viewer.viewed.id == output.id;
@@ -622,6 +622,7 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
       if (viewed) ImGui::PopStyleColor();
       ImGui::PopID();
       ImNodes::EndOutputAttribute();
+      ImNodes::PopAttributeFlag();
       ImNodes::PopColorStyle();
     }
     ImNodes::EndNode();
