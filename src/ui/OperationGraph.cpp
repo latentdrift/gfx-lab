@@ -379,66 +379,73 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
   ImGui::SameLine();
   const document::Operation* selectedOperation = editorState.selection.kind == editor::SelectionKind::Operation
     ? document::findOperation(document, editorState.selection.operation) : nullptr;
-  ImGui::BeginDisabled(selectedOperation == nullptr);
-  if (ImGui::Button("Duplicate")) {
-    const document::OperationId id = document::nextOperationId(document);
-    if (execute(editor::DuplicateOperation{selectedOperation->id, id, static_cast<std::size_t>(-1)}))
-      editorState.selection = {editor::SelectionKind::Operation, id};
-  }
-  ImGui::SameLine();
-  const document::OperationId compareSource = selectedOperation == nullptr
+  const document::OperationId selectedOperationId = selectedOperation == nullptr
     ? document::OperationId{} : selectedOperation->id;
   const auto duplicateAndCompare = [&](const RelationOperator relationship) {
     const document::OperationId duplicate = document::nextOperationId(document);
     const document::OperationId comparison{duplicate.value + 1};
-    if (execute(editor::DuplicateAndCompare{compareSource, duplicate, comparison,
-        relationship})) {
-      editorState.selection = {editor::SelectionKind::Operation, duplicate};
-      editorState.viewer.viewed = document.presentation.input;
-      const document::Operation* source = document::findOperation(document, compareSource);
-      if (source != nullptr) editorState.viewer.comparison = document::primaryOutput(*source);
-      return true;
-    }
-    return false;
+    if (!execute(editor::DuplicateAndCompare{selectedOperationId, duplicate, comparison,
+        relationship})) return false;
+    editorState.selection = {editor::SelectionKind::Operation, duplicate};
+    editorState.viewer.viewed = document.presentation.input;
+    const document::Operation* source = document::findOperation(document, selectedOperationId);
+    if (source != nullptr) editorState.viewer.comparison = document::primaryOutput(*source);
+    return true;
   };
-  if (ImGui::Button("Duplicate + Compare"))
-    static_cast<void>(duplicateAndCompare(RelationOperator::AbsoluteDifference));
-  ImGui::SameLine(0.0f, 2.0f);
-  if (ImGui::SmallButton("v##compare-mode")) ImGui::OpenPopup("duplicate-compare-mode");
-  if (ImGui::BeginPopup("duplicate-compare-mode")) {
-    ImGui::TextDisabled("RELATIONSHIP");
-    for (int index = 0; index <= static_cast<int>(RelationOperator::Normal); ++index) {
-      const RelationOperator relationship = static_cast<RelationOperator>(index);
-      if (ImGui::MenuItem(relationOperatorLabel(relationship)))
-        static_cast<void>(duplicateAndCompare(relationship));
+
+  static ImGuiTextFilter commandFilter;
+  if (ImGui::Button("Commands...")) {
+    commandFilter.Clear();
+    ImGui::OpenPopup("graph-commands");
+  }
+  if (ImGui::BeginPopup("graph-commands")) {
+    ImGui::SetNextItemWidth(250.0f);
+    commandFilter.Draw("##command-search");
+    if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere(-1);
+    ImGui::Separator();
+    if (commandFilter.PassFilter("View Final Output") && ImGui::MenuItem("View Final Output")) {
+      editorState.viewer.viewed = document.presentation.input;
+      editorState.viewer.mode = editor::ViewerMode::Single;
     }
+    ImGui::BeginDisabled(selectedOperation == nullptr);
+    if (commandFilter.PassFilter("Duplicate Operation") && ImGui::MenuItem("Duplicate Operation")) {
+      const document::OperationId id = document::nextOperationId(document);
+      if (execute(editor::DuplicateOperation{selectedOperationId, id, static_cast<std::size_t>(-1)}))
+        editorState.selection = {editor::SelectionKind::Operation, id};
+    }
+    if (commandFilter.PassFilter("Duplicate + Compare") && ImGui::MenuItem("Duplicate + Compare"))
+      static_cast<void>(duplicateAndCompare(RelationOperator::AbsoluteDifference));
+    if (commandFilter.PassFilter("Bypass Selected") &&
+        ImGui::MenuItem(selectedOperation != nullptr && selectedOperation->enabled
+          ? "Bypass Selected" : "Enable Selected")) {
+      static_cast<void>(execute(editor::SetOperationEnabled{selectedOperationId,
+        selectedOperation != nullptr && !selectedOperation->enabled}));
+    }
+    if (commandFilter.PassFilter("Delete Selected") && ImGui::MenuItem("Delete Selected")) {
+      if (execute(editor::RemoveOperation{selectedOperationId})) editorState.selection = {};
+    }
+    ImGui::EndDisabled();
     ImGui::EndPopup();
   }
   ImGui::SameLine();
-  if (ImGui::Button("Delete")) {
-    const document::OperationId deleted = selectedOperation->id;
-    if (execute(editor::RemoveOperation{deleted})) editorState.selection = {};
-  }
-  ImGui::EndDisabled();
-  ImGui::SameLine();
-  if (ImGui::Button("View Output")) {
-    editorState.viewer.viewed = document.presentation.input;
-    editorState.viewer.mode = editor::ViewerMode::Single;
-  }
+  const bool frameSelection = ImGui::Button("Frame Selection");
   ImGui::SameLine();
   const bool arrange = ImGui::Button("Arrange");
   ImGui::SameLine();
-  if (ImGui::Button("Scene")) ImGui::OpenPopup("graph-scene");
-  if (ImGui::BeginPopup("graph-scene")) {
+  if (ImGui::Button("...##graph-more")) ImGui::OpenPopup("graph-more");
+  if (ImGui::BeginPopup("graph-more")) {
+    ImGui::TextDisabled("SCENE");
     if (ImGui::MenuItem("Import model...")) result.importModel = true;
-    if (document.scene.importedModel != nullptr && ImGui::MenuItem("Unload model")) result.unloadModel = true;
+    if (document.scene.importedModel != nullptr && ImGui::MenuItem("Unload model"))
+      result.unloadModel = true;
     ImGui::Separator();
     constexpr std::array<const char*, 10> labels = {"Torus", "Texture plane", "Depth precision",
       "Transparency", "Lighting", "Stencil mask", "Field interference", "SDF iso-surface",
       "Spectral metamers", "Elemental chamber"};
     for (int index = 0; index < static_cast<int>(labels.size()); ++index) {
       if (document.hardwareProfile != HardwareProfile::Unrestricted && index >= 5) continue;
-      if (!ImGui::MenuItem(labels[index], nullptr, static_cast<int>(document.scene.testScene) == index)) continue;
+      if (!ImGui::MenuItem(labels[index], nullptr,
+          static_cast<int>(document.scene.testScene) == index)) continue;
       document::Document edited = document;
       edited.scene.testScene = static_cast<TestScene>(index);
       execute(editor::ReplaceDocument{std::move(edited)});
@@ -457,18 +464,67 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
   std::unordered_map<int, LinkTarget> links;
   std::optional<editor::Command> deferredSignalCommand;
   std::optional<editor::ObjectSelection> deferredSelection;
+  std::optional<document::SignalRef> deferredComparisonSignal;
+  bool deferredClearSelection = false;
   document::SignalRef deferredViewedSignal;
   ImNodes::GetIO().LinkDetachWithModifierClick.Modifier = &ImGui::GetIO().KeyCtrl;
   ImNodes::BeginNodeEditor();
   placeGraph(document, arrange);
+  if (frameSelection) {
+    if (editorState.selection.kind == editor::SelectionKind::Presentation)
+      ImNodes::EditorContextMoveToNode(outputNodeId);
+    else if (editorState.selection.kind == editor::SelectionKind::Operation &&
+        document::findOperation(document, editorState.selection.operation) != nullptr)
+      ImNodes::EditorContextMoveToNode(nodeId(editorState.selection.operation));
+  }
   for (document::Operation& operation : document.operations) {
     const int id = nodeId(operation.id);
     operationNodes[id] = operation.id;
     ImNodes::BeginNode(id);
     ImNodes::BeginNodeTitleBar();
+    ImGui::PushID(id);
     ImGui::TextUnformatted(operation.name.c_str());
+    if (ImGui::BeginPopupContextItem("node-actions")) {
+      const document::SignalRef primary = document::primaryOutput(operation);
+      const document::SignalDescriptor* primaryDescriptor = document::findSignal(document, primary.id);
+      ImGui::TextDisabled("%s", document::operationTypeLabel(operation));
+      if (ImGui::MenuItem("View Primary Output")) deferredViewedSignal = primary;
+      ImGui::BeginDisabled(primaryDescriptor == nullptr ||
+        primaryDescriptor->metadata.domain == document::SignalDomain::Document);
+      if (ImGui::MenuItem("Set Primary Output as Final")) {
+        deferredSignalCommand = editor::SetFinalSignal{primary};
+        deferredViewedSignal = primary;
+      }
+      ImGui::EndDisabled();
+      ImGui::Separator();
+      if (ImGui::MenuItem("Duplicate")) {
+        const document::OperationId duplicate = document::nextOperationId(document);
+        deferredSignalCommand = editor::DuplicateOperation{operation.id, duplicate,
+          static_cast<std::size_t>(-1)};
+        deferredSelection = editor::ObjectSelection{editor::SelectionKind::Operation, duplicate};
+      }
+      ImGui::BeginDisabled(primaryDescriptor == nullptr || !document::isColor(*primaryDescriptor));
+      if (ImGui::MenuItem("Duplicate + Compare")) {
+        const document::OperationId duplicate = document::nextOperationId(document);
+        const document::OperationId comparison{duplicate.value + 1};
+        deferredSignalCommand = editor::DuplicateAndCompare{operation.id, duplicate, comparison};
+        deferredSelection = editor::ObjectSelection{editor::SelectionKind::Operation, duplicate};
+        deferredViewedSignal = {document::operationSignal(comparison, "color"), 0};
+        deferredComparisonSignal = primary;
+      }
+      ImGui::EndDisabled();
+      if (ImGui::MenuItem(operation.enabled ? "Bypass" : "Enable"))
+        deferredSignalCommand = editor::SetOperationEnabled{operation.id, !operation.enabled};
+      ImGui::Separator();
+      if (ImGui::MenuItem("Delete")) {
+        deferredSignalCommand = editor::RemoveOperation{operation.id};
+        deferredClearSelection = true;
+      }
+      ImGui::EndPopup();
+    }
     ImGui::SameLine();
     ImGui::TextDisabled("  %s", document::operationTypeLabel(operation));
+    ImGui::PopID();
     ImNodes::EndNodeTitleBar();
     ImNodes::BeginStaticAttribute(10'000 + id);
     bool enabled = operation.enabled;
@@ -671,8 +727,11 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
   }
 
   if (deferredSignalCommand.has_value() && execute(*deferredSignalCommand)) {
-    if (deferredSelection.has_value()) editorState.selection = *deferredSelection;
+    if (deferredClearSelection) editorState.selection = {};
+    else if (deferredSelection.has_value()) editorState.selection = *deferredSelection;
     if (deferredViewedSignal) editorState.viewer.viewed = deferredViewedSignal;
+    if (deferredComparisonSignal.has_value())
+      editorState.viewer.comparison = deferredComparisonSignal;
   } else if (deferredViewedSignal) {
     editorState.viewer.viewed = deferredViewedSignal;
   }

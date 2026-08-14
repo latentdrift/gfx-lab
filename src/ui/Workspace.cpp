@@ -184,6 +184,17 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   enum class Tool { Orbit, Translate, Scale };
   static Tool tool = Tool::Orbit;
 
+  document::Operation* selectedOperation = editorState.selection.kind == editor::SelectionKind::Operation
+    ? document::findOperation(document, editorState.selection.operation) : nullptr;
+  document::RenderOperation* selectedRender = selectedOperation == nullptr ? nullptr
+    : std::get_if<document::RenderOperation>(&selectedOperation->data);
+
+  const bool viewingFinal = viewer.viewed == document.presentation.input;
+  if (ImGui::Button(viewingFinal ? "Final ✓" : "Final")) {
+    viewer.viewed = document.presentation.input;
+    viewer.mode = editor::ViewerMode::Single;
+  }
+  ImGui::SameLine();
   if (ImGui::RadioButton("Single", viewer.mode == editor::ViewerMode::Single))
     viewer.mode = editor::ViewerMode::Single;
   ImGui::SameLine();
@@ -207,15 +218,15 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
     ImGui::SameLine();
     ImGui::TextDisabled("Compare: %s", images.comparisonLabel);
   }
+  if (selectedOperation != nullptr) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("Selected: %s", selectedOperation->name.c_str());
+  }
   ImGui::SameLine();
   ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
   ImGui::SameLine();
   if (ImGui::RadioButton("Orbit", tool == Tool::Orbit)) tool = Tool::Orbit;
   ImGui::SameLine();
-  document::Operation* selectedOperation = editorState.selection.kind == editor::SelectionKind::Operation
-    ? document::findOperation(document, editorState.selection.operation) : nullptr;
-  document::RenderOperation* selectedRender = selectedOperation == nullptr ? nullptr
-    : std::get_if<document::RenderOperation>(&selectedOperation->data);
   ImGui::BeginDisabled(selectedRender == nullptr || viewer.mode != editor::ViewerMode::Single);
   if (ImGui::RadioButton("Translate", tool == Tool::Translate)) tool = Tool::Translate;
   ImGui::SameLine();
