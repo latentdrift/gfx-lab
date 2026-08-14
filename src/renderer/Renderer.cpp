@@ -307,37 +307,7 @@ public:
     };
     initializeSimulationTexture(simulationMatterTexture_);
     initializeSimulationTexture(simulationDynamicsTexture_);
-    glGenFramebuffers(static_cast<GLsizei>(relationFbos_.size()), relationFbos_.data());
-    glGenTextures(static_cast<GLsizei>(relationTextures_.size()), relationTextures_.data());
-    for (std::size_t index = 0; index < relationTextures_.size(); ++index) {
-      glBindTexture(GL_TEXTURE_2D, relationTextures_[index]);
-      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, relationWidth_, relationHeight_, 0, GL_RGBA,
-        GL_FLOAT, nullptr);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-      glBindFramebuffer(GL_FRAMEBUFFER, relationFbos_[index]);
-      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, relationTextures_[index], 0);
-      if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        failRenderer("could not create render-algebra target");
-    }
-    glGenFramebuffers(static_cast<GLsizei>(directionFbos_.size()), directionFbos_.data());
-    glGenTextures(static_cast<GLsizei>(directionTextures_.size()), directionTextures_.data());
-    for (std::size_t index = 0; index < directionTextures_.size(); ++index) {
-      glBindTexture(GL_TEXTURE_2D, directionTextures_[index]);
-      glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, relationWidth_, relationHeight_, 0, GL_RG,
-        GL_FLOAT, nullptr);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-      glBindFramebuffer(GL_FRAMEBUFFER, directionFbos_[index]);
-      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-        directionTextures_[index], 0);
-      if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        failRenderer("could not create edge-direction target");
-    }
+    ensureGraphTargets(2);
     glGenFramebuffers(1, &historyFbo_);
     glGenTextures(1, &historyTexture_);
     glBindTexture(GL_TEXTURE_2D, historyTexture_);
@@ -452,6 +422,41 @@ public:
     glDeleteProgram(overdrawProgram_);
   }
 
+  void ensureGraphTargets(const std::size_t operationCount) {
+    const std::size_t requestedPassTargets = std::max<std::size_t>(operationCount, 2);
+    if (passTargets_.size() < requestedPassTargets) passTargets_.resize(requestedPassTargets);
+    const auto growTargets = [&](std::vector<GLuint>& framebuffers,
+        std::vector<GLuint>& textures, const std::size_t requested,
+        const GLint internalFormat, const GLenum format, const char* failure) {
+      if (textures.size() >= requested) return;
+      const std::size_t previous = textures.size();
+      framebuffers.resize(requested, 0);
+      textures.resize(requested, 0);
+      const GLsizei added = static_cast<GLsizei>(requested - previous);
+      glGenFramebuffers(added, framebuffers.data() + previous);
+      glGenTextures(added, textures.data() + previous);
+      for (std::size_t index = previous; index < requested; ++index) {
+        glBindTexture(GL_TEXTURE_2D, textures[index]);
+        glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, relationWidth_, relationHeight_, 0,
+          format, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffers[index]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+          textures[index], 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+          failRenderer(failure);
+      }
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    };
+    growTargets(relationFbos_, relationTextures_, std::max<std::size_t>(operationCount + 1, 3),
+      GL_RGBA16F, GL_RGBA, "could not create render-algebra target");
+    growTargets(directionFbos_, directionTextures_, std::max<std::size_t>(operationCount, 2),
+      GL_RG16F, GL_RG, "could not create edge-direction target");
+  }
+
   void setImportedModel(const ModelAsset& asset) {
     clearImportedMaterialResources();
     uploadGeometry(&asset.vertices);
@@ -498,7 +503,7 @@ public:
       const TextureSource textureSource = TextureSource::SceneMaterial,
       const TextureAsset* importedTexture = nullptr, const bool importedTextureSrgb = true,
       const float localTimeSeconds = 0.0f) {
-    if (targetIndex >= passTargets_.size()) return 0;
+    ensureGraphTargets(targetIndex + 1);
     RenderTarget& target = passTargets_[targetIndex];
     const glm::mat4 passTransform = glm::translate(glm::mat4(1.0f), perturbation.modelTranslation) *
       glm::scale(glm::mat4(1.0f), glm::vec3(std::max(0.01f, perturbation.modelScale)));
@@ -1348,7 +1353,8 @@ public:
     step.gain = gain;
     step.bias = bias;
     step.colorSpace = CompositeColorSpace::LinearLight;
-    return compositeTextures(a, b, 0, 0, 0, {}, {}, RendererState{}, step, RenderStack::maximumPasses);
+    return compositeTextures(a, b, 0, 0, 0, {}, {}, RendererState{}, step,
+      relationTextures_.size() - 1);
   }
 
   GLuint processImage(const GLuint input, const int mode, const bool scalarInput,
@@ -1422,8 +1428,7 @@ public:
       evaluation::SignalRegistry& signals, const std::uint64_t revision,
       const float timeSeconds) {
     signals.clear();
-    operationTextures_.fill(0);
-    std::unordered_map<document::OperationId, std::size_t> targetByOperation;
+    ensureGraphTargets(plan.nodes.size());
     std::unordered_map<document::SignalId, std::size_t> targetBySignal;
 
     const auto applyTracks = [&](RenderPass& pass, const document::ObjectId owner) {
@@ -1580,14 +1585,12 @@ public:
     };
 
     for (std::size_t nodeIndex = 0; nodeIndex < plan.nodes.size(); ++nodeIndex) {
-      if (nodeIndex >= passTargets_.size()) break;
       const document::Operation* authored = document::findOperation(document,
         plan.nodes[nodeIndex].operation);
       if (authored == nullptr) continue;
       const document::Operation evaluated = evaluatedOperation(*authored);
       const document::Operation* operation = &evaluated;
       if (!operation->enabled) continue;
-      targetByOperation[operation->id] = nodeIndex;
       GLuint output = 0;
       GLuint auxiliaryOutput = 0;
       if (const auto* data = std::get_if<document::RenderOperation>(&operation->data)) {
@@ -1705,7 +1708,6 @@ public:
           glm::vec4(data->strengthPixels, 0.0f, 0.0f, 0.0f), {}, {}, nodeIndex, false,
           signalTexture(data->displacement));
       }
-      operationTextures_[nodeIndex] = output;
       publish(*operation, nodeIndex, output, auxiliaryOutput);
     }
     const GLuint finalTexture = signals.displayTexture(document.presentation.input.id);
@@ -1881,12 +1883,11 @@ private:
   std::unordered_map<std::uint64_t, GLuint> overrideTextures_;
   GLuint shadowFbo_ = 0, shadowTexture_ = 0;
   int shadowResolution_ = 0;
-  std::array<RenderTarget, RenderStack::maximumPasses> passTargets_;
-  std::array<GLuint, RenderStack::maximumPasses + 1> relationFbos_{};
-  std::array<GLuint, RenderStack::maximumPasses + 1> relationTextures_{};
-  std::array<GLuint, RenderStack::maximumPasses> directionFbos_{};
-  std::array<GLuint, RenderStack::maximumPasses> directionTextures_{};
-  std::array<GLuint, RenderStack::maximumPasses> operationTextures_{};
+  std::vector<RenderTarget> passTargets_;
+  std::vector<GLuint> relationFbos_;
+  std::vector<GLuint> relationTextures_;
+  std::vector<GLuint> directionFbos_;
+  std::vector<GLuint> directionTextures_;
   GLuint historyFbo_ = 0, historyTexture_ = 0;
   std::array<GLuint, 3> displayFbos_{};
   std::array<GLuint, 3> displayTextures_{};

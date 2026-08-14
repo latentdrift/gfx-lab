@@ -38,6 +38,11 @@ struct ConnectSignal {
   InputSocket socket = InputSocket::Primary;
   document::SignalRef signal;
 };
+struct DisconnectSignal {
+  document::OperationId operation;
+  InputSocket socket = InputSocket::Primary;
+  document::SignalRef expectedSignal;
+};
 
 struct SetFinalSignal { document::SignalRef signal; };
 struct SetRenderOverride {
@@ -61,7 +66,7 @@ struct RemoveModulation { std::size_t index = 0; };
 
 using Command = std::variant<AddOperation, RemoveOperation, DuplicateOperation, DuplicateAndBlend,
   MoveOperation, SetOperationEnabled, ReplaceDocument, ConnectSignal,
-  SetFinalSignal, SetRenderOverride, SetKeyframe, RemoveKeyframe, ConnectModulation,
+  DisconnectSignal, SetFinalSignal, SetRenderOverride, SetKeyframe, RemoveKeyframe, ConnectModulation,
   RemoveModulation>;
 
 struct CommandResult {

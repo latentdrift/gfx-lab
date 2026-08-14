@@ -590,7 +590,22 @@ int runApplication() {
     document::Document evaluatedDocument = authoredDocument;
     normalizeDocument(evaluatedDocument);
     applyMeasurementModulations(evaluatedDocument, measurementRuntime, deltaSeconds);
-    const evaluation::EvaluationPlan evaluationPlan = evaluation::compileDocument(evaluatedDocument);
+    const evaluation::EvaluationPlan fullEvaluationPlan = evaluation::compileDocument(evaluatedDocument);
+    std::vector<document::SignalRef> requiredSignals{evaluatedDocument.presentation.input,
+      editorState.viewer.viewed};
+    if (editorState.viewer.comparison.has_value())
+      requiredSignals.push_back(*editorState.viewer.comparison);
+    requiredSignals.insert(requiredSignals.end(), editorState.pinnedSignals.begin(),
+      editorState.pinnedSignals.end());
+    for (const document::Operation& operation : evaluatedDocument.operations) {
+      if (!operation.enabled || !std::holds_alternative<document::MeasureOperation>(operation.data))
+        continue;
+      requiredSignals.push_back(document::primaryOutput(operation));
+    }
+    for (const document::ModulationRoute& route : evaluatedDocument.automation.modulation)
+      requiredSignals.push_back(route.source);
+    const evaluation::EvaluationPlan evaluationPlan = evaluation::restrictEvaluationPlan(
+      fullEvaluationPlan, requiredSignals);
     renderer.updateElementalSimulation(deltaSeconds, evaluatedDocument.renderDefaults.renderer,
       evaluatedDocument.scene.testScene);
     const GLuint renderedComposite = renderer.evaluate(evaluatedDocument, evaluationPlan,

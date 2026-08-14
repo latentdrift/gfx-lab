@@ -12,7 +12,6 @@
 #include <string>
 #include <type_traits>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace gfxlab::ui {
@@ -33,6 +32,13 @@ struct OutputPort {
   document::SignalRef signal;
   document::SignalDescriptor descriptor;
   int pin = 0;
+};
+
+struct LinkTarget {
+  bool presentation = false;
+  document::OperationId operation;
+  editor::InputSocket socket = editor::InputSocket::Primary;
+  document::SignalRef signal;
 };
 
 int nodeId(const document::OperationId operation) {
@@ -176,8 +182,20 @@ document::SignalRef spectrumFromSelection(const document::Document& document,
   return {};
 }
 
-void placeGraph(const document::Document& document, const bool force) {
-  static std::unordered_set<std::uint64_t> positioned;
+document::GraphNodePosition* graphPosition(document::Document& document,
+    const document::OperationId operation) {
+  const auto found = std::find_if(document.graphLayout.operations.begin(),
+    document.graphLayout.operations.end(), [operation](const document::GraphNodePosition& position) {
+      return position.operation == operation;
+    });
+  return found == document.graphLayout.operations.end() ? nullptr : &*found;
+}
+
+void placeGraph(document::Document& document, const bool force) {
+  if (force) {
+    document.graphLayout.operations.clear();
+    document.graphLayout.outputPositionAuthored = false;
+  }
   const evaluation::EvaluationPlan plan = evaluation::compileDocument(document);
   std::unordered_map<document::OperationId, int> levels;
   std::unordered_map<int, int> lanes;
@@ -190,16 +208,32 @@ void placeGraph(const document::Document& document, const bool force) {
     }
     levels[evaluationNode.operation] = level;
     maximumLevel = std::max(maximumLevel, level);
-    if (force || !positioned.contains(evaluationNode.operation.value)) {
-      ImNodes::SetNodeGridSpacePos(nodeId(evaluationNode.operation),
-        ImVec2(40.0f + level * 260.0f, 60.0f + lanes[level]++ * 210.0f));
-      positioned.insert(evaluationNode.operation.value);
+    document::GraphNodePosition* authored = graphPosition(document, evaluationNode.operation);
+    if (authored == nullptr) {
+      document.graphLayout.operations.push_back({evaluationNode.operation,
+        glm::vec2(40.0f + level * 260.0f, 60.0f + lanes[level]++ * 210.0f)});
+      authored = &document.graphLayout.operations.back();
     }
+    ImNodes::SetNodeGridSpacePos(nodeId(evaluationNode.operation),
+      ImVec2(authored->position.x, authored->position.y));
   }
-  if (force || !positioned.contains(0)) {
-    ImNodes::SetNodeGridSpacePos(outputNodeId, ImVec2(40.0f + (maximumLevel + 1) * 260.0f, 60.0f));
-    positioned.insert(0);
+  if (!document.graphLayout.outputPositionAuthored) {
+    document.graphLayout.outputPosition = {40.0f + (maximumLevel + 1) * 260.0f, 60.0f};
+    document.graphLayout.outputPositionAuthored = true;
   }
+  ImNodes::SetNodeGridSpacePos(outputNodeId, ImVec2(document.graphLayout.outputPosition.x,
+    document.graphLayout.outputPosition.y));
+}
+
+void captureGraphPositions(document::Document& document) {
+  for (document::GraphNodePosition& position : document.graphLayout.operations) {
+    if (document::findOperation(document, position.operation) == nullptr) continue;
+    const ImVec2 current = ImNodes::GetNodeGridSpacePos(nodeId(position.operation));
+    position.position = {current.x, current.y};
+  }
+  const ImVec2 output = ImNodes::GetNodeGridSpacePos(outputNodeId);
+  document.graphLayout.outputPosition = {output.x, output.y};
+  document.graphLayout.outputPositionAuthored = true;
 }
 
 } // namespace
@@ -385,6 +419,8 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
   std::unordered_map<int, InputPort> inputPins;
   std::unordered_map<int, OutputPort> outputPins;
   std::unordered_map<int, document::OperationId> operationNodes;
+  std::unordered_map<int, LinkTarget> links;
+  ImNodes::GetIO().LinkDetachWithModifierClick.Modifier = &ImGui::GetIO().KeyCtrl;
   ImNodes::BeginNodeEditor();
   placeGraph(document, arrange);
   for (document::Operation& operation : document.operations) {
@@ -408,9 +444,11 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
       const document::SignalDescriptor* descriptor = document::findSignal(document, input.signal.id);
       const document::SignalDescriptor fallback;
       ImNodes::PushColorStyle(ImNodesCol_Pin, signalColor(descriptor == nullptr ? fallback : *descriptor));
+      ImNodes::PushAttributeFlag(ImNodesAttributeFlags_EnableLinkDetachWithDragClick);
       ImNodes::BeginInputAttribute(input.pin);
       ImGui::TextUnformatted(input.label.c_str());
       ImNodes::EndInputAttribute();
+      ImNodes::PopAttributeFlag();
       ImNodes::PopColorStyle();
     }
     for (std::size_t index = 0; index < operation.outputs.size(); ++index) {
@@ -456,6 +494,7 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
     if (output == producer->outputs.end()) continue;
     const int index = static_cast<int>(std::distance(producer->outputs.begin(), output));
     ImNodes::PushColorStyle(ImNodesCol_Link, signalColor(*output));
+    links.emplace(link, LinkTarget{false, input.operation, input.socket, input.signal});
     ImNodes::Link(link++, outputPin(producer->id, index), pin);
     ImNodes::PopColorStyle();
   }
@@ -467,6 +506,8 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
       if (output != producer->outputs.end()) {
         const int index = static_cast<int>(std::distance(producer->outputs.begin(), output));
         ImNodes::PushColorStyle(ImNodesCol_Link, signalColor(*output));
+        links.emplace(link, LinkTarget{true, {}, editor::InputSocket::Primary,
+          document.presentation.input});
         ImNodes::Link(link++, outputPin(producer->id, index), outputInputPinId);
         ImNodes::PopColorStyle();
       }
@@ -474,6 +515,29 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
   }
   ImNodes::MiniMap(0.16f, ImNodesMiniMapLocation_BottomRight);
   ImNodes::EndNodeEditor();
+  captureGraphPositions(document);
+
+  const auto disconnect = [&](const int linkId) {
+    const auto found = links.find(linkId);
+    if (found == links.end()) return;
+    if (found->second.presentation) {
+      message = "Output must remain connected. Connect it to another signal instead.";
+      return;
+    }
+    execute(editor::DisconnectSignal{found->second.operation, found->second.socket,
+      found->second.signal});
+  };
+  int destroyedLink = 0;
+  if (ImNodes::IsLinkDestroyed(&destroyedLink)) disconnect(destroyedLink);
+  if (ImNodes::IsEditorHovered() && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
+    const int selectedLinkCount = ImNodes::NumSelectedLinks();
+    if (selectedLinkCount > 0) {
+      std::vector<int> selectedLinks(static_cast<std::size_t>(selectedLinkCount));
+      ImNodes::GetSelectedLinks(selectedLinks.data());
+      for (const int selectedLink : selectedLinks) disconnect(selectedLink);
+      ImNodes::ClearLinkSelection();
+    }
+  }
 
   int firstPin = 0;
   int secondPin = 0;

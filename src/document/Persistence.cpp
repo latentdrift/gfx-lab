@@ -427,7 +427,7 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
 
 std::string documentJson(const Document& document) {
   Json root;
-  root["schema"] = "graphics-lab.document.v11";
+  root["schema"] = "graphics-lab.document.v12";
   root["next_operation_id"] = document.nextOperationIdentity;
   root["scene"] = {{"type", static_cast<int>(document.scene.testScene)},
     {"model", document.scene.importedModel != nullptr ? document.scene.importedModel->sourcePath : ""},
@@ -469,6 +469,12 @@ std::string documentJson(const Document& document) {
   }
   root["presentation"] = {{"input", signal(document.presentation.input)},
     {"display", display(document.presentation.reconstruction)}};
+  root["graph_layout"] = {{"operations", Json::array()},
+    {"output_authored", document.graphLayout.outputPositionAuthored},
+    {"output", {document.graphLayout.outputPosition.x, document.graphLayout.outputPosition.y}}};
+  for (const GraphNodePosition& position : document.graphLayout.operations)
+    root["graph_layout"]["operations"].push_back({{"operation", position.operation.value},
+      {"position", {position.position.x, position.position.y}}});
   return root.dump(2) + "\n";
 }
 
@@ -487,7 +493,8 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
     if (!input) return {std::nullopt, "Could not open document: " + path};
     Json root; input >> root;
     const std::string schema = root.value("schema", "");
-    if (schema != "graphics-lab.document.v10" && schema != "graphics-lab.document.v11")
+    if (schema != "graphics-lab.document.v10" && schema != "graphics-lab.document.v11" &&
+        schema != "graphics-lab.document.v12")
       return {std::nullopt, "Unsupported typed document schema."};
     Document result;
     result.nextOperationIdentity = root.value("next_operation_id", std::uint64_t{1});
@@ -586,6 +593,17 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
     const Json& presentation = root.at("presentation");
     result.presentation.input = signal(presentation.at("input"));
     result.presentation.reconstruction = display(presentation.value("display", Json::object()));
+    const Json layout = root.value("graph_layout", Json::object());
+    for (const Json& entry : layout.value("operations", Json::array())) {
+      const OperationId operationId{entry.value("operation", std::uint64_t{0})};
+      if (!operationId || findOperation(result, operationId) == nullptr || !entry.contains("position"))
+        continue;
+      result.graphLayout.operations.push_back({operationId,
+        glm::vec2(vector(entry.at("position"), 2))});
+    }
+    result.graphLayout.outputPositionAuthored = layout.value("output_authored", false);
+    if (layout.contains("output"))
+      result.graphLayout.outputPosition = glm::vec2(vector(layout.at("output"), 2));
     for (const Operation& operation : result.operations)
       result.nextOperationIdentity = std::max(result.nextOperationIdentity, operation.id.value + 1);
     const evaluation::EvaluationPlan plan = evaluation::compileDocument(result);

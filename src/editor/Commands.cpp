@@ -18,6 +18,62 @@ document::AnimationTrack* findTrack(document::Document& document,
   return found == document.automation.animation.end() ? nullptr : &*found;
 }
 
+bool referencesOperation(const document::Operation& operation,
+    const document::OperationId producer) {
+  bool references = false;
+  const auto check = [&](const document::SignalRef signal) {
+    references = references || signal.id.producer == producer;
+  };
+  std::visit([&](const auto& data) {
+    using Type = std::decay_t<decltype(data)>;
+    if constexpr (std::is_same_v<Type, document::InterpretOperation>) check(data.spectrum);
+    else if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
+      check(data.a); check(data.b); check(data.mask);
+    } else if constexpr (std::is_same_v<Type, document::StereoOperation>) {
+      check(data.left); check(data.right);
+    } else if constexpr (std::is_same_v<Type, document::MeasureOperation>) check(data.input);
+    else if constexpr (std::is_same_v<Type, document::LuminanceOperation> ||
+        std::is_same_v<Type, document::RemapOperation> ||
+        std::is_same_v<Type, document::EdgeOperation> ||
+        std::is_same_v<Type, document::BlurOperation> ||
+        std::is_same_v<Type, document::ThresholdOperation> ||
+        std::is_same_v<Type, document::GradientMapOperation>) check(data.input);
+    else if constexpr (std::is_same_v<Type, document::WarpOperation>) {
+      check(data.image); check(data.displacement);
+    }
+  }, operation.data);
+  return references;
+}
+
+document::SignalRef* inputSignal(document::Operation& operation, const InputSocket socket) {
+  document::SignalRef* result = nullptr;
+  std::visit([&](auto& data) {
+    using Type = std::decay_t<decltype(data)>;
+    if constexpr (std::is_same_v<Type, document::InterpretOperation>) {
+      if (socket == InputSocket::Primary) result = &data.spectrum;
+    } else if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
+      if (socket == InputSocket::A) result = &data.a;
+      else if (socket == InputSocket::B) result = &data.b;
+      else if (socket == InputSocket::Mask) result = &data.mask;
+    } else if constexpr (std::is_same_v<Type, document::StereoOperation>) {
+      if (socket == InputSocket::Left) result = &data.left;
+      else if (socket == InputSocket::Right) result = &data.right;
+    } else if constexpr (std::is_same_v<Type, document::MeasureOperation> ||
+        std::is_same_v<Type, document::LuminanceOperation> ||
+        std::is_same_v<Type, document::RemapOperation> ||
+        std::is_same_v<Type, document::EdgeOperation> ||
+        std::is_same_v<Type, document::BlurOperation> ||
+        std::is_same_v<Type, document::ThresholdOperation> ||
+        std::is_same_v<Type, document::GradientMapOperation>) {
+      if (socket == InputSocket::Primary) result = &data.input;
+    } else if constexpr (std::is_same_v<Type, document::WarpOperation>) {
+      if (socket == InputSocket::Image) result = &data.image;
+      else if (socket == InputSocket::Displacement) result = &data.displacement;
+    }
+  }, operation.data);
+  return result;
+}
+
 std::string duplicateOperation(document::Document& document,
     const document::OperationId sourceId, const document::OperationId duplicateId,
     const std::size_t requestedIndex) {
@@ -104,7 +160,20 @@ std::string mutate(document::Document& document, const Command& command) {
       const auto found = std::find_if(document.operations.begin(), document.operations.end(),
         [&data](const document::Operation& operation) { return operation.id == data.operation; });
       if (found == document.operations.end()) return "The operation no longer exists.";
+      if (document.presentation.input.id.producer == data.operation)
+        return "That operation feeds Output. Connect Output somewhere else before deleting it.";
+      const auto consumer = std::find_if(document.operations.begin(), document.operations.end(),
+        [&data](const document::Operation& operation) {
+          return operation.id != data.operation && referencesOperation(operation, data.operation);
+        });
+      if (consumer != document.operations.end())
+        return "That operation is still used by " + consumer->name +
+          ". Rewire or delete the downstream operation first.";
       document.operations.erase(found);
+      std::erase_if(document.graphLayout.operations,
+        [operation = data.operation](const document::GraphNodePosition& position) {
+          return position.operation == operation;
+        });
       const document::ObjectId owner = document::operationObject(data.operation);
       std::erase_if(document.automation.animation,
         [owner](const document::AnimationTrack& track) { return track.target.owner == owner; });
@@ -161,35 +230,18 @@ std::string mutate(document::Document& document, const Command& command) {
     } else if constexpr (std::is_same_v<Type, ConnectSignal>) {
       document::Operation* operation = document::findOperation(document, data.operation);
       if (operation == nullptr) return "The target operation no longer exists.";
-      bool connected = false;
-      std::visit([&](auto& operationData) {
-        using OperationType = std::decay_t<decltype(operationData)>;
-        if constexpr (std::is_same_v<OperationType, document::InterpretOperation>) {
-          if (data.socket == InputSocket::Primary) { operationData.spectrum = data.signal; connected = true; }
-        } else if constexpr (std::is_same_v<OperationType, document::CompositeOperation>) {
-          if (data.socket == InputSocket::A) { operationData.a = data.signal; connected = true; }
-          if (data.socket == InputSocket::B) { operationData.b = data.signal; connected = true; }
-          if (data.socket == InputSocket::Mask) { operationData.mask = data.signal; connected = true; }
-        } else if constexpr (std::is_same_v<OperationType, document::StereoOperation>) {
-          if (data.socket == InputSocket::Left) { operationData.left = data.signal; connected = true; }
-          if (data.socket == InputSocket::Right) { operationData.right = data.signal; connected = true; }
-        } else if constexpr (std::is_same_v<OperationType, document::MeasureOperation>) {
-          if (data.socket == InputSocket::Primary) { operationData.input = data.signal; connected = true; }
-        } else if constexpr (std::is_same_v<OperationType, document::LuminanceOperation> ||
-            std::is_same_v<OperationType, document::RemapOperation> ||
-            std::is_same_v<OperationType, document::EdgeOperation> ||
-            std::is_same_v<OperationType, document::BlurOperation> ||
-            std::is_same_v<OperationType, document::ThresholdOperation> ||
-            std::is_same_v<OperationType, document::GradientMapOperation>) {
-          if (data.socket == InputSocket::Primary) { operationData.input = data.signal; connected = true; }
-        } else if constexpr (std::is_same_v<OperationType, document::WarpOperation>) {
-          if (data.socket == InputSocket::Image) { operationData.image = data.signal; connected = true; }
-          if (data.socket == InputSocket::Displacement) {
-            operationData.displacement = data.signal; connected = true;
-          }
-        }
-      }, operation->data);
-      if (!connected) return "That input socket does not exist on the target operation.";
+      document::SignalRef* input = inputSignal(*operation, data.socket);
+      if (input == nullptr) return "That input socket does not exist on the target operation.";
+      *input = data.signal;
+    } else if constexpr (std::is_same_v<Type, DisconnectSignal>) {
+      document::Operation* operation = document::findOperation(document, data.operation);
+      if (operation == nullptr) return "The target operation no longer exists.";
+      document::SignalRef* input = inputSignal(*operation, data.socket);
+      if (input == nullptr) return "That input socket does not exist on the target operation.";
+      if (*input != data.expectedSignal) return "That connection has already changed.";
+      if (data.socket != InputSocket::Mask)
+        return "That input is required. Rewire it or delete the operation instead.";
+      *input = {};
     } else if constexpr (std::is_same_v<Type, SetFinalSignal>) {
       document.presentation.input = data.signal;
     } else if constexpr (std::is_same_v<Type, SetRenderOverride>) {

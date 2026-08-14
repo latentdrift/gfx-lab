@@ -64,6 +64,17 @@ struct Presentation {
   DisplayReconstructionState reconstruction;
 };
 
+struct GraphNodePosition {
+  OperationId operation;
+  glm::vec2 position{0.0f};
+};
+
+struct GraphLayout {
+  std::vector<GraphNodePosition> operations;
+  glm::vec2 outputPosition{0.0f};
+  bool outputPositionAuthored = false;
+};
+
 struct Document {
   std::uint64_t nextOperationIdentity = 1;
   Scene scene;
@@ -72,6 +83,7 @@ struct Document {
   std::vector<Operation> operations;
   Automation automation;
   Presentation presentation;
+  GraphLayout graphLayout;
 };
 
 [[nodiscard]] const Operation* findOperation(const Document& document, OperationId id);

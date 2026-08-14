@@ -271,4 +271,37 @@ EvaluationPlan compileDocument(const document::Document& document) {
   return result;
 }
 
+EvaluationPlan restrictEvaluationPlan(const EvaluationPlan& plan,
+    const std::vector<document::SignalRef>& requiredSignals) {
+  if (!plan.valid()) return plan;
+  std::unordered_map<document::SignalId, std::size_t> producerBySignal;
+  for (std::size_t index = 0; index < plan.nodes.size(); ++index)
+    for (const document::SignalId& output : plan.nodes[index].outputs)
+      producerBySignal.emplace(output, index);
+
+  std::vector<bool> required(plan.nodes.size(), false);
+  std::vector<std::size_t> pending;
+  const auto requireSignal = [&](const document::SignalRef signal) {
+    if (!signal || signal.frameOffset < 0) return;
+    const auto producer = producerBySignal.find(signal.id);
+    if (producer != producerBySignal.end()) pending.push_back(producer->second);
+  };
+  for (const document::SignalRef& signal : requiredSignals) requireSignal(signal);
+  while (!pending.empty()) {
+    const std::size_t index = pending.back();
+    pending.pop_back();
+    if (required[index]) continue;
+    required[index] = true;
+    for (const document::SignalRef& input : plan.nodes[index].inputs) requireSignal(input);
+  }
+
+  EvaluationPlan result;
+  result.finalSignal = plan.finalSignal;
+  result.diagnostics = plan.diagnostics;
+  result.nodes.reserve(plan.nodes.size());
+  for (std::size_t index = 0; index < plan.nodes.size(); ++index)
+    if (required[index]) result.nodes.push_back(plan.nodes[index]);
+  return result;
+}
+
 } // namespace gfxlab::evaluation

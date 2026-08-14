@@ -48,7 +48,7 @@ src/
     Document.cpp              authoritative scene, operation, automation, and presentation state
     Operations.cpp            typed operation factories and stable signal outputs
     Identifiers.hpp           typed owners and operation/port signal addresses
-    Persistence.cpp           native typed-v11 JSON save/load and v10 migration
+    Persistence.cpp           native typed-v12 JSON save/load and earlier typed-document migration
   evaluation/
     Compiler.cpp              dependency validation and typed evaluation planning
     SignalRegistry.cpp        named GPU/scalar resources produced by evaluation
@@ -79,7 +79,7 @@ src/
 - Redo: Ctrl+Shift+Z or Ctrl+Y
 - Play/pause animation: Space
 
-Use **File → Save Document…** (`Ctrl+S`) to save the complete `graphics-lab.document.v11` document, and
+Use **File → Save Document…** (`Ctrl+S`) to save the complete `graphics-lab.document.v12` document, and
 **File → Open Document…** (`Ctrl+O`) to restore it. Stable operations and signal references, sparse overrides,
 animation and modulation, camera, scene, hardware target, presentation, and asset references are preserved.
 

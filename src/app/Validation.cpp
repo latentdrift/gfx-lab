@@ -69,6 +69,10 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         !evaluation::compileDocument(typedFixture).valid())
       fail("typed graph accepted a same-frame dependency cycle");
     typedFixture.operations[1].name = "Round-trip variant";
+    typedFixture.graphLayout.operations.push_back({typedFixture.operations[1].id,
+      glm::vec2(320.0f, 180.0f)});
+    typedFixture.graphLayout.outputPosition = glm::vec2(740.0f, 210.0f);
+    typedFixture.graphLayout.outputPositionAuthored = true;
     auto* typedVariant = std::get_if<document::RenderOperation>(&typedFixture.operations[1].data);
     typedVariant->time.scale = -0.75f;
     typedVariant->time.offsetSeconds = 0.25f;
@@ -85,6 +89,10 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         std::abs(std::get<document::RenderOperation>(typedRoundTrip.document->operations[1].data).time.scale +
           0.75f) > 0.0001f || typedRoundTrip.document->automation.animation.size() != 1 ||
         typedRoundTrip.document->automation.animation.front().target.property != document::timeOffsetProperty() ||
+        typedRoundTrip.document->graphLayout.operations.size() != 1 ||
+        typedRoundTrip.document->graphLayout.operations.front().operation != typedFixture.operations[1].id ||
+        glm::distance(typedRoundTrip.document->graphLayout.outputPosition,
+          typedFixture.graphLayout.outputPosition) > 0.0001f ||
         !evaluation::compileDocument(*typedRoundTrip.document).valid())
       fail("typed document round-trip validation failed");
     document::Document workingSignals = document::makeDefaultDocument();
@@ -158,6 +166,31 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         restoredWorkingSignals.document->nextOperationIdentity != 10 ||
         restoredWorkingSignals.document->presentation.input != workingSignals.presentation.input)
       fail("working-signal document did not preserve stable operation and port identities");
+    document::Document longGraph = document::makeDefaultDocument();
+    document::SignalRef longGraphSignal{document::operationSignal(
+      longGraph.operations.front().id, "depth"), 0};
+    constexpr std::size_t longGraphOperationCount = 20;
+    for (std::size_t index = 1; index < longGraphOperationCount; ++index) {
+      const document::OperationId id{index + 1};
+      document::Operation remapOperation = document::makeRemapOperation(id,
+        "Long graph remap " + std::to_string(index), longGraphSignal);
+      longGraphSignal = document::primaryOutput(remapOperation);
+      longGraph.operations.push_back(std::move(remapOperation));
+    }
+    const document::OperationId disconnectedId{longGraphOperationCount + 1};
+    longGraph.operations.push_back(document::makeRenderOperation(disconnectedId,
+      "Disconnected render"));
+    longGraph.nextOperationIdentity = disconnectedId.value + 1;
+    longGraph.presentation.input = longGraphSignal;
+    const evaluation::EvaluationPlan longFullPlan = evaluation::compileDocument(longGraph);
+    const evaluation::EvaluationPlan longReachablePlan = evaluation::restrictEvaluationPlan(
+      longFullPlan, {longGraph.presentation.input});
+    evaluation::SignalRegistry longGraphResources;
+    if (!longFullPlan.valid() || longFullPlan.nodes.size() != longGraphOperationCount + 1 ||
+        longReachablePlan.nodes.size() != longGraphOperationCount ||
+        renderer.evaluate(longGraph, longReachablePlan, longGraphResources, 100, 0.0f) == 0 ||
+        longGraphResources.find(document::primaryOutput(longGraph.operations.back()).id) != nullptr)
+      fail("dynamic reachable evaluation did not exceed the former operation cap or prune a disconnected branch");
     const auto referenceA = spectral::humanResponse(spectral::reflectanceA, spectral::daylight);
     const auto referenceB = spectral::humanResponse(spectral::reflectanceB, spectral::daylight);
     float referenceDelta = 0.0f;
@@ -223,6 +256,25 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
             return track.target.owner == document::operationObject(duplicateId);
           }))
       fail("typed removal reused identity or retained orphan automation");
+    const auto compositeFixture = std::find_if(commandedDocument.operations.begin(),
+      commandedDocument.operations.end(), [](const document::Operation& operation) {
+        return std::holds_alternative<document::CompositeOperation>(operation.data);
+      });
+    auto* commandedComposite = compositeFixture == commandedDocument.operations.end() ? nullptr
+      : std::get_if<document::CompositeOperation>(&compositeFixture->data);
+    if (commandedComposite == nullptr) fail("typed disconnect validation lost composite fixture");
+    commandedComposite->mask = {document::operationSignal(commandedDocument.operations.front().id,
+      "depth"), 0};
+    const document::SignalRef maskBeforeDisconnect = commandedComposite->mask;
+    if (!commandHistory.execute(commandedDocument, editor::DisconnectSignal{
+          compositeFixture->id, editor::InputSocket::Mask,
+          maskBeforeDisconnect}).applied || commandedComposite->mask)
+      fail("optional typed graph input could not be disconnected");
+    const editor::CommandResult removeProducer = commandHistory.execute(commandedDocument,
+      editor::RemoveOperation{animatedOperation});
+    if (removeProducer.applied || removeProducer.error.empty() ||
+        document::findOperation(commandedDocument, animatedOperation) == nullptr)
+      fail("typed removal did not protect a referenced operation");
     const ModelImportResult importedFixture = importModelAsset("tests/fixtures/import_triangle.obj");
     if (!importedFixture || importedFixture.asset->triangleCount != 1 ||
         importedFixture.asset->vertices.size() != 3 || !importedFixture.asset->hasTextureCoordinates ||
