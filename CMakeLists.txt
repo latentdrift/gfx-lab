@@ -34,6 +34,7 @@ add_executable(graphics-lab
   src/document/Document.cpp
   src/document/LegacyAdapter.cpp
   src/document/Operations.cpp
+  src/document/Properties.cpp
   src/document/Signals.cpp
   src/evaluation/Compiler.cpp
   src/evaluation/LegacyBridge.cpp

@@ -126,16 +126,18 @@ void drawScopePanel(bool& open, const document::Document& document,
   } else if (editorState.scope == editor::ScopeTool::Automation) {
     ImGui::TextDisabled("ANIMATION — %zu TRACKS", document.automation.animation.size());
     for (const document::AnimationTrack& track : document.automation.animation) {
-      const AnimationPropertyInfo& info = animationPropertyInfo(track.target.property);
-      ImGui::BulletText("%s  ·  %zu keys", std::string(info.label).c_str(), track.keyframes.size());
+      const document::PropertyDescriptor* info = document::propertyDescriptor(track.target.property);
+      ImGui::BulletText("%s  ·  %zu keys", info != nullptr ? info->label.c_str() : "Missing property",
+        track.keyframes.size());
     }
     ImGui::Spacing();
     ImGui::TextDisabled("MODULATION — %zu ROUTES", document.automation.modulation.size());
     for (const document::ModulationRoute& route : document.automation.modulation) {
       const document::SignalDescriptor* source = document::findSignal(document, route.source.id);
-      const AnimationPropertyInfo& target = animationPropertyInfo(route.target.property);
+      const document::PropertyDescriptor* target = document::propertyDescriptor(route.target.property);
       ImGui::BulletText("%s -> %s   [%.3f..%.3f] to [%.3f..%.3f]",
-        source != nullptr ? source->name.c_str() : "Missing signal", std::string(target.label).c_str(),
+        source != nullptr ? source->name.c_str() : "Missing signal",
+        target != nullptr ? target->label.c_str() : "Missing property",
         route.inputRange.x, route.inputRange.y, route.outputRange.x, route.outputRange.y);
     }
     if (document.automation.modulation.empty())

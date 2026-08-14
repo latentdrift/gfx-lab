@@ -3,6 +3,7 @@
 #include "app/HardwareProfile.hpp"
 #include "assets/ModelAsset.hpp"
 #include "document/Operations.hpp"
+#include "document/Properties.hpp"
 
 #include <memory>
 #include <vector>
@@ -23,7 +24,7 @@ struct RenderDefaults {
 
 struct PropertyAddress {
   ObjectId owner;
-  AnimationProperty property = AnimationProperty::VertexQuantization;
+  PropertyId property;
   auto operator<=>(const PropertyAddress&) const = default;
 };
 

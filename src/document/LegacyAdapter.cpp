@@ -74,7 +74,7 @@ Document migrateLegacyDocument(const StackDocument& legacy) {
   result.presentation.reconstruction = legacy.renderStack.display();
 
   for (const PropertyAnimationTrack& track : legacy.renderStack.global().animation.tracks)
-    result.automation.animation.push_back({{renderDefaultsObject, track.property}, track.interpolation,
+    result.automation.animation.push_back({{renderDefaultsObject, propertyId(track.property)}, track.interpolation,
       track.keyframes});
 
   const auto operationIdForPass = [](const RenderPass& pass) {
@@ -188,7 +188,7 @@ Document migrateLegacyDocument(const StackDocument& legacy) {
     }
 
     for (const PropertyAnimationTrack& track : pass.animation.tracks)
-      result.automation.animation.push_back({{operationObject(id), track.property}, track.interpolation,
+      result.automation.animation.push_back({{operationObject(id), propertyId(track.property)}, track.interpolation,
         track.keyframes});
 
     result.operations.push_back(std::move(operation));
@@ -198,7 +198,7 @@ Document migrateLegacyDocument(const StackDocument& legacy) {
       const SignalRef source = primaryOutput(result.operations.back());
       result.automation.modulation.push_back({source,
         {operationObject(OperationId{static_cast<std::uint64_t>(std::max(pass.measurementTargetPassId, 1))}),
-          pass.measurementTargetProperty},
+          propertyId(pass.measurementTargetProperty)},
         {pass.measurementInputMinimum, pass.measurementInputMaximum},
         {pass.measurementOutputMinimum, pass.measurementOutputMaximum}, pass.measurementClamp,
         pass.measurementSmoothingSeconds});

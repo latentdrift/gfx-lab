@@ -81,7 +81,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     document::Document commandedDocument = typedSpectral;
     editor::CommandHistory commandHistory;
     const document::PropertyAddress ambientTarget{
-      document::operationObject(commandedDocument.operations.front().id), AnimationProperty::Ambient};
+      document::operationObject(commandedDocument.operations.front().id),
+      document::propertyId(AnimationProperty::Ambient)};
     if (!commandHistory.execute(commandedDocument,
           editor::SetKeyframe{ambientTarget, 1.0f, glm::vec4(0.42f)}).applied ||
         commandedDocument.automation.animation.empty() || !commandHistory.canUndo() ||
