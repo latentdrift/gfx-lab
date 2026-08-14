@@ -21,10 +21,8 @@ add_executable(graphics-lab
   src/assets/ModelAsset.cpp
   src/app/Animation.cpp
   src/app/Application.cpp
-  src/app/EditorHistory.cpp
   src/app/FileDialog.cpp
   src/app/HardwareProfile.cpp
-  src/app/PassEditing.cpp
   src/app/RenderStack.cpp
   src/app/Spectral.cpp
   src/app/State.cpp
@@ -34,10 +32,10 @@ add_executable(graphics-lab
   src/document/Document.cpp
   src/document/LegacyAdapter.cpp
   src/document/Operations.cpp
+  src/document/Persistence.cpp
   src/document/Properties.cpp
   src/document/Signals.cpp
   src/evaluation/Compiler.cpp
-  src/evaluation/LegacyBridge.cpp
   src/evaluation/SignalRegistry.cpp
   src/editor/EditorState.cpp
   src/editor/Commands.cpp
@@ -46,14 +44,12 @@ add_executable(graphics-lab
   src/renderer/TestGeometry.cpp
   src/renderer/TextureReadback.cpp
   src/simulation/ElementalSimulation.cpp
-  src/ui/AnimationEditor.cpp
   src/ui/AnimationControls.cpp
-  src/ui/ContextInspector.cpp
   src/ui/DisplayInspector.cpp
+  src/ui/DocumentInspector.cpp
+  src/ui/DocumentTimeline.cpp
   src/ui/Inspector.cpp
   src/ui/InstrumentWidgets.cpp
-  src/ui/PassInspector.cpp
-  src/ui/PassDifferenceAudit.cpp
   src/ui/ScopePanel.cpp
   src/ui/TextureInspector.cpp
   src/ui/TextureMappingEditor.cpp

@@ -17,17 +17,17 @@ SignalKind signalKind(const PassOutput output) {
   return SignalKind::Color;
 }
 
-std::uint8_t signalOrdinal(const SignalKind kind) {
+const char* signalKey(const SignalKind kind) {
   switch (kind) {
-    case SignalKind::Color: return 0;
-    case SignalKind::Depth: return 1;
-    case SignalKind::Normal: return 2;
-    case SignalKind::Field: return 3;
-    case SignalKind::Spectrum16: return 4;
-    case SignalKind::Scalar: return 5;
-    case SignalKind::Vector2: return 6;
+    case SignalKind::Color: return "color";
+    case SignalKind::Depth: return "depth";
+    case SignalKind::Normal: return "normal";
+    case SignalKind::Field: return "field";
+    case SignalKind::Spectrum16: return "spectrum16";
+    case SignalKind::Scalar: return "value";
+    case SignalKind::Vector2: return "value";
   }
-  return 0;
+  return "value";
 }
 
 SignalDescriptor makeSignal(const OperationId producer, const SignalKind kind, std::string name) {
@@ -35,7 +35,8 @@ SignalDescriptor makeSignal(const OperationId producer, const SignalKind kind, s
   metadata.domain = kind == SignalKind::Scalar ? SignalDomain::Document : SignalDomain::Screen2D;
   metadata.encoding = kind == SignalKind::Color ? SignalEncoding::Linear
     : kind == SignalKind::Field ? SignalEncoding::Signed : SignalEncoding::Unspecified;
-  return {operationSignal(producer, signalOrdinal(kind)), producer, kind, std::move(name), std::move(metadata)};
+  const std::string key = signalKey(kind);
+  return {operationSignal(producer, key), producer, key, kind, std::move(name), std::move(metadata)};
 }
 
 SignalRef signalFromOperation(const Document& document, const OperationId producer, const SignalKind kind) {
@@ -72,6 +73,14 @@ Document migrateLegacyDocument(const StackDocument& legacy) {
   result.renderDefaults.renderer = legacy.renderStack.global().renderer;
   result.renderDefaults.texture = textureBinding(legacy.renderStack.global());
   result.presentation.reconstruction = legacy.renderStack.display();
+  result.automation.timeline.currentTimeSeconds = legacy.timeline.timeSeconds;
+  result.automation.timeline.durationSeconds = legacy.timeline.durationSeconds;
+  result.automation.timeline.playbackRate = legacy.timeline.playbackRate;
+  result.automation.timeline.loop = legacy.timeline.loop;
+  result.automation.timeline.autoKey = legacy.timeline.autoKey;
+  result.automation.timeline.showAllOperations = legacy.timeline.showAllPasses;
+  result.automation.timeline.snapToFrames = legacy.timeline.snapToFrames;
+  result.automation.timeline.framesPerSecond = legacy.timeline.framesPerSecond;
 
   for (const PropertyAnimationTrack& track : legacy.renderStack.global().animation.tracks)
     result.automation.animation.push_back({{renderDefaultsObject, propertyId(track.property)}, track.interpolation,
@@ -111,6 +120,7 @@ Document migrateLegacyDocument(const StackDocument& legacy) {
   };
 
   for (const RenderPass& pass : legacy.renderStack.passes()) {
+    const SignalRef accumulatorBefore = previousOutput;
     const OperationId id = operationIdForPass(pass);
     Operation operation;
     operation.id = id;
@@ -128,12 +138,36 @@ Document migrateLegacyDocument(const StackDocument& legacy) {
       result.operations.push_back(std::move(constant));
       return output;
     };
+    const auto compositeData = [&](const OperationId consumer) {
+      SignalRef a = sourceSignal(pass.composite.sourceA, pass.composite.sourceAPassId, consumer);
+      SignalRef b = sourceSignal(pass.composite.sourceB, pass.composite.sourceBPassId, consumer);
+      if (pass.composite.sourceA == CompositeSource::FixedColor) a = makeConstant(pass.composite.fixedColor);
+      if (pass.composite.sourceB == CompositeSource::FixedColor) b = makeConstant(pass.composite.fixedColor);
+      CompositeOperation composite;
+      composite.a = a;
+      composite.b = b;
+      composite.interpretationA = pass.composite.interpretationA;
+      composite.interpretationB = pass.composite.interpretationB;
+      composite.observer = {pass.composite.observerExposureStops, pass.composite.rodSensitivity,
+        pass.composite.opponentGain};
+      composite.arithmetic = {pass.composite.operation, pass.composite.gain, pass.composite.bias,
+        pass.composite.opacity, pass.composite.bitDepth, pass.composite.colorSpace, pass.composite.range};
+      composite.mask = pass.composite.mask;
+      composite.invertMask = pass.composite.invertMask;
+      if (pass.composite.sourceA == CompositeSource::PreviousFrame ||
+          pass.composite.sourceB == CompositeSource::PreviousFrame)
+        composite.feedback = FeedbackSettings{pass.composite.historyDecay,
+          pass.composite.historyUvOffset, pass.composite.historyUvScale};
+      return composite;
+    };
+
+    const bool splitLegacyComposite = pass.kind == StackOperationKind::LegacyRenderComposite;
 
     switch (pass.kind) {
       case StackOperationKind::Render:
       case StackOperationKind::LegacyRenderComposite: {
         operation.data = RenderOperation{pass.overrides, pass.perturbation, pass.output,
-          textureBinding(pass)};
+          textureBinding(pass), {}};
         addRenderSignals(operation, pass.output);
         break;
       }
@@ -146,26 +180,7 @@ Document migrateLegacyDocument(const StackDocument& legacy) {
         break;
       }
       case StackOperationKind::Composite: {
-        SignalRef a = sourceSignal(pass.composite.sourceA, pass.composite.sourceAPassId, id);
-        SignalRef b = sourceSignal(pass.composite.sourceB, pass.composite.sourceBPassId, id);
-        if (pass.composite.sourceA == CompositeSource::FixedColor) a = makeConstant(pass.composite.fixedColor);
-        if (pass.composite.sourceB == CompositeSource::FixedColor) b = makeConstant(pass.composite.fixedColor);
-        CompositeOperation composite;
-        composite.a = a;
-        composite.b = b;
-        composite.interpretationA = pass.composite.interpretationA;
-        composite.interpretationB = pass.composite.interpretationB;
-        composite.observer = {pass.composite.observerExposureStops, pass.composite.rodSensitivity,
-          pass.composite.opponentGain};
-        composite.arithmetic = {pass.composite.operation, pass.composite.gain, pass.composite.bias,
-          pass.composite.opacity, pass.composite.bitDepth, pass.composite.colorSpace, pass.composite.range};
-        composite.mask = pass.composite.mask;
-        composite.invertMask = pass.composite.invertMask;
-        if (pass.composite.sourceA == CompositeSource::PreviousFrame ||
-            pass.composite.sourceB == CompositeSource::PreviousFrame)
-          composite.feedback = FeedbackSettings{pass.composite.historyDecay,
-            pass.composite.historyUvOffset, pass.composite.historyUvScale};
-        operation.data = std::move(composite);
+        operation.data = compositeData(id);
         operation.outputs.push_back(makeSignal(id, SignalKind::Color, "Composite color"));
         break;
       }
@@ -194,6 +209,18 @@ Document migrateLegacyDocument(const StackDocument& legacy) {
     result.operations.push_back(std::move(operation));
     previousOutput = primaryOutput(result.operations.back());
 
+    if (splitLegacyComposite && accumulatorBefore) {
+      previousOutput = accumulatorBefore;
+      Operation composite;
+      composite.id = {nextSyntheticId++};
+      composite.name = pass.name + " / composite";
+      composite.enabled = pass.enabled;
+      composite.data = compositeData(id);
+      composite.outputs.push_back(makeSignal(composite.id, SignalKind::Color, "Composite color"));
+      result.operations.push_back(std::move(composite));
+      previousOutput = primaryOutput(result.operations.back());
+    }
+
     if (pass.kind == StackOperationKind::Measure && pass.measurementModulationEnabled) {
       const SignalRef source = primaryOutput(result.operations.back());
       result.automation.modulation.push_back({source,
@@ -206,6 +233,7 @@ Document migrateLegacyDocument(const StackDocument& legacy) {
   }
 
   result.presentation.input = previousOutput;
+  result.nextOperationIdentity = nextSyntheticId;
   return result;
 }
 

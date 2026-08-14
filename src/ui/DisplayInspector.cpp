@@ -14,8 +14,7 @@ void description(const char* text) {
 
 } // namespace
 
-void drawDisplayInspectorContents(RenderStack& stack) {
-    DisplayReconstructionState& state = stack.display();
+void drawDisplayInspectorContents(DisplayReconstructionState& state) {
     ImGui::Checkbox("Enable display reconstruction", &state.enabled);
     description("Runs after the complete render-pass stack. It never changes pass textures or composite operands.");
     if (state.enabled) {

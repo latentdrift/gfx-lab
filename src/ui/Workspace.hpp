@@ -6,6 +6,7 @@
 #include "app/State.hpp"
 #include "document/Document.hpp"
 #include "editor/EditorState.hpp"
+#include "editor/Commands.hpp"
 namespace gfxlab {
 struct ModelAsset;
 }
@@ -23,7 +24,6 @@ struct WorkspaceWindows {
   bool inspector = true;
   bool scope = true;
   bool animation = false;
-  bool passDifferences = false;
   bool textureInspector = false;
   bool resetLayout = false;
   WorkspaceLayout requestedLayout = WorkspaceLayout::Edit;
@@ -65,11 +65,10 @@ struct ViewportWindowResult {
 
 WorkspaceActions beginWorkspace(WorkspaceWindows& windows, bool canUndo, bool canRedo, float& uiScale,
   bool viewportRecording, double recordingDurationSeconds, HardwareProfile& profile);
-SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStack& stack,
-  AnimationTimeline& timeline, editor::EditorState& editorState, const document::Document& document,
-  HardwareProfile profile, const ModelAsset* importedModel);
+SceneWindowResult drawDocumentNavigator(bool& open, document::Document& document,
+  editor::EditorState& editorState, editor::CommandHistory& history);
 ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images,
-  editor::SignalViewerState& viewer, RenderPass& displayedPass, const CameraOrbit& camera,
-  AnimationTimeline& timeline, bool globalScope, bool canEditTransform = true);
+  editor::SignalViewerState& viewer, document::Document& document,
+  editor::EditorState& editorState, editor::CommandHistory& history);
 
 } // namespace gfxlab::ui

@@ -44,20 +44,31 @@ EvaluationPlan compileDocument(const document::Document& document) {
   std::unordered_map<document::SignalId, std::size_t> producerOrder;
   std::unordered_map<document::SignalId, const document::SignalDescriptor*> descriptors;
   std::unordered_set<document::OperationId> operationIds;
+  std::uint64_t maximumOperationId = 0;
 
   for (std::size_t index = 0; index < document.operations.size(); ++index) {
     const document::Operation& operation = document.operations[index];
+    maximumOperationId = std::max(maximumOperationId, operation.id.value);
     if (!operationIds.insert(operation.id).second)
       result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error, "Duplicate operation ID."});
+    std::unordered_set<std::string> portKeys;
     for (const document::SignalDescriptor& output : operation.outputs) {
       if (output.producer != operation.id)
         result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
           "Output producer does not match its owning operation."});
       if (!producerOrder.emplace(output.id, index).second)
         result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error, "Duplicate signal ID."});
+      if (output.key.empty() || output.id != document::operationSignal(operation.id, output.key))
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+          "Output does not use its owning operation and stable port key."});
+      if (!portKeys.insert(output.key).second)
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error, "Duplicate output port key."});
       descriptors[output.id] = &output;
     }
   }
+  if (document.nextOperationIdentity <= maximumOperationId)
+    result.diagnostics.push_back({{}, DiagnosticSeverity::Error,
+      "The persistent operation allocator would reuse an existing identity."});
 
   for (std::size_t index = 0; index < document.operations.size(); ++index) {
     const document::Operation& operation = document.operations[index];
@@ -66,7 +77,7 @@ EvaluationPlan compileDocument(const document::Document& document) {
     node.inputs = operationInputs(operation);
     for (const document::SignalDescriptor& output : operation.outputs) node.outputs.push_back(output.id);
 
-    for (const document::SignalRef input : node.inputs) {
+    for (const document::SignalRef& input : node.inputs) {
       const auto producer = producerOrder.find(input.id);
       if (producer == producerOrder.end()) {
         result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
@@ -99,6 +110,48 @@ EvaluationPlan compileDocument(const document::Document& document) {
   if (!result.finalSignal || descriptors.find(result.finalSignal.id) == descriptors.end())
     result.diagnostics.push_back({{}, DiagnosticSeverity::Error,
       "Presentation does not reference a valid final signal."});
+
+  const auto validateTarget = [&](const document::PropertyAddress& target,
+      const char* context) {
+    const document::PropertyDescriptor* property = document::propertyDescriptor(target.property);
+    if (property == nullptr) {
+      result.diagnostics.push_back({{}, DiagnosticSeverity::Error,
+        std::string(context) + " references an unknown property key."});
+      return;
+    }
+    if (target.owner.kind == document::ObjectKind::RenderDefaults) {
+      if (!property->availableOnRenderDefaults)
+        result.diagnostics.push_back({{}, DiagnosticSeverity::Error,
+          std::string(context) + " targets a property unavailable on Render Defaults."});
+      return;
+    }
+    if (target.owner.kind == document::ObjectKind::Scene ||
+        target.owner.kind == document::ObjectKind::Presentation) return;
+    const std::optional<document::OperationId> operation = document::operationFromObject(target.owner);
+    if (!operation.has_value() || operationIds.find(*operation) == operationIds.end())
+      result.diagnostics.push_back({operation.value_or(document::OperationId{}),
+        DiagnosticSeverity::Error, std::string(context) + " references a missing owner."});
+    else if ((target.property == document::timeScaleProperty() ||
+        target.property == document::timeOffsetProperty()) &&
+        !std::holds_alternative<document::RenderOperation>(
+          document::findOperation(document, *operation)->data))
+      result.diagnostics.push_back({*operation, DiagnosticSeverity::Error,
+        std::string(context) + " targets procedural time on a non-Render operation."});
+  };
+  for (const document::AnimationTrack& track : document.automation.animation)
+    validateTarget(track.target, "Animation");
+  for (const document::ModulationRoute& route : document.automation.modulation) {
+    validateTarget(route.target, "Modulation");
+    if (!route.source || descriptors.find(route.source.id) == descriptors.end())
+      result.diagnostics.push_back({{}, DiagnosticSeverity::Error,
+        "Modulation references a signal that is not declared by the document."});
+    else if (descriptors.at(route.source.id)->kind != document::SignalKind::Scalar)
+      result.diagnostics.push_back({route.source.id.producer, DiagnosticSeverity::Error,
+        "Modulation requires a Scalar source signal."});
+    else if (route.source.frameOffset > 0)
+      result.diagnostics.push_back({route.source.id.producer, DiagnosticSeverity::Error,
+        "Modulation cannot sample a future signal."});
+  }
   return result;
 }
 

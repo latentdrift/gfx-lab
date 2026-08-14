@@ -25,14 +25,76 @@ std::string mutate(document::Document& document, const Command& command) {
       if (!data.operation.id) return "An operation must have a stable non-zero ID.";
       if (document::findOperation(document, data.operation.id) != nullptr)
         return "An operation with this ID already exists.";
+      const document::OperationId addedId = data.operation.id;
+      const document::SignalRef addedOutput = document::primaryOutput(data.operation);
       const std::size_t index = std::min(data.index, document.operations.size());
       document.operations.insert(document.operations.begin() + static_cast<std::ptrdiff_t>(index),
         data.operation);
+      document.nextOperationIdentity = std::max(document.nextOperationIdentity,
+        addedId.value + 1);
+      if (data.setAsFinal) document.presentation.input = addedOutput;
     } else if constexpr (std::is_same_v<Type, RemoveOperation>) {
       const auto found = std::find_if(document.operations.begin(), document.operations.end(),
         [&data](const document::Operation& operation) { return operation.id == data.operation; });
       if (found == document.operations.end()) return "The operation no longer exists.";
       document.operations.erase(found);
+      const document::ObjectId owner = document::operationObject(data.operation);
+      std::erase_if(document.automation.animation,
+        [owner](const document::AnimationTrack& track) { return track.target.owner == owner; });
+      std::erase_if(document.automation.modulation,
+        [owner, operation = data.operation](const document::ModulationRoute& route) {
+          return route.target.owner == owner || route.source.id.producer == operation;
+        });
+    } else if constexpr (std::is_same_v<Type, DuplicateOperation>) {
+      const document::Operation* source = document::findOperation(document, data.source);
+      if (source == nullptr) return "The source operation no longer exists.";
+      if (!data.duplicate || document::findOperation(document, data.duplicate) != nullptr)
+        return "The duplicate operation ID is invalid or already exists.";
+      document::Operation duplicate = *source;
+      duplicate.id = data.duplicate;
+      duplicate.name += " copy";
+      for (document::SignalDescriptor& output : duplicate.outputs) {
+        output.id = document::operationSignal(duplicate.id, output.key);
+        output.producer = duplicate.id;
+      }
+      const auto remapSelf = [&](document::SignalRef& signal) {
+        if (signal.id.producer == data.source) signal.id.producer = data.duplicate;
+      };
+      std::visit([&](auto& operationData) {
+        using OperationType = std::decay_t<decltype(operationData)>;
+        if constexpr (std::is_same_v<OperationType, document::InterpretOperation>)
+          remapSelf(operationData.spectrum);
+        else if constexpr (std::is_same_v<OperationType, document::CompositeOperation>) {
+          remapSelf(operationData.a);
+          remapSelf(operationData.b);
+        } else if constexpr (std::is_same_v<OperationType, document::StereoOperation>) {
+          remapSelf(operationData.left);
+          remapSelf(operationData.right);
+        } else if constexpr (std::is_same_v<OperationType, document::MeasureOperation>)
+          remapSelf(operationData.input);
+      }, duplicate.data);
+      const std::size_t index = std::min(data.index, document.operations.size());
+      document.operations.insert(document.operations.begin() + static_cast<std::ptrdiff_t>(index),
+        std::move(duplicate));
+      const document::ObjectId sourceOwner = document::operationObject(data.source);
+      const document::ObjectId duplicateOwner = document::operationObject(data.duplicate);
+      const std::size_t trackCount = document.automation.animation.size();
+      for (std::size_t track = 0; track < trackCount; ++track) {
+        if (document.automation.animation[track].target.owner != sourceOwner) continue;
+        document::AnimationTrack cloned = document.automation.animation[track];
+        cloned.target.owner = duplicateOwner;
+        document.automation.animation.push_back(std::move(cloned));
+      }
+      const std::size_t routeCount = document.automation.modulation.size();
+      for (std::size_t route = 0; route < routeCount; ++route) {
+        if (document.automation.modulation[route].target.owner != sourceOwner) continue;
+        document::ModulationRoute cloned = document.automation.modulation[route];
+        cloned.target.owner = duplicateOwner;
+        remapSelf(cloned.source);
+        document.automation.modulation.push_back(std::move(cloned));
+      }
+      document.nextOperationIdentity = std::max(document.nextOperationIdentity,
+        data.duplicate.value + 1);
     } else if constexpr (std::is_same_v<Type, MoveOperation>) {
       const auto found = std::find_if(document.operations.begin(), document.operations.end(),
         [&data](const document::Operation& operation) { return operation.id == data.operation; });
@@ -45,6 +107,12 @@ std::string mutate(document::Document& document, const Command& command) {
         document.operations.insert(document.operations.begin() + static_cast<std::ptrdiff_t>(to),
           std::move(moved));
       }
+    } else if constexpr (std::is_same_v<Type, SetOperationEnabled>) {
+      document::Operation* operation = document::findOperation(document, data.operation);
+      if (operation == nullptr) return "The operation no longer exists.";
+      operation->enabled = data.enabled;
+    } else if constexpr (std::is_same_v<Type, ReplaceDocument>) {
+      document = data.document;
     } else if constexpr (std::is_same_v<Type, ConnectSignal>) {
       document::Operation* operation = document::findOperation(document, data.operation);
       if (operation == nullptr) return "The target operation no longer exists.";
@@ -146,6 +214,7 @@ CommandResult applyCommand(document::Document& document, const Command& command)
 }
 
 CommandResult CommandHistory::execute(document::Document& document, const Command& command) {
+  finishContinuous(document);
   const document::Document before = document;
   CommandResult result = applyCommand(document, command);
   if (result.applied) {
@@ -155,7 +224,25 @@ CommandResult CommandHistory::execute(document::Document& document, const Comman
   return result;
 }
 
+CommandResult CommandHistory::executeContinuous(document::Document& document,
+    const Command& command) {
+  const document::Document before = document;
+  CommandResult result = applyCommand(document, command);
+  if (result.applied) {
+    if (!continuousStart_.has_value()) continuousStart_ = before;
+    redo_.clear();
+  }
+  return result;
+}
+
+void CommandHistory::finishContinuous(const document::Document&) {
+  if (!continuousStart_.has_value()) return;
+  pushBounded(undo_, *continuousStart_);
+  continuousStart_.reset();
+}
+
 bool CommandHistory::undo(document::Document& document) {
+  finishContinuous(document);
   if (undo_.empty()) return false;
   pushBounded(redo_, document);
   document = std::move(undo_.back());
@@ -164,6 +251,7 @@ bool CommandHistory::undo(document::Document& document) {
 }
 
 bool CommandHistory::redo(document::Document& document) {
+  finishContinuous(document);
   if (redo_.empty()) return false;
   pushBounded(undo_, document);
   document = std::move(redo_.back());
@@ -174,6 +262,7 @@ bool CommandHistory::redo(document::Document& document) {
 void CommandHistory::clear() {
   undo_.clear();
   redo_.clear();
+  continuousStart_.reset();
 }
 
 void CommandHistory::pushBounded(std::vector<document::Document>& history,

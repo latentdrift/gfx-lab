@@ -22,6 +22,7 @@ struct SignalMetadata {
 struct SignalDescriptor {
   SignalId id;
   OperationId producer;
+  std::string key;
   SignalKind kind = SignalKind::Color;
   std::string name;
   SignalMetadata metadata;

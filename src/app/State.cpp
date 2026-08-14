@@ -427,7 +427,7 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
   json << "  },\n";
   constexpr const char* fieldViews[] = {"source_a_phase", "source_b_phase", "phase_difference",
     "interference_intensity", "absolute_distance_difference", "distance_difference_contours"};
-  constexpr const char* sdfTypes[] = {"sphere", "box", "torus"};
+  constexpr const char* sdfTypes[] = {"sphere", "box", "torus", "hypersphere4d", "pulsating_sphere"};
   constexpr const char* sdfOperations[] = {"union", "intersection", "a_subtract_b", "smooth_union"};
   json << "  \"field\": {\n";
   json << "    \"enabled\": " << boolean(state.field.enabled) << ",\n";
@@ -449,11 +449,11 @@ std::string configJson(const RendererState& state, const CameraOrbit& camera, Te
        << ", \"emission_influence\": " << state.field.emissionInfluence << "},\n";
   json << "    \"producer_kind\": \"" << (state.field.producerKind == 0 ? "wave_interference" : "signed_distance_field") << "\",\n";
   json << "    \"sdf\": {\"producer_a\": {\"type\": \""
-       << sdfTypes[std::clamp(state.field.sdfA.type, 0, 2)] << "\""
+       << sdfTypes[std::clamp(state.field.sdfA.type, 0, 4)] << "\""
        << ", \"position\": [" << state.field.sdfA.position.x << ", " << state.field.sdfA.position.y << ", " << state.field.sdfA.position.z
        << "], \"parameters\": [" << state.field.sdfA.parameters.x << ", " << state.field.sdfA.parameters.y << ", " << state.field.sdfA.parameters.z
        << "]}, \"producer_b\": {\"type\": \""
-       << sdfTypes[std::clamp(state.field.sdfB.type, 0, 2)] << "\""
+       << sdfTypes[std::clamp(state.field.sdfB.type, 0, 4)] << "\""
        << ", \"position\": [" << state.field.sdfB.position.x << ", " << state.field.sdfB.position.y << ", " << state.field.sdfB.position.z
        << "], \"parameters\": [" << state.field.sdfB.parameters.x << ", " << state.field.sdfB.parameters.y << ", " << state.field.sdfB.parameters.z
        << "]}, \"operation\": \"" << sdfOperations[std::clamp(state.field.sdfOperation, 0, 3)]

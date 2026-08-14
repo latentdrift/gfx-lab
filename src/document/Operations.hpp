@@ -21,11 +21,21 @@ struct TextureBinding {
   bool srgb = true;
 };
 
+struct TimeTransform {
+  float scale = 1.0f;
+  float offsetSeconds = 0.0f;
+
+  [[nodiscard]] float apply(float globalTimeSeconds) const {
+    return globalTimeSeconds * scale + offsetSeconds;
+  }
+};
+
 struct RenderOperation {
   std::vector<PropertyOverride> overrides;
   PassPerturbation perturbation;
   PassOutput presentedOutput = PassOutput::Color;
   TextureBinding texture;
+  TimeTransform time;
 };
 
 struct InterpretOperation {
@@ -103,5 +113,14 @@ struct Operation {
 
 [[nodiscard]] const char* operationTypeLabel(const Operation& operation);
 [[nodiscard]] SignalRef primaryOutput(const Operation& operation);
+[[nodiscard]] Operation makeRenderOperation(OperationId id, std::string name);
+[[nodiscard]] Operation makeInterpretOperation(OperationId id, std::string name, SignalRef spectrum);
+[[nodiscard]] Operation makeCompositeOperation(OperationId id, std::string name,
+  SignalRef a, SignalRef b);
+[[nodiscard]] Operation makeStereoOperation(OperationId id, std::string name,
+  SignalRef left, SignalRef right);
+[[nodiscard]] Operation makeMeasureOperation(OperationId id, std::string name, SignalRef input);
+[[nodiscard]] Operation makeConstantOperation(OperationId id, std::string name,
+  glm::vec4 value, SignalKind kind = SignalKind::Color);
 
 } // namespace gfxlab::document

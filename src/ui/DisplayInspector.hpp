@@ -1,11 +1,11 @@
 #pragma once
 
 namespace gfxlab {
-class RenderStack;
+struct DisplayReconstructionState;
 }
 
 namespace gfxlab::ui {
 
-void drawDisplayInspectorContents(RenderStack& stack);
+void drawDisplayInspectorContents(DisplayReconstructionState& state);
 
 } // namespace gfxlab::ui

@@ -4,7 +4,9 @@
 
 #include <array>
 #include <cstdint>
+#include <stdexcept>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 namespace gfxlab::document {
@@ -69,6 +71,18 @@ const std::vector<PropertyDescriptor>& registry() {
         info.components, info.minimum, info.maximum, info.behavior, true,
         animationPropertyIsPassLocal(property)});
     }
+    result.push_back({PropertyId{stableHash("layer.time_scale")}, AnimationProperty::Count,
+      "layer.time_scale", "Time Scale", "Time", PropertyType::Float, PropertyUnits::Ratio,
+      1, -8.0f, 8.0f, AnimationBehavior::Continuous, false, true});
+    result.push_back({PropertyId{stableHash("layer.time_offset_seconds")}, AnimationProperty::Count,
+      "layer.time_offset_seconds", "Time Offset", "Time", PropertyType::Float, PropertyUnits::Seconds,
+      1, -60.0f, 60.0f, AnimationBehavior::Continuous, false, true});
+    std::unordered_set<PropertyId> ids;
+    std::unordered_set<std::string> names;
+    for (const PropertyDescriptor& descriptor : result) {
+      if (!ids.insert(descriptor.id).second || !names.insert(descriptor.stableName).second)
+        throw std::logic_error("The document property registry contains a duplicate stable key.");
+    }
     return result;
   }();
   return descriptors;
@@ -80,9 +94,16 @@ PropertyId propertyId(const AnimationProperty property) {
   return PropertyId{stableHash(animationPropertyInfo(property).id)};
 }
 
-std::optional<AnimationProperty> legacyAnimationProperty(const PropertyId property) {
+PropertyId propertyId(const std::string_view stableName) { return {stableHash(stableName)}; }
+
+PropertyId timeScaleProperty() { return propertyId("layer.time_scale"); }
+
+PropertyId timeOffsetProperty() { return propertyId("layer.time_offset_seconds"); }
+
+std::optional<AnimationProperty> animationProperty(const PropertyId property) {
   const PropertyDescriptor* descriptor = propertyDescriptor(property);
-  return descriptor == nullptr ? std::nullopt : std::optional{descriptor->legacyProperty};
+  return descriptor == nullptr || descriptor->rendererProperty == AnimationProperty::Count
+    ? std::nullopt : std::optional{descriptor->rendererProperty};
 }
 
 const PropertyDescriptor* propertyDescriptor(const PropertyId property) {

@@ -13,27 +13,22 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "app/State.hpp"
-#include "app/StackDocument.hpp"
-#include "app/EditorHistory.hpp"
 #include "app/FileDialog.hpp"
 #include "app/HardwareProfile.hpp"
-#include "app/PassEditing.hpp"
-#include "app/RenderStack.hpp"
 #include "app/Validation.hpp"
 #include "app/ViewportRecorder.hpp"
 #include "assets/ModelAsset.hpp"
-#include "document/LegacyAdapter.hpp"
+#include "document/Persistence.hpp"
 #include "editor/EditorState.hpp"
+#include "editor/Commands.hpp"
 #include "evaluation/Compiler.hpp"
-#include "evaluation/LegacyBridge.hpp"
 #include "evaluation/SignalRegistry.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
 #include "renderer/TextureReadback.hpp"
-#include "ui/AnimationEditor.hpp"
-#include "ui/ContextInspector.hpp"
+#include "ui/DocumentInspector.hpp"
+#include "ui/DocumentTimeline.hpp"
 #include "ui/Inspector.hpp"
-#include "ui/PassDifferenceAudit.hpp"
 #include "ui/ScopePanel.hpp"
 #include "ui/TextureInspector.hpp"
 #include "ui/Workspace.hpp"
@@ -127,40 +122,88 @@ struct MeasurementRuntime {
   bool modulationApplied = false;
 };
 
-void applyMeasurementModulations(RenderStack& evaluated,
+void applyMeasurementModulations(document::Document& evaluated,
     std::unordered_map<int, MeasurementRuntime>& runtime, const float deltaSeconds) {
-  for (auto& entry : runtime) entry.second.modulationApplied = false;
-  for (const RenderPass& controller : evaluated.passes()) {
-    if (!controller.enabled || controller.kind != StackOperationKind::Measure ||
-        !controller.measurementModulationEnabled) continue;
-    const auto sample = runtime.find(controller.id);
-    if (sample == runtime.end() || sample->second.measurement.sampleCount == 0) continue;
-    const auto target = std::find_if(evaluated.passes().begin(), evaluated.passes().end(),
-      [&](const RenderPass& candidate) { return candidate.id == controller.measurementTargetPassId; });
-    if (target == evaluated.passes().end() || !measurementTargetPropertyCompatible(target->kind,
-        controller.measurementTargetProperty)) continue;
+  for (auto& [id, state] : runtime) {
+    static_cast<void>(id);
+    state.modulationApplied = false;
+  }
+  for (const document::ModulationRoute& route : evaluated.automation.modulation) {
+    const document::SignalDescriptor* sourceSignal = document::findSignal(evaluated, route.source.id);
+    const document::Operation* sourceOperation = sourceSignal == nullptr ? nullptr
+      : document::findOperation(evaluated, sourceSignal->producer);
+    const auto* measure = sourceOperation == nullptr ? nullptr
+      : std::get_if<document::MeasureOperation>(&sourceOperation->data);
+    if (measure == nullptr) continue;
+    const auto sampled = runtime.find(static_cast<int>(sourceOperation->id.value));
+    if (sampled == runtime.end() || sampled->second.measurement.sampleCount == 0) continue;
+    const document::PropertyDescriptor* targetDescriptor =
+      document::propertyDescriptor(route.target.property);
+    if (targetDescriptor == nullptr) continue;
+    const std::optional<AnimationProperty> targetProperty =
+      document::animationProperty(route.target.property);
 
-    MeasurementRuntime& state = sample->second;
-    const float measured = measurementMetricValue(state.measurement, controller.measurementMetric);
-    if (!state.smoothingInitialized || state.smoothedMetric != controller.measurementMetric) {
+    MeasurementRuntime& state = sampled->second;
+    const float measured = measurementMetricValue(state.measurement, measure->metric);
+    if (!state.smoothingInitialized || state.smoothedMetric != measure->metric) {
       state.smoothedControl = measured;
-      state.smoothedMetric = controller.measurementMetric;
+      state.smoothedMetric = measure->metric;
       state.smoothingInitialized = true;
     } else {
-      const float timeConstant = std::max(controller.measurementSmoothingSeconds, 0.0f);
-      const float response = timeConstant <= 0.00001f ? 1.0f :
-        1.0f - std::exp(-std::max(deltaSeconds, 0.0f) / timeConstant);
+      const float timeConstant = std::max(route.smoothingSeconds, 0.0f);
+      const float response = timeConstant <= 0.00001f ? 1.0f
+        : 1.0f - std::exp(-std::max(deltaSeconds, 0.0f) / timeConstant);
       state.smoothedControl += (measured - state.smoothedControl) * response;
     }
-    const float inputSpan = controller.measurementInputMaximum - controller.measurementInputMinimum;
-    float normalized = std::abs(inputSpan) <= 0.000001f ? 0.0f :
-      (state.smoothedControl - controller.measurementInputMinimum) / inputSpan;
-    if (controller.measurementClamp) normalized = std::clamp(normalized, 0.0f, 1.0f);
-    float output = controller.measurementOutputMinimum +
-      normalized * (controller.measurementOutputMaximum - controller.measurementOutputMinimum);
-    const AnimationPropertyInfo& targetInfo = animationPropertyInfo(controller.measurementTargetProperty);
-    output = std::clamp(output, targetInfo.minimum, targetInfo.maximum);
-    setAnimationPropertyValue(*target, controller.measurementTargetProperty, glm::vec4(output));
+    const float inputSpan = route.inputRange.y - route.inputRange.x;
+    float normalized = std::abs(inputSpan) <= 0.000001f ? 0.0f
+      : (state.smoothedControl - route.inputRange.x) / inputSpan;
+    if (route.clamp) normalized = std::clamp(normalized, 0.0f, 1.0f);
+    const float output = std::clamp(route.outputRange.x + normalized *
+      (route.outputRange.y - route.outputRange.x), targetDescriptor->minimum, targetDescriptor->maximum);
+
+    if (route.target.owner == document::renderDefaultsObject) {
+      if (!targetProperty.has_value()) continue;
+      RenderPass carrier;
+      carrier.renderer = evaluated.renderDefaults.renderer;
+      carrier.textureSource = evaluated.renderDefaults.texture.source;
+      carrier.importedTextureSrgb = evaluated.renderDefaults.texture.srgb;
+      setAnimationPropertyValue(carrier, *targetProperty, glm::vec4(output));
+      evaluated.renderDefaults.renderer = carrier.renderer;
+      evaluated.renderDefaults.texture.source = carrier.textureSource;
+      evaluated.renderDefaults.texture.srgb = carrier.importedTextureSrgb;
+    } else {
+      const std::optional<document::OperationId> targetId =
+        document::operationFromObject(route.target.owner);
+      document::Operation* target = targetId.has_value()
+        ? document::findOperation(evaluated, *targetId) : nullptr;
+      if (target == nullptr) continue;
+      if (auto* render = std::get_if<document::RenderOperation>(&target->data)) {
+        if (route.target.property == document::timeScaleProperty()) render->time.scale = output;
+        else if (route.target.property == document::timeOffsetProperty()) render->time.offsetSeconds = output;
+        else if (targetProperty.has_value()) {
+          const auto found = std::find_if(render->overrides.begin(), render->overrides.end(),
+            [&](const PropertyOverride& value) { return value.property == *targetProperty; });
+          if (found == render->overrides.end()) render->overrides.push_back({*targetProperty, glm::vec4(output)});
+          else found->value = glm::vec4(output);
+        } else continue;
+      } else if (auto* composite = std::get_if<document::CompositeOperation>(&target->data)) {
+        if (!targetProperty.has_value()) continue;
+        if (*targetProperty == AnimationProperty::CompositeGain) composite->arithmetic.gain = output;
+        else if (*targetProperty == AnimationProperty::CompositeBias) composite->arithmetic.bias = output;
+        else if (*targetProperty == AnimationProperty::CompositeOpacity) composite->arithmetic.opacity = output;
+        else if (*targetProperty == AnimationProperty::CompositeHistoryDecay && composite->feedback.has_value())
+          composite->feedback->decay = output;
+        else continue;
+      } else if (auto* stereo = std::get_if<document::StereoOperation>(&target->data)) {
+        if (!targetProperty.has_value()) continue;
+        if (*targetProperty == AnimationProperty::StereoMaximumDisparity)
+          stereo->maximumDisparityPixels = output;
+        else if (*targetProperty == AnimationProperty::StereoOcclusionTolerance)
+          stereo->occlusionTolerance = output;
+        else continue;
+      } else continue;
+    }
     state.mappedOutput = output;
     state.modulationApplied = true;
   }
@@ -213,12 +256,10 @@ int runApplication() {
   RendererState reference = current;
   CameraOrbit camera;
   Category category = Category::Geometry;
-  bool pipelineFocusRequested = true;
   TestScene scene = TestScene::Torus;
-  HardwareProfile hardwareProfile = HardwareProfile::Unrestricted;
   bool viewportHovered = false;
   bool viewportAcceptsCameraInput = false;
-  bool viewportGizmoUsing = false;
+  bool cameraWasEditing = false;
   bool previewAnimation = true;
   editor::EditorState editorState;
   EditorSelection& editorSelection = editorState.selection;
@@ -231,57 +272,40 @@ int runApplication() {
 
   runStartupValidationIfRequested(renderer, current, reference, camera, scene, category);
 
-  RenderStack renderStack;
-  renderStack.global().renderer = current;
-  TestScene historyScene = scene;
-  HardwareProfile historyProfile = hardwareProfile;
+  document::Document authoredDocument = document::makeDefaultDocument();
+  authoredDocument.renderDefaults.renderer = current;
+  authoredDocument.scene.authoredCamera = camera;
+  TestScene historyScene = authoredDocument.scene.testScene;
+  HardwareProfile historyProfile = authoredDocument.hardwareProfile;
   const ModelAsset* historyModel = nullptr;
-  const auto normalizeDocument = [&renderStack](const HardwareProfile profile) {
-    if (profile == HardwareProfile::Unrestricted) renderStack.global().renderer.n64.enabled = false;
-    normalizeForHardwareProfile(profile, renderStack.global().renderer);
-    for (std::size_t passIndex = 0; passIndex < renderStack.passes().size(); ++passIndex) {
-      RenderPass normalized = resolveRenderPass(renderStack, passIndex);
-      normalizeForHardwareProfile(profile, normalized.renderer);
-      replaceRenderPassOverrides(renderStack.passes()[passIndex], renderStack.global(), normalized);
-    }
+  const auto normalizeDocument = [](document::Document& document) {
+    if (document.hardwareProfile == HardwareProfile::Unrestricted)
+      document.renderDefaults.renderer.n64.enabled = false;
+    normalizeForHardwareProfile(document.hardwareProfile, document.renderDefaults.renderer);
   };
-  std::shared_ptr<const ModelAsset> importedModel;
   evaluation::SignalRegistry signalRegistry;
   std::uint64_t signalRevision = 0;
-  const auto migrateCurrentDocument = [&]() {
-    StackDocument legacy;
-    legacy.renderStack = renderStack;
-    legacy.camera = camera;
-    legacy.scene = scene;
-    legacy.hardwareProfile = hardwareProfile;
-    legacy.timeline = animationTimeline;
-    legacy.importedModel = importedModel;
-    return document::migrateLegacyDocument(legacy);
-  };
   std::string modelImportError;
   std::string recordingMessage;
   bool recordingFailed = false;
   std::string documentMessage;
   bool documentOperationFailed = false;
   std::unordered_map<int, MeasurementRuntime> measurementRuntime;
-  EditorHistory editorHistory(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile,
-    animationTimeline, importedModel));
+  editor::CommandHistory editorHistory;
   const auto restoreHistory = [&](const bool redo) {
-    const EditorSnapshot present = captureEditorSnapshot(renderStack, camera, scene, hardwareProfile,
-      animationTimeline, importedModel);
-    EditorSnapshot restored;
-    const bool changed = redo ? editorHistory.redo(present, restored) : editorHistory.undo(present, restored);
+    const std::shared_ptr<const ModelAsset> previousModel = authoredDocument.scene.importedModel;
+    const bool changed = redo ? editorHistory.redo(authoredDocument)
+      : editorHistory.undo(authoredDocument);
     if (!changed) return;
     measurementRuntime.clear();
-    const std::shared_ptr<const ModelAsset> previousModel = importedModel;
-    restoreEditorSnapshot(restored, renderStack, camera, scene, hardwareProfile, animationTimeline,
-      &importedModel);
-    if (previousModel != importedModel) {
-      if (importedModel != nullptr) renderer.setImportedModel(*importedModel);
+    if (previousModel != authoredDocument.scene.importedModel) {
+      if (authoredDocument.scene.importedModel != nullptr)
+        renderer.setImportedModel(*authoredDocument.scene.importedModel);
       else renderer.clearImportedModel();
     }
     renderer.resetFrameHistory();
-    if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
+    if (!categoryAvailableForHardwareProfile(authoredDocument.hardwareProfile, category))
+      category = Category::Geometry;
   };
 
   const char* recordingValidationPath = std::getenv("GRAPHICS_LAB_VALIDATE_RECORDING");
@@ -325,17 +349,37 @@ int runApplication() {
         ImGui::IsKeyPressed(ImGuiKey_Space, false))
       animationTimeline.playing = !animationTimeline.playing;
     if (viewportHovered) {
+      document::Document cameraEdit = authoredDocument;
+      bool cameraChanged = false;
       if (viewportAcceptsCameraInput && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-        camera.yaw -= io.MouseDelta.x * 0.008f;
-        camera.pitch = std::clamp(camera.pitch + io.MouseDelta.y * 0.008f, -1.45f, 1.45f);
+        cameraEdit.scene.authoredCamera.yaw -= io.MouseDelta.x * 0.008f;
+        cameraEdit.scene.authoredCamera.pitch = std::clamp(
+          cameraEdit.scene.authoredCamera.pitch + io.MouseDelta.y * 0.008f, -1.45f, 1.45f);
+        cameraChanged = true;
       }
       if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle) || ImGui::IsMouseDragging(ImGuiMouseButton_Right)) {
-        const glm::mat4 inverseView = glm::inverse(camera.view());
+        const glm::mat4 inverseView = glm::inverse(cameraEdit.scene.authoredCamera.view());
         const glm::vec3 right = glm::vec3(inverseView[0]);
         const glm::vec3 up = glm::vec3(inverseView[1]);
-        camera.target += (-right * io.MouseDelta.x + up * io.MouseDelta.y) * camera.distance * 0.0015f;
+        cameraEdit.scene.authoredCamera.target += (-right * io.MouseDelta.x + up * io.MouseDelta.y) *
+          cameraEdit.scene.authoredCamera.distance * 0.0015f;
+        cameraChanged = true;
       }
-      if (io.MouseWheel != 0.0f) camera.distance = std::clamp(camera.distance * std::pow(0.88f, io.MouseWheel), 1.4f, 14.0f);
+      if (io.MouseWheel != 0.0f) {
+        cameraEdit.scene.authoredCamera.distance = std::clamp(
+          cameraEdit.scene.authoredCamera.distance * std::pow(0.88f, io.MouseWheel), 1.4f, 14.0f);
+        cameraChanged = true;
+      }
+      if (cameraChanged) {
+        static_cast<void>(editorHistory.executeContinuous(authoredDocument,
+          editor::ReplaceDocument{std::move(cameraEdit)}));
+        cameraWasEditing = true;
+      }
+    }
+    if (cameraWasEditing && !ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+        !ImGui::IsMouseDown(ImGuiMouseButton_Middle) && !ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+      editorHistory.finishContinuous(authoredDocument);
+      cameraWasEditing = false;
     }
 
     int framebufferWidth, framebufferHeight;
@@ -346,10 +390,13 @@ int runApplication() {
       else if (dialog.path.has_value()) {
         const ModelImportResult imported = importModelAsset(*dialog.path);
         if (imported) {
-          importedModel = imported.asset;
-          renderer.setImportedModel(*importedModel);
-          scene = TestScene::ImportedModel;
-          camera = CameraOrbit{};
+          document::Document edited = authoredDocument;
+          edited.scene.importedModel = imported.asset;
+          edited.scene.testScene = TestScene::ImportedModel;
+          edited.scene.authoredCamera = CameraOrbit{};
+          static_cast<void>(editorHistory.execute(authoredDocument,
+            editor::ReplaceDocument{std::move(edited)}));
+          renderer.setImportedModel(*authoredDocument.scene.importedModel);
           modelImportError.clear();
         } else {
           modelImportError = imported.error;
@@ -357,9 +404,10 @@ int runApplication() {
       }
     };
 
+    HardwareProfile menuHardwareProfile = authoredDocument.hardwareProfile;
     const WorkspaceActions workspaceActions = beginWorkspace(workspaceWindows,
       editorHistory.canUndo(), editorHistory.canRedo(), uiScale, viewportRecorder.recording(),
-      viewportRecorder.durationSeconds(), hardwareProfile);
+      viewportRecorder.durationSeconds(), menuHardwareProfile);
     if (workspaceActions.undo) restoreHistory(false);
     if (workspaceActions.redo) restoreHistory(true);
     if (workspaceActions.importModel) importModelFromDialog();
@@ -371,25 +419,32 @@ int runApplication() {
         documentMessage = dialog.error;
         documentOperationFailed = true;
       } else if (dialog.path.has_value()) {
-        StackDocumentLoadResult loaded = loadStackDocumentFile(*dialog.path);
-        if (!loaded) {
+        document::DocumentLoadResult loaded = document::loadDocumentFile(*dialog.path);
+        if (loaded) {
+          authoredDocument = std::move(*loaded.document);
+          const document::Automation::Timeline& timeline = authoredDocument.automation.timeline;
+          animationTimeline.timeSeconds = timeline.currentTimeSeconds;
+          animationTimeline.durationSeconds = timeline.durationSeconds;
+          animationTimeline.playbackRate = timeline.playbackRate;
+          animationTimeline.loop = timeline.loop;
+          animationTimeline.autoKey = timeline.autoKey;
+          animationTimeline.showAllPasses = timeline.showAllOperations;
+          animationTimeline.snapToFrames = timeline.snapToFrames;
+          animationTimeline.framesPerSecond = timeline.framesPerSecond;
+        } else {
           documentMessage = loaded.error;
           documentOperationFailed = true;
-        } else {
-          StackDocument document = std::move(*loaded.document);
-          renderStack = std::move(document.renderStack);
+        }
+        if (!documentOperationFailed) {
           measurementRuntime.clear();
-          camera = document.camera;
-          scene = document.scene;
-          hardwareProfile = document.hardwareProfile;
-          animationTimeline = document.timeline;
-          importedModel = std::move(document.importedModel);
-          if (importedModel != nullptr) renderer.setImportedModel(*importedModel);
+          if (authoredDocument.scene.importedModel != nullptr)
+            renderer.setImportedModel(*authoredDocument.scene.importedModel);
           else renderer.clearImportedModel();
           renderer.resetFrameHistory();
           renderer.resetElementalSimulation();
           editorState = {};
-          documentMessage = "Loaded stack document:\n" + *dialog.path;
+          editorHistory.clear();
+          documentMessage = "Loaded document:\n" + *dialog.path;
         }
       }
       if (!documentMessage.empty()) ImGui::OpenPopup("Stack document");
@@ -402,19 +457,23 @@ int runApplication() {
         documentMessage = dialog.error;
         documentOperationFailed = true;
       } else if (dialog.path.has_value()) {
-        const std::string exported = renderStackConfigJson(renderStack, camera, scene, hardwareProfile,
-          &animationTimeline, importedModel.get());
-        if (saveStackDocumentFile(*dialog.path, exported, documentMessage))
-          documentMessage = "Saved stack document:\n" + *dialog.path;
-        else
-          documentOperationFailed = true;
+        document::Automation::Timeline& timeline = authoredDocument.automation.timeline;
+        timeline.currentTimeSeconds = animationTimeline.timeSeconds;
+        timeline.durationSeconds = animationTimeline.durationSeconds;
+        timeline.playbackRate = animationTimeline.playbackRate;
+        timeline.loop = animationTimeline.loop;
+        timeline.autoKey = animationTimeline.autoKey;
+        timeline.showAllOperations = animationTimeline.showAllPasses;
+        timeline.snapToFrames = animationTimeline.snapToFrames;
+        timeline.framesPerSecond = animationTimeline.framesPerSecond;
+        if (document::saveDocumentFile(*dialog.path, authoredDocument, documentMessage))
+          documentMessage = "Saved typed document:\n" + *dialog.path;
+        else documentOperationFailed = true;
       }
       if (!documentMessage.empty()) ImGui::OpenPopup("Stack document");
     }
     if (workspaceActions.copyJson) {
-      const std::string exported = renderStackConfigJson(renderStack, camera, scene, hardwareProfile,
-        &animationTimeline, importedModel.get());
-      ImGui::SetClipboardText(exported.c_str());
+      ImGui::SetClipboardText(document::documentJson(authoredDocument).c_str());
     }
     if (workspaceActions.toggleViewportRecording) {
       recordingMessage.clear();
@@ -446,24 +505,33 @@ int runApplication() {
     if (workspaceActions.handbook) graphicsHandbook.open();
     if (workspaceActions.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
 
-    document::Document outlineDocument = migrateCurrentDocument();
-    editor::synchronizeEditorState(editorState, outlineDocument);
-    const SceneWindowResult sceneResult = drawDocumentNavigator(workspaceWindows.document, scene,
-      renderStack, animationTimeline, editorState, outlineDocument, hardwareProfile, importedModel.get());
+    editor::synchronizeEditorState(editorState, authoredDocument);
+    const SceneWindowResult sceneResult = drawDocumentNavigator(workspaceWindows.document,
+      authoredDocument, editorState, editorHistory);
     if (sceneResult.importModel) importModelFromDialog();
     if (sceneResult.unloadModel) {
-      importedModel.reset();
+      document::Document edited = authoredDocument;
+      edited.scene.importedModel.reset();
+      if (edited.scene.testScene == TestScene::ImportedModel)
+        edited.scene.testScene = TestScene::Torus;
+      static_cast<void>(editorHistory.execute(authoredDocument,
+        editor::ReplaceDocument{std::move(edited)}));
       renderer.clearImportedModel();
-      if (scene == TestScene::ImportedModel) scene = TestScene::Torus;
     }
     if (workspaceActions.hardwareProfileChanged) {
-      normalizeDocument(hardwareProfile);
-      if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
-      if (hardwareProfile != HardwareProfile::Unrestricted &&
-          (scene == TestScene::StencilMask || scene == TestScene::FieldInterference ||
-           scene == TestScene::SdfIsoSurface || scene == TestScene::SpectralMetamers ||
-           scene == TestScene::ElementalChamber))
-        scene = TestScene::Torus;
+      document::Document edited = authoredDocument;
+      edited.hardwareProfile = menuHardwareProfile;
+      normalizeDocument(edited);
+      const TestScene selectedScene = edited.scene.testScene;
+      if (edited.hardwareProfile != HardwareProfile::Unrestricted &&
+          (selectedScene == TestScene::StencilMask || selectedScene == TestScene::FieldInterference ||
+           selectedScene == TestScene::SdfIsoSurface || selectedScene == TestScene::SpectralMetamers ||
+           selectedScene == TestScene::ElementalChamber))
+        edited.scene.testScene = TestScene::Torus;
+      static_cast<void>(editorHistory.execute(authoredDocument,
+        editor::ReplaceDocument{std::move(edited)}));
+      if (!categoryAvailableForHardwareProfile(authoredDocument.hardwareProfile, category))
+        category = Category::Geometry;
     }
     if (!modelImportError.empty()) ImGui::OpenPopup("Model import failed");
     if (ImGui::BeginPopupModal("Model import failed", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
@@ -489,78 +557,75 @@ int runApplication() {
       ImGui::EndPopup();
     }
 
-    if (scene != historyScene || hardwareProfile != historyProfile || importedModel.get() != historyModel) {
+    if (authoredDocument.scene.testScene != historyScene ||
+        authoredDocument.hardwareProfile != historyProfile ||
+        authoredDocument.scene.importedModel.get() != historyModel) {
       renderer.resetFrameHistory();
       renderer.resetElementalSimulation();
-      historyScene = scene;
-      historyProfile = hardwareProfile;
-      historyModel = importedModel.get();
+      historyScene = authoredDocument.scene.testScene;
+      historyProfile = authoredDocument.hardwareProfile;
+      historyModel = authoredDocument.scene.importedModel.get();
     }
-
-    const bool inspectorGlobalScope = editorSelection.kind == EditorSelectionKind::RenderDefaults;
 
     if (workspaceWindows.animation) {
       if (ImGui::Begin("Timeline", &workspaceWindows.animation)) {
         keepCurrentWindowVisible();
-        if (editorSelection.kind == EditorSelectionKind::Presentation ||
-            editorSelection.kind == EditorSelectionKind::Scene)
-          ImGui::TextWrapped("Final Output has no animatable properties. Select Scene Defaults or an operation to edit its tracks.");
-        else
-          drawAnimationEditor(animationTimeline, renderStack, previewAnimation, inspectorGlobalScope);
+        drawDocumentTimeline(animationTimeline, authoredDocument, editorState, editorHistory);
       }
       ImGui::End();
     }
+    authoredDocument.automation.timeline.currentTimeSeconds = animationTimeline.timeSeconds;
+    authoredDocument.automation.timeline.durationSeconds = animationTimeline.durationSeconds;
+    authoredDocument.automation.timeline.playbackRate = animationTimeline.playbackRate;
+    authoredDocument.automation.timeline.loop = animationTimeline.loop;
+    authoredDocument.automation.timeline.autoKey = animationTimeline.autoKey;
+    authoredDocument.automation.timeline.showAllOperations = animationTimeline.showAllPasses;
+    authoredDocument.automation.timeline.snapToFrames = animationTimeline.snapToFrames;
+    authoredDocument.automation.timeline.framesPerSecond = animationTimeline.framesPerSecond;
 
-    normalizeDocument(hardwareProfile);
     const bool evaluateAnimation = animationTimeline.playing || previewAnimation;
-    RenderStack evaluatedStack = evaluateRenderStack(renderStack,
+    document::Document evaluatedDocument = authoredDocument;
+    normalizeDocument(evaluatedDocument);
+    applyMeasurementModulations(evaluatedDocument, measurementRuntime, deltaSeconds);
+    const evaluation::EvaluationPlan evaluationPlan = evaluation::compileDocument(evaluatedDocument);
+    renderer.updateElementalSimulation(deltaSeconds, evaluatedDocument.renderDefaults.renderer,
+      evaluatedDocument.scene.testScene);
+    const GLuint renderedComposite = renderer.evaluate(evaluatedDocument, evaluationPlan,
+      signalRegistry, ++signalRevision,
       evaluateAnimation ? animationTimeline.timeSeconds : 0.0f);
-    applyMeasurementModulations(evaluatedStack, measurementRuntime, deltaSeconds);
-    renderer.updateElementalSimulation(deltaSeconds, evaluatedStack.global().renderer, scene);
-    for (RenderPass& pass : evaluatedStack.passes())
-      normalizeForHardwareProfile(hardwareProfile, pass.renderer);
-    for (std::size_t passIndex = 0; passIndex < evaluatedStack.passes().size(); ++passIndex) {
-      const StackOperationKind kind = evaluatedStack.passes()[passIndex].kind;
-      if (kind == StackOperationKind::Render || kind == StackOperationKind::LegacyRenderComposite)
-        renderer.renderPass(evaluatedStack.passes()[passIndex], camera, scene, passIndex);
-    }
-    const GLuint renderedComposite = renderer.composite(evaluatedStack);
-    GLuint selectedTexture = renderer.stackOperationResult(renderStack.selectedIndex());
+    GLuint selectedTexture = signalRegistry.displayTexture(editorState.viewer.viewed.id);
     if (selectedTexture == 0) selectedTexture = renderedComposite;
     const SignalMeasurement* selectedMeasurementPointer = nullptr;
-    float selectedSmoothedControl = 0.0f;
-    float selectedMappedOutput = 0.0f;
-    bool selectedModulationApplied = false;
-    for (std::size_t index = 0; index < renderStack.passes().size(); ++index) {
-      const RenderPass& measure = renderStack.passes()[index];
-      if (!measure.enabled || measure.kind != StackOperationKind::Measure) continue;
-      const GLuint measuredTexture = renderer.stackOperationResult(index);
+    for (const document::Operation& operation : authoredDocument.operations) {
+      const auto* measure = std::get_if<document::MeasureOperation>(&operation.data);
+      if (!operation.enabled || measure == nullptr) continue;
+      const evaluation::SignalResource* inputResource = signalRegistry.find(measure->input.id);
+      const GLuint measuredTexture = inputResource == nullptr || inputResource->textureCount == 0
+        ? 0 : inputResource->textures[0];
       if (measuredTexture == 0) continue;
-      MeasurementRuntime& runtime = measurementRuntime[measure.id];
+      MeasurementRuntime& runtime = measurementRuntime[static_cast<int>(operation.id.value)];
       if (runtime.lastSampleTime < 0.0 || frameTime - runtime.lastSampleTime >= 0.10) {
-        runtime.measurement = measureTextureSignal(measuredTexture, measure.measurementThreshold,
-          measure.measurementAbsolute);
+        runtime.measurement = measureTextureSignal(measuredTexture, measure->threshold,
+          measure->absoluteMagnitude);
         runtime.lastSampleTime = frameTime;
       }
     }
-    if (renderStack.selected().kind == StackOperationKind::Measure) {
-      const auto selectedRuntime = measurementRuntime.find(renderStack.selected().id);
+    if (editorSelection.kind == EditorSelectionKind::Operation &&
+        document::findOperation(authoredDocument, editorSelection.operation) != nullptr &&
+        std::holds_alternative<document::MeasureOperation>(
+          document::findOperation(authoredDocument, editorSelection.operation)->data)) {
+      const auto selectedRuntime = measurementRuntime.find(
+        static_cast<int>(editorSelection.operation.value));
       if (selectedRuntime != measurementRuntime.end()) {
         selectedMeasurementPointer = &selectedRuntime->second.measurement;
-        selectedSmoothedControl = selectedRuntime->second.smoothedControl;
-        selectedMappedOutput = selectedRuntime->second.mappedOutput;
-        selectedModulationApplied = selectedRuntime->second.modulationApplied;
       }
     }
-    document::Document typedDocument = migrateCurrentDocument();
-    const evaluation::EvaluationPlan evaluationPlan = evaluation::compileDocument(typedDocument);
-    evaluation::publishLegacyResults(typedDocument, evaluatedStack, renderer, signalRegistry, ++signalRevision);
-    editor::synchronizeEditorState(editorState, typedDocument);
-    const document::SignalDescriptor* viewedDescriptor = document::findSignal(typedDocument,
+    editor::synchronizeEditorState(editorState, authoredDocument);
+    const document::SignalDescriptor* viewedDescriptor = document::findSignal(authoredDocument,
       editorState.viewer.viewed.id);
     const document::SignalDescriptor* comparisonDescriptor = editorState.viewer.comparison.has_value()
-      ? document::findSignal(typedDocument, editorState.viewer.comparison->id) : nullptr;
-    GLuint finalTexture = signalRegistry.displayTexture(typedDocument.presentation.input.id);
+      ? document::findSignal(authoredDocument, editorState.viewer.comparison->id) : nullptr;
+    GLuint finalTexture = signalRegistry.displayTexture(authoredDocument.presentation.input.id);
     if (finalTexture == 0) finalTexture = renderedComposite != 0 ? renderedComposite : selectedTexture;
     GLuint viewedTexture = signalRegistry.displayTexture(editorState.viewer.viewed.id);
     if (viewedTexture == 0) viewedTexture = finalTexture;
@@ -569,11 +634,11 @@ int runApplication() {
     if (comparisonTexture == 0) comparisonTexture = viewedTexture;
     const bool applyPresentation = editorState.viewer.applyPresentation;
     const GLuint displayedViewed = applyPresentation
-      ? renderer.reconstructDisplay(viewedTexture, renderStack.display(), 0) : viewedTexture;
+      ? renderer.reconstructDisplay(viewedTexture, authoredDocument.presentation.reconstruction, 0) : viewedTexture;
     const GLuint displayedComparison = applyPresentation
-      ? renderer.reconstructDisplay(comparisonTexture, renderStack.display(), 1) : comparisonTexture;
+      ? renderer.reconstructDisplay(comparisonTexture, authoredDocument.presentation.reconstruction, 1) : comparisonTexture;
     const GLuint displayedFinal = applyPresentation
-      ? renderer.reconstructDisplay(finalTexture, renderStack.display(), 2) : finalTexture;
+      ? renderer.reconstructDisplay(finalTexture, authoredDocument.presentation.reconstruction, 2) : finalTexture;
     const GLuint differenceTexture = renderer.compareSignals(displayedViewed, displayedComparison,
       RelationOperator::AbsoluteDifference, 1.0f, 0.0f);
     const CompareMode recordingMode = editorState.viewer.mode == editor::ViewerMode::Split
@@ -590,97 +655,130 @@ int runApplication() {
       glfwSetWindowShouldClose(window, GLFW_TRUE);
       recordingValidationPath = nullptr;
     }
-    const float viewportTime = evaluateAnimation ? animationTimeline.timeSeconds : 0.0f;
-    const RenderPass viewportBefore = inspectorGlobalScope
-      ? evaluateRenderPass(renderStack.global(), viewportTime)
-      : materializeRenderPass(renderStack, renderStack.selectedIndex(), viewportTime);
-    RenderPass viewportPass = viewportBefore;
-    const bool viewedMatchesSelection = editorSelection.kind == EditorSelectionKind::RenderDefaults ||
-      (editorSelection.kind == EditorSelectionKind::Operation && viewedDescriptor != nullptr &&
-       viewedDescriptor->producer == editorSelection.operation);
     const ViewportWindowResult viewportResult = drawViewportWindow(workspaceWindows.viewport,
       {displayedViewed, displayedComparison, differenceTexture, displayedFinal,
        viewedDescriptor != nullptr ? viewedDescriptor->name.c_str() : "Final output",
        comparisonDescriptor != nullptr ? comparisonDescriptor->name.c_str() : "Comparison signal"},
-      editorState.viewer, viewportPass, camera, animationTimeline, inspectorGlobalScope,
-      viewedMatchesSelection && editorSelection.kind != EditorSelectionKind::Presentation &&
-      editorSelection.kind != EditorSelectionKind::Scene);
+      editorState.viewer, authoredDocument, editorState, editorHistory);
     viewportHovered = viewportResult.hovered;
     viewportAcceptsCameraInput = viewportResult.acceptsCameraInput;
-    viewportGizmoUsing = viewportResult.gizmoUsing;
-    if (editorSelection.kind == EditorSelectionKind::RenderDefaults)
-      applyEditedPass(renderStack.global(), viewportBefore, viewportPass);
-    else if (editorSelection.kind == EditorSelectionKind::Operation)
-      applyEditedLocalPass(renderStack, viewportBefore, viewportPass, viewportTime);
-
     const float inspectorTime = evaluateAnimation ? animationTimeline.timeSeconds : 0.0f;
-    const RenderPass textureMappingPass = inspectorGlobalScope
-      ? evaluateRenderPass(renderStack.global(), inspectorTime)
-      : materializeRenderPass(renderStack, renderStack.selectedIndex(), inspectorTime);
-    const GLuint importedTexturePreview = renderer.texturePreview(textureMappingPass.importedTexture.get());
-    drawContextInspector(workspaceWindows.inspector, renderStack, animationTimeline, editorSelection,
-      hardwareProfile, importedModel.get(), scene, camera, inspectorTime, importedTexturePreview,
-      category, pipelineFocusRequested, selectedMeasurementPointer, selectedSmoothedControl,
-      selectedMappedOutput, selectedModulationApplied);
-    drawScopePanel(workspaceWindows.scope, typedDocument, evaluationPlan, signalRegistry, editorState);
-    pipelineFocusRequested = false;
+    const TextureAsset* selectedTextureAsset = authoredDocument.renderDefaults.texture.imported.get();
+    if (editorSelection.kind == EditorSelectionKind::Operation) {
+      const document::Operation* operation = document::findOperation(authoredDocument,
+        editorSelection.operation);
+      const auto* render = operation == nullptr ? nullptr
+        : std::get_if<document::RenderOperation>(&operation->data);
+      if (render != nullptr) selectedTextureAsset = render->texture.imported.get();
+    }
+    const GLuint importedTexturePreview = renderer.texturePreview(selectedTextureAsset);
+    drawDocumentInspector(workspaceWindows.inspector, authoredDocument, editorState,
+      editorHistory, animationTimeline, inspectorTime, importedTexturePreview,
+      selectedMeasurementPointer);
+    drawScopePanel(workspaceWindows.scope, authoredDocument, evaluationPlan, signalRegistry, editorState);
 
-    const handbook::Action handbookAction = graphicsHandbook.draw(hardwareProfile);
-    drawPassDifferenceAudit(workspaceWindows.passDifferences, renderStack);
+    const handbook::Action handbookAction = graphicsHandbook.draw(authoredDocument.hardwareProfile);
     drawTextureInspector(workspaceWindows.textureInspector,
-      {viewedTexture, comparisonTexture, finalTexture}, renderStack.selected().name);
-    if (handbookAction.type != handbook::ActionType::None && isNintendo64Example(handbookAction.example))
-      hardwareProfile = HardwareProfile::Nintendo64;
+      {viewedTexture, comparisonTexture, finalTexture}, viewedDescriptor != nullptr
+        ? viewedDescriptor->name : "Final output");
     if (handbookAction.type == handbook::ActionType::ApplyToA) {
-      applyHandbookExample(handbookAction.example, false, renderStack.global().renderer, camera, scene, category);
-      editorSelection = {};
-      pipelineFocusRequested = true;
+      document::Document edited = authoredDocument;
+      if (isNintendo64Example(handbookAction.example))
+        edited.hardwareProfile = HardwareProfile::Nintendo64;
+      applyHandbookExample(handbookAction.example, false, edited.renderDefaults.renderer,
+        edited.scene.authoredCamera, edited.scene.testScene, category);
+      normalizeDocument(edited);
+      const editor::CommandResult result = editorHistory.execute(authoredDocument,
+        editor::ReplaceDocument{std::move(edited)});
+      if (result.applied) editorSelection = {};
     } else if (handbookAction.type == handbook::ActionType::ApplyToB) {
-      if (renderStack.selectedIndex() == 0) {
-        renderStack.select(0);
-        if (renderStack.passes().size() < 2) renderStack.duplicateSelected();
-        else renderStack.select(1);
+      document::Operation* selected = editorSelection.kind == EditorSelectionKind::Operation
+        ? document::findOperation(authoredDocument, editorSelection.operation) : nullptr;
+      if (selected == nullptr || !std::holds_alternative<document::RenderOperation>(selected->data)) {
+        selected = nullptr;
+        for (document::Operation& operation : authoredDocument.operations) {
+          if (std::holds_alternative<document::RenderOperation>(operation.data)) selected = &operation;
+        }
       }
-      RenderPass comparison = materializeRenderPass(renderStack, renderStack.selectedIndex(), 0.0f);
-      applyHandbookExample(handbookAction.example, true, comparison.renderer, camera, scene, category);
-      replaceRenderPassOverrides(renderStack.selected(), renderStack.global(), comparison);
-      editorSelection = {EditorSelectionKind::Operation,
-        document::OperationId{static_cast<std::uint64_t>(std::max(renderStack.selected().id, 1))}};
-      pipelineFocusRequested = true;
+      if (selected != nullptr) {
+        document::Document edited = authoredDocument;
+        if (isNintendo64Example(handbookAction.example))
+          edited.hardwareProfile = HardwareProfile::Nintendo64;
+        document::Operation* editedOperation = document::findOperation(edited, selected->id);
+        auto* render = editedOperation == nullptr ? nullptr
+          : std::get_if<document::RenderOperation>(&editedOperation->data);
+        if (render != nullptr) {
+          RendererState variantState = edited.renderDefaults.renderer;
+          CameraOrbit ignoredCamera = edited.scene.authoredCamera;
+          TestScene ignoredScene = edited.scene.testScene;
+          Category ignoredCategory = category;
+          applyHandbookExample(handbookAction.example, true, variantState,
+            ignoredCamera, ignoredScene, ignoredCategory);
+          RenderPass global;
+          global.renderer = edited.renderDefaults.renderer;
+          RenderPass variant = global;
+          variant.renderer = variantState;
+          render->overrides.clear();
+          for (int propertyIndex = 0; propertyIndex < static_cast<int>(AnimationProperty::Count);
+               ++propertyIndex) {
+            const AnimationProperty property = static_cast<AnimationProperty>(propertyIndex);
+            if (animationPropertyIsPassLocal(property)) continue;
+            const glm::vec4 baseValue = animationPropertyValue(global, property);
+            const glm::vec4 variantValue = animationPropertyValue(variant, property);
+            if (!animationPropertyValuesEqual(property, baseValue, variantValue))
+              render->overrides.push_back({property, variantValue});
+          }
+          normalizeDocument(edited);
+          static_cast<void>(editorHistory.execute(authoredDocument,
+            editor::ReplaceDocument{std::move(edited)}));
+        }
+      }
     } else if (handbookAction.type == handbook::ActionType::LoadComparison) {
-      renderStack = RenderStack{};
-      measurementRuntime.clear();
-      applyHandbookExample(handbookAction.example, false, renderStack.global().renderer, camera, scene, category);
+      document::Document edited = document::makeDefaultDocument();
+      if (isNintendo64Example(handbookAction.example))
+        edited.hardwareProfile = HardwareProfile::Nintendo64;
+      applyHandbookExample(handbookAction.example, false, edited.renderDefaults.renderer,
+        edited.scene.authoredCamera, edited.scene.testScene, category);
       RendererState comparisonState;
-      CameraOrbit comparisonCamera = camera;
-      TestScene comparisonScene = scene;
+      CameraOrbit comparisonCamera = edited.scene.authoredCamera;
+      TestScene comparisonScene = edited.scene.testScene;
       Category comparisonCategory = category;
       applyHandbookExample(handbookAction.example, true, comparisonState, comparisonCamera, comparisonScene, comparisonCategory);
-      RenderPass comparison = materializeRenderPass(renderStack, 1, 0.0f);
-      comparison.renderer = comparisonState;
-      replaceRenderPassOverrides(renderStack.passes()[1], renderStack.global(), comparison);
-      renderStack.select(1);
-      camera = comparisonCamera;
-      scene = comparisonScene;
+      auto* comparison = std::get_if<document::RenderOperation>(&edited.operations[1].data);
+      if (comparison != nullptr) {
+        RenderPass global;
+        global.renderer = edited.renderDefaults.renderer;
+        RenderPass variant = global;
+        variant.renderer = comparisonState;
+        comparison->overrides.clear();
+        for (int propertyIndex = 0; propertyIndex < static_cast<int>(AnimationProperty::Count);
+             ++propertyIndex) {
+          const AnimationProperty property = static_cast<AnimationProperty>(propertyIndex);
+          if (animationPropertyIsPassLocal(property)) continue;
+          const glm::vec4 baseValue = animationPropertyValue(global, property);
+          const glm::vec4 variantValue = animationPropertyValue(variant, property);
+          if (!animationPropertyValuesEqual(property, baseValue, variantValue))
+            comparison->overrides.push_back({property, variantValue});
+        }
+      }
+      edited.scene.authoredCamera = comparisonCamera;
+      edited.scene.testScene = comparisonScene;
+      normalizeDocument(edited);
       category = comparisonCategory;
-      pipelineFocusRequested = true;
-      const document::OperationId leftOperation{
-        static_cast<std::uint64_t>(std::max(renderStack.passes()[0].id, 1))};
-      const document::OperationId rightOperation{
-        static_cast<std::uint64_t>(std::max(renderStack.selected().id, 1))};
-      editorState.viewer.comparison = document::SignalRef{
-        document::operationSignal(leftOperation, 0), 0};
-      editorState.viewer.viewed = document::SignalRef{
-        document::operationSignal(rightOperation, 0), 0};
-      editorState.viewer.mode = editor::ViewerMode::Split;
-      editorSelection = {EditorSelectionKind::Operation, rightOperation};
+      const document::OperationId leftOperation = edited.operations[0].id;
+      const document::OperationId rightOperation = edited.operations[1].id;
+      const editor::CommandResult result = editorHistory.execute(authoredDocument,
+        editor::ReplaceDocument{std::move(edited)});
+      if (result.applied) {
+        measurementRuntime.clear();
+        editorState.viewer.comparison = document::SignalRef{
+          document::operationSignal(leftOperation, "color"), 0};
+        editorState.viewer.viewed = document::SignalRef{
+          document::operationSignal(rightOperation, "color"), 0};
+        editorState.viewer.mode = editor::ViewerMode::Split;
+        editorSelection = {EditorSelectionKind::Operation, rightOperation};
+      }
     }
-    normalizeDocument(hardwareProfile);
-    const bool viewportInteraction = viewportHovered && (ImGui::IsMouseDown(ImGuiMouseButton_Left) ||
-      ImGui::IsMouseDown(ImGuiMouseButton_Middle) || ImGui::IsMouseDown(ImGuiMouseButton_Right));
-    editorHistory.observe(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile, animationTimeline,
-      importedModel),
-      ImGui::IsAnyItemActive() || viewportInteraction || viewportGizmoUsing);
 
     ImGui::Render();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

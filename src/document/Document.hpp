@@ -6,6 +6,7 @@
 #include "document/Properties.hpp"
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace gfxlab::document {
@@ -44,6 +45,16 @@ struct ModulationRoute {
 };
 
 struct Automation {
+  struct Timeline {
+    float currentTimeSeconds = 0.0f;
+    float durationSeconds = 4.0f;
+    float playbackRate = 1.0f;
+    bool loop = true;
+    bool autoKey = false;
+    bool showAllOperations = false;
+    bool snapToFrames = true;
+    int framesPerSecond = 24;
+  } timeline;
   std::vector<AnimationTrack> animation;
   std::vector<ModulationRoute> modulation;
 };
@@ -54,6 +65,7 @@ struct Presentation {
 };
 
 struct Document {
+  std::uint64_t nextOperationIdentity = 1;
   Scene scene;
   HardwareProfile hardwareProfile = HardwareProfile::Unrestricted;
   RenderDefaults renderDefaults;
@@ -65,5 +77,8 @@ struct Document {
 [[nodiscard]] const Operation* findOperation(const Document& document, OperationId id);
 [[nodiscard]] Operation* findOperation(Document& document, OperationId id);
 [[nodiscard]] const SignalDescriptor* findSignal(const Document& document, SignalId id);
+[[nodiscard]] OperationId nextOperationId(const Document& document);
+[[nodiscard]] std::optional<OperationId> operationFromObject(ObjectId object);
+[[nodiscard]] Document makeDefaultDocument();
 
 } // namespace gfxlab::document

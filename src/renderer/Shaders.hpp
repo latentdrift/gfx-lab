@@ -50,6 +50,7 @@ uniform int uFieldSdfOperation;
 uniform float uFieldSdfSmoothness;
 uniform float uFieldSdfPreviewRange;
 uniform float uFieldIsoLevel;
+uniform float uTimeSeconds;
 uniform sampler2D uSimulationMatter;
 uniform sampler2D uSimulationDynamics;
 uniform int uSimulationChannel;
@@ -73,6 +74,13 @@ float sdfPrimitive(vec3 p, int type, vec3 parameters) {
     vec3 q = abs(p) - max(parameters, vec3(0.001));
     return length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
   }
+  if (type == 3) {
+    float w = sin(uTimeSeconds * max(abs(parameters.y), 0.01)) * parameters.z;
+    return length(vec4(p, w)) - max(parameters.x, 0.001);
+  }
+  if (type == 4)
+    return length(p) - max(parameters.x + sin(uTimeSeconds * max(abs(parameters.y), 0.01)) * parameters.z,
+      0.001);
   vec2 q = vec2(length(p.xz) - max(parameters.x, 0.001), p.y);
   return length(q) - max(parameters.y, 0.001);
 }
@@ -897,6 +905,7 @@ uniform vec3 uSdfBPosition;
 uniform vec3 uSdfBParameters;
 uniform int uSdfOperation;
 uniform float uSdfSmoothness;
+uniform float uTimeSeconds;
 uniform sampler2D uSimulationMatter;
 uniform sampler2D uSimulationDynamics;
 uniform int uSimulationChannel;
@@ -908,6 +917,13 @@ float sdfPrimitive(vec3 p, int type, vec3 parameters) {
     vec3 q = abs(p) - parameters;
     return length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
   }
+  if (type == 3) {
+    float w = sin(uTimeSeconds * max(abs(parameters.y), 0.01)) * parameters.z;
+    return length(vec4(p, w)) - parameters.x;
+  }
+  if (type == 4)
+    return length(p) - max(parameters.x + sin(uTimeSeconds * max(abs(parameters.y), 0.01)) * parameters.z,
+      0.001);
   vec2 q = vec2(length(p.xz) - parameters.x, p.y);
   return length(q) - parameters.y;
 }
@@ -989,6 +1005,7 @@ uniform vec3 uSdfBParameters;
 uniform int uSdfOperation;
 uniform float uSdfSmoothness;
 uniform float uIsoLevel;
+uniform float uTimeSeconds;
 uniform int uMaximumSteps;
 uniform float uHitEpsilon;
 uniform float uMaximumDistance;
@@ -1003,6 +1020,13 @@ float sdfPrimitive(vec3 p, int type, vec3 parameters) {
     vec3 q = abs(p) - parameters;
     return length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
   }
+  if (type == 3) {
+    float w = sin(uTimeSeconds * max(abs(parameters.y), 0.01)) * parameters.z;
+    return length(vec4(p, w)) - parameters.x;
+  }
+  if (type == 4)
+    return length(p) - max(parameters.x + sin(uTimeSeconds * max(abs(parameters.y), 0.01)) * parameters.z,
+      0.001);
   vec2 q = vec2(length(p.xz) - parameters.x, p.y);
   return length(q) - parameters.y;
 }
@@ -1222,6 +1246,7 @@ uniform int uFieldSdfOperation;
 uniform float uFieldSdfSmoothness;
 uniform float uFieldSdfPreviewRange;
 uniform float uFieldIsoLevel;
+uniform float uTimeSeconds;
 out float vShadowFieldSignal;
 
 float sdfPrimitive(vec3 p, int type, vec3 parameters) {
@@ -1230,6 +1255,13 @@ float sdfPrimitive(vec3 p, int type, vec3 parameters) {
     vec3 q = abs(p) - max(parameters, vec3(0.001));
     return length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
   }
+  if (type == 3) {
+    float w = sin(uTimeSeconds * max(abs(parameters.y), 0.01)) * parameters.z;
+    return length(vec4(p, w)) - max(parameters.x, 0.001);
+  }
+  if (type == 4)
+    return length(p) - max(parameters.x + sin(uTimeSeconds * max(abs(parameters.y), 0.01)) * parameters.z,
+      0.001);
   vec2 q = vec2(length(p.xz) - max(parameters.x, 0.001), p.y);
   return length(q) - max(parameters.y, 0.001);
 }

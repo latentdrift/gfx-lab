@@ -437,7 +437,8 @@ public:
   GLuint render(const RendererState& state, const CameraOrbit& camera, TestScene scene, const std::size_t targetIndex,
       const PassPerturbation& perturbation = {}, const PassOutput output = PassOutput::Color,
       const TextureSource textureSource = TextureSource::SceneMaterial,
-      const TextureAsset* importedTexture = nullptr, const bool importedTextureSrgb = true) {
+      const TextureAsset* importedTexture = nullptr, const bool importedTextureSrgb = true,
+      const float localTimeSeconds = 0.0f) {
     if (targetIndex >= passTargets_.size()) return 0;
     RenderTarget& target = passTargets_[targetIndex];
     const glm::mat4 passTransform = glm::translate(glm::mat4(1.0f), perturbation.modelTranslation) *
@@ -466,6 +467,7 @@ public:
       glClearDepth(1.0);
       glClear(GL_DEPTH_BUFFER_BIT);
       glUseProgram(shadowProgram_);
+      glUniform1f(glGetUniformLocation(shadowProgram_, "uTimeSeconds"), localTimeSeconds);
       glUniformMatrix4fv(glGetUniformLocation(shadowProgram_, "uLightSpace"), 1, GL_FALSE, glm::value_ptr(lightSpace));
       glUniform1f(glGetUniformLocation(shadowProgram_, "uQuantization"), state.geometry.vertexQuantization);
       glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldEnabled"), state.field.enabled);
@@ -579,6 +581,7 @@ public:
     glDepthMask(state.depth.writing && !orderingTableActive ? GL_TRUE : GL_FALSE);
 
     glUseProgram(sceneProgram_);
+    glUniform1f(location("uTimeSeconds"), localTimeSeconds);
     const glm::mat4 model = glm::rotate(glm::mat4(1.0f), glm::radians(-14.0f), glm::vec3(1, 0, 0));
     const float aspect = static_cast<float>(target.width) / static_cast<float>(target.height);
     const PassCameraMatrices passCamera = buildPassCamera(camera, state, perturbation, aspect);
@@ -953,6 +956,7 @@ public:
       glDisable(GL_CULL_FACE);
       glDisable(GL_BLEND);
       glUseProgram(sdfIsoProgram_);
+      glUniform1f(glGetUniformLocation(sdfIsoProgram_, "uTimeSeconds"), localTimeSeconds);
       const glm::mat4 viewProjection = projection * view;
       const glm::mat4 inverseViewProjection = glm::inverse(viewProjection);
       glUniformMatrix4fv(glGetUniformLocation(sdfIsoProgram_, "uInverseViewProjection"), 1, GL_FALSE,
@@ -1001,6 +1005,7 @@ public:
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(fieldProgram_);
+    glUniform1f(glGetUniformLocation(fieldProgram_, "uTimeSeconds"), localTimeSeconds);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, target.depthTexture);
     glUniform1i(glGetUniformLocation(fieldProgram_, "uDepth"), 0);
@@ -1304,108 +1309,266 @@ public:
     return relationTextures_[outputIndex];
   }
 
-  GLuint composite(const RenderStack& stack) {
+  GLuint evaluate(const document::Document& document, const evaluation::EvaluationPlan& plan,
+      evaluation::SignalRegistry& signals, const std::uint64_t revision,
+      const float timeSeconds) {
+    signals.clear();
     operationTextures_.fill(0);
-    GLuint accumulated = 0;
-    for (std::size_t passIndex = 0; passIndex < stack.passes().size(); ++passIndex) {
-      const RenderPass& pass = stack.passes()[passIndex];
-      if (!pass.enabled) continue;
-      const bool rendersScene = pass.kind == StackOperationKind::Render ||
-        pass.kind == StackOperationKind::LegacyRenderComposite;
-      const GLuint passTexture = rendersScene ? passTargets_[passIndex].outputTexture : accumulated;
-      if (pass.kind == StackOperationKind::Render) {
-        operationTextures_[passIndex] = passTexture;
-        if (accumulated == 0) accumulated = passTexture;
-        continue;
+    std::unordered_map<document::OperationId, std::size_t> targetByOperation;
+    std::unordered_map<document::SignalId, std::size_t> targetBySignal;
+
+    const auto applyTracks = [&](RenderPass& pass, const document::ObjectId owner) {
+      for (const document::AnimationTrack& track : document.automation.animation) {
+        if (track.target.owner != owner || track.keyframes.empty()) continue;
+        const std::optional<AnimationProperty> property =
+          document::animationProperty(track.target.property);
+        if (!property.has_value()) continue;
+        const PropertyAnimationTrack legacyTrack{*property, track.interpolation, track.keyframes};
+        setAnimationPropertyValue(pass, *property, samplePropertyTrack(legacyTrack, timeSeconds));
       }
-      if (pass.kind == StackOperationKind::LegacyRenderComposite && accumulated == 0) {
-        accumulated = passTexture;
-        operationTextures_[passIndex] = passTexture;
-        continue;
-      }
-      const auto passIndexForId = [&](const int sourcePassId) {
-        const auto found = std::find_if(stack.passes().begin(), stack.passes().end(),
-          [sourcePassId](const RenderPass& candidate) { return candidate.id == sourcePassId; });
-        return found == stack.passes().end() ? passIndex :
-          static_cast<std::size_t>(std::distance(stack.passes().begin(), found));
-      };
-      const auto sourceTexture = [&](const CompositeSource source, const int sourcePassId) {
-        switch (source) {
-        case CompositeSource::Accumulator: return accumulated;
-        case CompositeSource::CurrentPass: return rendersScene ? passTexture : accumulated;
-        case CompositeSource::RenderPass: {
-          const std::size_t sourceIndex = passIndexForId(sourcePassId);
-          return operationTextures_[sourceIndex] != 0 ? operationTextures_[sourceIndex]
-            : passTargets_[sourceIndex].outputTexture;
+    };
+    const auto renderState = [&](const document::Operation& operation,
+        const document::RenderOperation& data) {
+      RenderPass pass;
+      pass.id = static_cast<int>(operation.id.value);
+      pass.name = operation.name;
+      pass.enabled = operation.enabled;
+      pass.renderer = document.renderDefaults.renderer;
+      pass.textureSource = document.renderDefaults.texture.source;
+      pass.importedTexture = document.renderDefaults.texture.imported;
+      pass.importedTextureSrgb = document.renderDefaults.texture.srgb;
+      applyTracks(pass, document::renderDefaultsObject);
+      pass.perturbation = data.perturbation;
+      pass.output = data.presentedOutput;
+      pass.textureSource = data.texture.source;
+      pass.importedTexture = data.texture.imported;
+      pass.importedTextureSrgb = data.texture.srgb;
+      for (const PropertyOverride& overrideValue : data.overrides)
+        setAnimationPropertyValue(pass, overrideValue.property, overrideValue.value);
+      applyTracks(pass, document::operationObject(operation.id));
+      return pass;
+    };
+    const auto signalResource = [&](const document::SignalRef signal)
+        -> const evaluation::SignalResource* {
+      return signal.frameOffset < 0 ? nullptr : signals.find(signal.id);
+    };
+    const auto signalTexture = [&](const document::SignalRef signal) {
+      if (signal.frameOffset < 0) return historyTexture_;
+      const evaluation::SignalResource* resource = signalResource(signal);
+      return resource == nullptr || resource->textureCount == 0 ? 0U : resource->textures[0];
+    };
+    const auto signalSpectrum = [&](const document::SignalRef signal) {
+      const evaluation::SignalResource* resource = signalResource(signal);
+      return resource == nullptr || resource->textureCount != 4
+        ? std::array<GLuint, 4>{} : resource->textures;
+    };
+    const auto signalTarget = [&](const document::SignalRef signal) -> const RenderTarget* {
+      const auto found = targetBySignal.find(signal.id);
+      return found == targetBySignal.end() ? nullptr : &passTargets_[found->second];
+    };
+    const auto constantValue = [&](const document::SignalRef signal) -> std::optional<glm::vec4> {
+      const document::SignalDescriptor* descriptor = document::findSignal(document, signal.id);
+      const document::Operation* producer = descriptor == nullptr
+        ? nullptr : document::findOperation(document, descriptor->producer);
+      if (producer == nullptr) return std::nullopt;
+      const auto* constant = std::get_if<document::ConstantOperation>(&producer->data);
+      return constant == nullptr ? std::nullopt : std::optional{constant->value};
+    };
+    const auto publish = [&](const document::Operation& operation,
+        const std::size_t targetIndex, const GLuint primaryTexture) {
+      for (const document::SignalDescriptor& descriptor : operation.outputs) {
+        evaluation::SignalResource resource;
+        resource.descriptor = descriptor;
+        resource.revision = revision;
+        switch (descriptor.kind) {
+          case document::SignalKind::Color:
+          case document::SignalKind::Normal:
+            resource.textures[0] = primaryTexture;
+            resource.textureCount = primaryTexture == 0 ? 0 : 1;
+            break;
+          case document::SignalKind::Depth:
+            resource.textures[0] = passTargets_[targetIndex].depthTexture;
+            resource.textureCount = resource.textures[0] == 0 ? 0 : 1;
+            break;
+          case document::SignalKind::Field:
+            resource.textures[0] = passTargets_[targetIndex].fieldTexture;
+            resource.textureCount = resource.textures[0] == 0 ? 0 : 1;
+            break;
+          case document::SignalKind::Spectrum16:
+            resource.textures = passTargets_[targetIndex].spectralTextures;
+            resource.textureCount = resource.textures[0] == 0 ? 0 : 4;
+            break;
+          case document::SignalKind::Scalar:
+            // Scalar operations retain their sampled image as a readback carrier. The scalar
+            // value itself is published after reduction by the measurement runtime.
+            resource.textures[0] = primaryTexture;
+            resource.textureCount = primaryTexture == 0 ? 0 : 1;
+            break;
+          case document::SignalKind::Vector2: break;
         }
-        case CompositeSource::FixedColor: return passTexture;
-        case CompositeSource::PreviousFrame: return historyTexture_;
-        case CompositeSource::RenderPassField:
-          return passTargets_[passIndexForId(sourcePassId)].fieldTexture;
-        case CompositeSource::RenderPassSpectrum:
-          return passTargets_[passIndexForId(sourcePassId)].outputTexture;
+        signals.publish(std::move(resource));
+        targetBySignal[descriptor.id] = targetIndex;
+      }
+    };
+    const auto evaluatedOperation = [&](const document::Operation& source) {
+      document::Operation result = source;
+      RenderPass carrier;
+      carrier.enabled = source.enabled;
+      if (const auto* data = std::get_if<document::CompositeOperation>(&source.data)) {
+        carrier.composite.interpretationA = data->interpretationA;
+        carrier.composite.interpretationB = data->interpretationB;
+        carrier.composite.observerExposureStops = data->observer.exposureStops;
+        carrier.composite.rodSensitivity = data->observer.rodSensitivity;
+        carrier.composite.opponentGain = data->observer.opponentGain;
+        carrier.composite.operation = data->arithmetic.operation;
+        carrier.composite.gain = data->arithmetic.gain;
+        carrier.composite.bias = data->arithmetic.bias;
+        carrier.composite.opacity = data->arithmetic.opacity;
+        carrier.composite.bitDepth = data->arithmetic.bitDepth;
+        carrier.composite.colorSpace = data->arithmetic.colorSpace;
+        carrier.composite.range = data->arithmetic.range;
+        carrier.composite.mask = data->mask;
+        carrier.composite.invertMask = data->invertMask;
+        if (data->feedback.has_value()) {
+          carrier.composite.historyDecay = data->feedback->decay;
+          carrier.composite.historyUvOffset = data->feedback->uvOffset;
+          carrier.composite.historyUvScale = data->feedback->uvScale;
         }
-        return passTexture;
-      };
-      if (pass.kind == StackOperationKind::Measure) {
-        // A measurement is a control tap: it leaves the image accumulator unchanged while keeping
-        // its source available for CPU reduction and next-frame property modulation.
-        operationTextures_[passIndex] = sourceTexture(pass.composite.sourceA,
-          pass.composite.sourceAPassId);
-        continue;
+      } else if (const auto* data = std::get_if<document::InterpretOperation>(&source.data)) {
+        carrier.composite.interpretationA = data->observer;
+        carrier.composite.gain = data->gain;
+        carrier.composite.bias = data->bias;
+      } else if (const auto* data = std::get_if<document::StereoOperation>(&source.data)) {
+        carrier.stereoAnalysis = data->mode;
+        carrier.stereoMaximumDisparityPixels = data->maximumDisparityPixels;
+        carrier.stereoOcclusionTolerance = data->occlusionTolerance;
       }
-      if (pass.kind == StackOperationKind::StereoAnalysis) {
-        const std::size_t leftIndex = passIndexForId(pass.composite.sourceAPassId);
-        const std::size_t rightIndex = passIndexForId(pass.composite.sourceBPassId);
-        accumulated = analyzeStereo(passTargets_[leftIndex], passTargets_[rightIndex], pass, passIndex);
-        operationTextures_[passIndex] = accumulated;
-        continue;
+      applyTracks(carrier, document::operationObject(source.id));
+      result.enabled = carrier.enabled;
+      if (auto* data = std::get_if<document::CompositeOperation>(&result.data)) {
+        data->interpretationA = carrier.composite.interpretationA;
+        data->interpretationB = carrier.composite.interpretationB;
+        data->observer = {carrier.composite.observerExposureStops,
+          carrier.composite.rodSensitivity, carrier.composite.opponentGain};
+        data->arithmetic = {carrier.composite.operation, carrier.composite.gain,
+          carrier.composite.bias, carrier.composite.opacity, carrier.composite.bitDepth,
+          carrier.composite.colorSpace, carrier.composite.range};
+        data->mask = carrier.composite.mask;
+        data->invertMask = carrier.composite.invertMask;
+        if (data->feedback.has_value()) data->feedback = document::FeedbackSettings{
+          carrier.composite.historyDecay, carrier.composite.historyUvOffset,
+          carrier.composite.historyUvScale};
+      } else if (auto* data = std::get_if<document::InterpretOperation>(&result.data)) {
+        data->observer = carrier.composite.interpretationA;
+        data->gain = carrier.composite.gain;
+        data->bias = carrier.composite.bias;
+      } else if (auto* data = std::get_if<document::StereoOperation>(&result.data)) {
+        data->mode = carrier.stereoAnalysis;
+        data->maximumDisparityPixels = carrier.stereoMaximumDisparityPixels;
+        data->occlusionTolerance = carrier.stereoOcclusionTolerance;
       }
-      CompositeStep step = pass.composite;
-      if (pass.kind == StackOperationKind::Interpret) {
-        step.sourceB = step.sourceA;
-        step.sourceBPassId = step.sourceAPassId;
-        step.interpretationB = step.interpretationA;
+      return result;
+    };
+
+    for (std::size_t nodeIndex = 0; nodeIndex < plan.nodes.size(); ++nodeIndex) {
+      if (nodeIndex >= passTargets_.size()) break;
+      const document::Operation* authored = document::findOperation(document,
+        plan.nodes[nodeIndex].operation);
+      if (authored == nullptr) continue;
+      const document::Operation evaluated = evaluatedOperation(*authored);
+      const document::Operation* operation = &evaluated;
+      if (!operation->enabled) continue;
+      targetByOperation[operation->id] = nodeIndex;
+      GLuint output = 0;
+      if (const auto* data = std::get_if<document::RenderOperation>(&operation->data)) {
+        RenderPass pass = renderState(*operation, *data);
+        document::TimeTransform time = data->time;
+        for (const document::AnimationTrack& track : document.automation.animation) {
+          if (track.target.owner != document::operationObject(operation->id) || track.keyframes.empty()) continue;
+          const PropertyAnimationTrack sampled{AnimationProperty::Ambient,
+            track.interpolation, track.keyframes};
+          if (track.target.property == document::timeScaleProperty())
+            time.scale = samplePropertyTrack(sampled, timeSeconds).x;
+          else if (track.target.property == document::timeOffsetProperty())
+            time.offsetSeconds = samplePropertyTrack(sampled, timeSeconds).x;
+        }
+        normalizeForHardwareProfile(document.hardwareProfile, pass.renderer);
+        output = render(pass.renderer, document.scene.authoredCamera, document.scene.testScene,
+          nodeIndex, pass.perturbation, pass.output, pass.textureSource,
+          pass.importedTexture.get(), pass.importedTextureSrgb, time.apply(timeSeconds));
+      } else if (std::holds_alternative<document::ConstantOperation>(operation->data)) {
+        for (const document::SignalDescriptor& descriptor : operation->outputs) {
+          evaluation::SignalResource resource;
+          resource.descriptor = descriptor;
+          resource.revision = revision;
+          signals.publish(std::move(resource));
+        }
+        continue;
+      } else if (const auto* data = std::get_if<document::InterpretOperation>(&operation->data)) {
+        CompositeStep step;
+        step.sourceA = CompositeSource::RenderPassSpectrum;
+        step.sourceB = CompositeSource::RenderPassSpectrum;
+        step.interpretationA = data->observer;
+        step.interpretationB = data->observer;
+        step.observerExposureStops = data->exposureStops;
         step.operation = RelationOperator::Maximum;
+        step.gain = data->gain;
+        step.bias = data->bias;
         step.opacity = 1.0f;
+        const auto spectrum = signalSpectrum(data->spectrum);
+        output = compositeTextures(signalTexture(data->spectrum), signalTexture(data->spectrum),
+          0, 0, spectrum, spectrum, RendererState{}, step, nodeIndex);
+      } else if (const auto* data = std::get_if<document::CompositeOperation>(&operation->data)) {
+        CompositeStep step;
+        step.sourceA = data->a.frameOffset < 0 ? CompositeSource::PreviousFrame : CompositeSource::RenderPass;
+        step.sourceB = data->b.frameOffset < 0 ? CompositeSource::PreviousFrame : CompositeSource::RenderPass;
+        const std::optional<glm::vec4> constantA = constantValue(data->a);
+        const std::optional<glm::vec4> constantB = constantValue(data->b);
+        if (constantA.has_value()) { step.sourceA = CompositeSource::FixedColor; step.fixedColor = *constantA; }
+        if (constantB.has_value()) { step.sourceB = CompositeSource::FixedColor; step.fixedColor = *constantB; }
+        step.interpretationA = data->interpretationA;
+        step.interpretationB = data->interpretationB;
+        step.observerExposureStops = data->observer.exposureStops;
+        step.rodSensitivity = data->observer.rodSensitivity;
+        step.opponentGain = data->observer.opponentGain;
+        step.operation = data->arithmetic.operation;
+        step.gain = data->arithmetic.gain;
+        step.bias = data->arithmetic.bias;
+        step.opacity = data->arithmetic.opacity;
+        step.bitDepth = data->arithmetic.bitDepth;
+        step.colorSpace = data->arithmetic.colorSpace;
+        step.range = data->arithmetic.range;
+        step.mask = data->mask;
+        step.invertMask = data->invertMask;
+        if (data->feedback.has_value()) {
+          step.historyDecay = data->feedback->decay;
+          step.historyUvOffset = data->feedback->uvOffset;
+          step.historyUvScale = data->feedback->uvScale;
+        }
+        const RenderTarget* mask = signalTarget(data->b);
+        output = compositeTextures(signalTexture(data->a), signalTexture(data->b),
+          mask == nullptr ? 0 : mask->depthTexture, mask == nullptr ? 0 : mask->fieldTexture,
+          signalSpectrum(data->a), signalSpectrum(data->b), document.renderDefaults.renderer,
+          step, nodeIndex);
+      } else if (const auto* data = std::get_if<document::StereoOperation>(&operation->data)) {
+        const RenderTarget* left = signalTarget(data->left);
+        const RenderTarget* right = signalTarget(data->right);
+        if (left != nullptr && right != nullptr) {
+          RenderPass settings;
+          settings.stereoAnalysis = data->mode;
+          settings.stereoMaximumDisparityPixels = data->maximumDisparityPixels;
+          settings.stereoOcclusionTolerance = data->occlusionTolerance;
+          output = analyzeStereo(*left, *right, settings, nodeIndex);
+        }
+      } else if (const auto* data = std::get_if<document::MeasureOperation>(&operation->data)) {
+        output = signalTexture(data->input);
       }
-      const GLuint imageA = sourceTexture(step.sourceA, step.sourceAPassId);
-      const GLuint imageB = sourceTexture(step.sourceB, step.sourceBPassId);
-      const auto sourceSpectrum = [&](const CompositeSource source, const int sourcePassId) {
-        return source == CompositeSource::RenderPassSpectrum
-          ? passTargets_[passIndexForId(sourcePassId)].spectralTextures : std::array<GLuint, 4>{};
-      };
-      const std::array<GLuint, 4> spectrumA = sourceSpectrum(step.sourceA, step.sourceAPassId);
-      const std::array<GLuint, 4> spectrumB = sourceSpectrum(step.sourceB, step.sourceBPassId);
-      std::size_t maskPassIndex = passIndex;
-      if (step.sourceB == CompositeSource::RenderPass ||
-          step.sourceB == CompositeSource::RenderPassField ||
-          step.sourceB == CompositeSource::RenderPassSpectrum)
-        maskPassIndex = passIndexForId(step.sourceBPassId);
-      accumulated = compositeTextures(imageA, imageB, passTargets_[maskPassIndex].depthTexture,
-        passTargets_[maskPassIndex].fieldTexture, spectrumA, spectrumB, pass.renderer, step,
-        passIndex);
-      operationTextures_[passIndex] = accumulated;
+      operationTextures_[nodeIndex] = output;
+      publish(*operation, nodeIndex, output);
     }
-    if (accumulated != 0) copyToFrameHistory(accumulated);
-    return accumulated;
-  }
-
-  [[nodiscard]] GLuint stackOperationResult(const std::size_t operationIndex) const {
-    return operationIndex < operationTextures_.size() ? operationTextures_[operationIndex] : 0;
-  }
-
-  [[nodiscard]] GLuint stackOperationDepthResult(const std::size_t operationIndex) const {
-    return operationIndex < passTargets_.size() ? passTargets_[operationIndex].depthTexture : 0;
-  }
-
-  [[nodiscard]] GLuint stackOperationFieldResult(const std::size_t operationIndex) const {
-    return operationIndex < passTargets_.size() ? passTargets_[operationIndex].fieldTexture : 0;
-  }
-
-  [[nodiscard]] std::array<GLuint, 4> stackOperationSpectrumResult(const std::size_t operationIndex) const {
-    return operationIndex < passTargets_.size() ? passTargets_[operationIndex].spectralTextures
-      : std::array<GLuint, 4>{};
+    const GLuint finalTexture = signals.displayTexture(document.presentation.input.id);
+    if (finalTexture != 0) copyToFrameHistory(finalTexture);
+    return finalTexture;
   }
 
   void resetFrameHistory() {
@@ -1698,18 +1861,10 @@ unsigned int Renderer::renderPass(const RenderPass& pass, const CameraOrbit& cam
     pass.textureSource, pass.importedTexture.get(), pass.importedTextureSrgb);
 }
 
-unsigned int Renderer::composite(const RenderStack& stack) { return impl_->composite(stack); }
-unsigned int Renderer::stackOperationResult(const std::size_t operationIndex) const {
-  return impl_->stackOperationResult(operationIndex);
-}
-unsigned int Renderer::stackOperationDepthResult(const std::size_t operationIndex) const {
-  return impl_->stackOperationDepthResult(operationIndex);
-}
-unsigned int Renderer::stackOperationFieldResult(const std::size_t operationIndex) const {
-  return impl_->stackOperationFieldResult(operationIndex);
-}
-std::array<unsigned int, 4> Renderer::stackOperationSpectrumResult(const std::size_t operationIndex) const {
-  return impl_->stackOperationSpectrumResult(operationIndex);
+unsigned int Renderer::evaluate(const document::Document& document,
+    const evaluation::EvaluationPlan& plan, evaluation::SignalRegistry& signals,
+    const std::uint64_t revision, const float timeSeconds) {
+  return impl_->evaluate(document, plan, signals, revision, timeSeconds);
 }
 unsigned int Renderer::texturePreview(const TextureAsset* texture) { return impl_->texturePreview(texture); }
 unsigned int Renderer::reconstructDisplay(const unsigned int sourceTexture,

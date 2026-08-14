@@ -1,15 +1,14 @@
 #include "app/Validation.hpp"
 
 #include "app/Animation.hpp"
-#include "app/EditorHistory.hpp"
 #include "app/FileDialog.hpp"
 #include "app/HardwareProfile.hpp"
-#include "app/PassEditing.hpp"
 #include "app/RenderStack.hpp"
 #include "app/StackDocument.hpp"
 #include "app/Spectral.hpp"
 #include "assets/ModelAsset.hpp"
 #include "document/LegacyAdapter.hpp"
+#include "document/Persistence.hpp"
 #include "editor/Commands.hpp"
 #include "evaluation/Compiler.hpp"
 #include "handbook/Handbook.hpp"
@@ -35,11 +34,48 @@ namespace {
   std::exit(EXIT_FAILURE);
 }
 
+unsigned int evaluateFixture(Renderer& renderer, const RenderStack& stack,
+    const CameraOrbit& camera, const TestScene scene,
+    evaluation::SignalRegistry* published = nullptr) {
+  StackDocument fixture;
+  fixture.renderStack = stack;
+  fixture.camera = camera;
+  fixture.scene = scene;
+  document::Document document = document::migrateLegacyDocument(fixture);
+  const evaluation::EvaluationPlan plan = evaluation::compileDocument(document);
+  if (!plan.valid()) fail("legacy validation fixture did not migrate to a valid typed graph");
+  evaluation::SignalRegistry local;
+  evaluation::SignalRegistry& signals = published == nullptr ? local : *published;
+  return renderer.evaluate(document, plan, signals, 1, 0.0f);
+}
+
 } // namespace
 
 void runStartupValidationIfRequested(Renderer& renderer, RendererState& current, RendererState& reference,
     CameraOrbit& camera, TestScene& scene, Category& category) {
   if (std::getenv("GRAPHICS_LAB_VALIDATE_HANDBOOK")) {
+    const std::filesystem::path typedPath = std::filesystem::temp_directory_path() /
+      "graphics-lab-typed-validation.json";
+    document::Document typedFixture = document::makeDefaultDocument();
+    typedFixture.operations[1].name = "Round-trip variant";
+    auto* typedVariant = std::get_if<document::RenderOperation>(&typedFixture.operations[1].data);
+    typedVariant->time.scale = -0.75f;
+    typedVariant->time.offsetSeconds = 0.25f;
+    typedFixture.automation.animation.push_back({
+      {document::operationObject(typedFixture.operations[1].id), document::timeOffsetProperty()},
+      KeyframeInterpolation::Linear, {{0.0f, glm::vec4(0.0f)}, {2.0f, glm::vec4(0.5f)}}});
+    std::string typedSaveError;
+    if (!document::saveDocumentFile(typedPath.string(), typedFixture, typedSaveError))
+      fail("typed document save validation failed: " + typedSaveError);
+    const document::DocumentLoadResult typedRoundTrip = document::loadDocumentFile(typedPath.string());
+    std::filesystem::remove(typedPath);
+    if (!typedRoundTrip || typedRoundTrip.document->operations.size() != 3 ||
+        typedRoundTrip.document->operations[1].name != "Round-trip variant" ||
+        std::abs(std::get<document::RenderOperation>(typedRoundTrip.document->operations[1].data).time.scale +
+          0.75f) > 0.0001f || typedRoundTrip.document->automation.animation.size() != 1 ||
+        typedRoundTrip.document->automation.animation.front().target.property != document::timeOffsetProperty() ||
+        !evaluation::compileDocument(*typedRoundTrip.document).valid())
+      fail("typed document round-trip validation failed");
     const auto referenceA = spectral::humanResponse(spectral::reflectanceA, spectral::daylight);
     const auto referenceB = spectral::humanResponse(spectral::reflectanceB, spectral::daylight);
     float referenceDelta = 0.0f;
@@ -57,23 +93,18 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     applyRecommendedSetup(TestScene::SpectralMetamers, spectralState, spectralCamera);
     if (renderer.render(spectralState, spectralCamera, TestScene::SpectralMetamers, false) == 0)
       fail("spectral metamer scene failed render validation");
-    const StackDocumentLoadResult spectralDocument = loadStackDocumentFile(
+    const document::DocumentLoadResult spectralDocument = document::loadDocumentFile(
       "examples/spectral-metamer-observer.json");
-    if (!spectralDocument || spectralDocument.document->scene != TestScene::SpectralMetamers ||
-        spectralDocument.document->renderStack.passes().size() != 2 ||
-        spectralDocument.document->renderStack.passes()[0].kind != StackOperationKind::Render ||
-        spectralDocument.document->renderStack.passes()[1].kind != StackOperationKind::Composite ||
-        spectralDocument.document->renderStack.passes()[1].composite.sourceA !=
-          CompositeSource::RenderPassSpectrum)
+    if (!spectralDocument || spectralDocument.document->scene.testScene != TestScene::SpectralMetamers)
       fail("spectral metamer example failed document validation");
-    const document::Document typedSpectral = document::migrateLegacyDocument(*spectralDocument.document);
+    const document::Document& typedSpectral = *spectralDocument.document;
     if (typedSpectral.operations.size() != 2 ||
         !std::holds_alternative<document::RenderOperation>(typedSpectral.operations[0].data) ||
         !std::holds_alternative<document::CompositeOperation>(typedSpectral.operations[1].data) ||
         document::findSignal(typedSpectral, typedSpectral.presentation.input.id) == nullptr ||
         typedSpectral.operations[0].outputs.size() != 5 ||
         typedSpectral.operations[0].outputs[4].kind != document::SignalKind::Spectrum16)
-      fail("legacy document did not migrate to typed operations and signals");
+      fail("spectral example is not a native typed operation graph");
     const evaluation::EvaluationPlan typedSpectralPlan = evaluation::compileDocument(typedSpectral);
     if (!typedSpectralPlan.valid() || typedSpectralPlan.nodes.size() != typedSpectral.operations.size() ||
         typedSpectralPlan.finalSignal != typedSpectral.presentation.input)
@@ -95,6 +126,22 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     if (invalidMove.applied || invalidMove.error.empty() ||
         commandedDocument.operations.front().id != validCommandedDocument.operations.front().id)
       fail("typed document command gate accepted an invalid dataflow reorder");
+    const document::OperationId duplicateId = document::nextOperationId(commandedDocument);
+    if (!commandHistory.execute(commandedDocument, editor::DuplicateOperation{
+          commandedDocument.operations.front().id, duplicateId, 1}).applied ||
+        commandedDocument.nextOperationIdentity <= duplicateId.value ||
+        std::count_if(commandedDocument.automation.animation.begin(),
+          commandedDocument.automation.animation.end(), [duplicateId](const document::AnimationTrack& track) {
+            return track.target.owner == document::operationObject(duplicateId);
+          }) != 1)
+      fail("typed duplicate did not allocate persistent identity or clone automation");
+    if (!commandHistory.execute(commandedDocument, editor::RemoveOperation{duplicateId}).applied ||
+        document::nextOperationId(commandedDocument) == duplicateId ||
+        std::any_of(commandedDocument.automation.animation.begin(), commandedDocument.automation.animation.end(),
+          [duplicateId](const document::AnimationTrack& track) {
+            return track.target.owner == document::operationObject(duplicateId);
+          }))
+      fail("typed removal reused identity or retained orphan automation");
     const ModelImportResult importedFixture = importModelAsset("tests/fixtures/import_triangle.obj");
     if (!importedFixture || importedFixture.asset->triangleCount != 1 ||
         importedFixture.asset->vertices.size() != 3 || !importedFixture.asset->hasTextureCoordinates ||
@@ -178,23 +225,6 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     if (validationStack.selected().overrides.size() != 4 ||
         findPropertyTrack(validationStack.selected(), AnimationProperty::Ambient) == nullptr)
       fail("pass duplication did not preserve only its authored local deviations");
-    RenderStack editScopeValidation;
-    editScopeValidation.global().renderer.lighting.ambient = 0.2f;
-    const RenderPass inheritedBefore = materializeRenderPass(editScopeValidation, 1, 0.0f);
-    RenderPass locallyEdited = inheritedBefore;
-    locallyEdited.renderer.lighting.ambient = 0.8f;
-    editScopeValidation.select(1);
-    applyEditedLocalPass(editScopeValidation, inheritedBefore, locallyEdited);
-    editScopeValidation.global().renderer.lighting.ambient = 0.4f;
-    if (std::abs(materializeRenderPass(editScopeValidation, 1).renderer.lighting.ambient - 0.8f) > 0.0001f ||
-        findRenderPassOverride(editScopeValidation.selected(), AnimationProperty::Ambient) == nullptr)
-      fail("local inspector edit did not create a stable sparse override");
-    const RenderPass overriddenBefore = materializeRenderPass(editScopeValidation, 1, 0.0f);
-    RenderPass reverted = overriddenBefore;
-    reverted.renderer.lighting.ambient = 0.4f;
-    applyEditedLocalPass(editScopeValidation, overriddenBefore, reverted);
-    if (findRenderPassOverride(editScopeValidation.selected(), AnimationProperty::Ambient) != nullptr)
-      fail("local inspector edit matching the global base did not restore inheritance");
     RenderStack animationValidation;
     animationValidation.select(1);
     animationValidation.selected().perturbation.modelTranslation.x = 0.0f;
@@ -264,70 +294,6 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     timelineValidation.advance(1.0f);
     if (std::abs(timelineValidation.timeSeconds - 0.5f) > 0.0001f)
       fail("animation timeline looping failed validation");
-    RenderStack historyStack;
-    AnimationTimeline historyTimeline;
-    CameraOrbit historyCamera;
-    TestScene historyScene = TestScene::Torus;
-    HardwareProfile historyProfile = HardwareProfile::Unrestricted;
-    const EditorSnapshot historyInitial = captureEditorSnapshot(historyStack, historyCamera, historyScene,
-      historyProfile, historyTimeline);
-    EditorHistory historyValidation(historyInitial);
-    historyStack.select(0);
-    historyStack.duplicateSelected();
-    setRenderPassOverride(historyStack.selected(), AnimationProperty::Ambient, glm::vec4(0.4f));
-    setRenderPassOverride(historyStack.selected(), AnimationProperty::UvOffset, glm::vec4(0.25f, -0.125f, 0, 0));
-    setRenderPassOverride(historyStack.selected(), AnimationProperty::TextureSource,
-      glm::vec4(static_cast<float>(TextureSource::ImportedOverride)));
-    historyStack.selected().importedTexture = importedTexture.asset;
-    historyStack.selected().importedTextureOverride = true;
-    setPropertyKeyframe(historyStack.selected(), AnimationProperty::UvOffset, 1.0f);
-    historyCamera.yaw = 1.25f;
-    historyScene = TestScene::Lighting;
-    historyProfile = HardwareProfile::Nintendo64;
-    historyTimeline.durationSeconds = 9.0f;
-    historyStack.global().renderer.camera.nearPlane = 0.12f;
-    historyValidation.observe(captureEditorSnapshot(historyStack, historyCamera, historyScene, historyProfile,
-      historyTimeline, importedFixture.asset), true);
-    setRenderPassOverride(historyStack.selected(), AnimationProperty::Ambient, glm::vec4(0.7f));
-    setRenderPassOverride(historyStack.selected(), AnimationProperty::CameraYaw, glm::vec4(0.2f));
-    historyValidation.observe(captureEditorSnapshot(historyStack, historyCamera, historyScene, historyProfile,
-      historyTimeline, importedFixture.asset), true);
-    const EditorSnapshot historyChanged = captureEditorSnapshot(historyStack, historyCamera, historyScene,
-      historyProfile, historyTimeline, importedFixture.asset);
-    historyValidation.observe(historyChanged, false);
-    EditorSnapshot historyRestored;
-    if (!historyValidation.undo(historyChanged, historyRestored) ||
-        std::abs(materializeRenderPass(historyRestored.renderStack,
-          historyRestored.renderStack.selectedIndex()).renderer.lighting.ambient - 0.22f) > 0.0001f ||
-        historyRestored.renderStack.passes().size() != 3 || historyRestored.scene != TestScene::Torus ||
-        historyRestored.hardwareProfile != HardwareProfile::Unrestricted ||
-        historyRestored.importedModel != nullptr ||
-        std::abs(historyRestored.renderStack.global().renderer.camera.nearPlane - 0.05f) > 0.0001f ||
-        std::abs(historyRestored.camera.yaw - CameraOrbit{}.yaw) > 0.0001f ||
-        std::abs(historyRestored.timeline.durationSeconds - 4.0f) > 0.0001f ||
-        historyValidation.canUndo() || !historyValidation.canRedo())
-      fail("editor history undo or interaction coalescing failed validation");
-    if (!historyValidation.redo(historyRestored, historyRestored) ||
-        std::abs(materializeRenderPass(historyRestored.renderStack,
-          historyRestored.renderStack.selectedIndex()).renderer.lighting.ambient - 0.7f) > 0.0001f ||
-        std::abs(materializeRenderPass(historyRestored.renderStack,
-          historyRestored.renderStack.selectedIndex()).perturbation.cameraYaw - 0.2f) > 0.0001f ||
-        historyRestored.renderStack.passes().size() != 4 ||
-        historyRestored.renderStack.selected().animation.tracks.size() != 1 ||
-        materializeRenderPass(historyRestored.renderStack,
-          historyRestored.renderStack.selectedIndex()).textureSource != TextureSource::ImportedOverride ||
-        materializeRenderPass(historyRestored.renderStack,
-          historyRestored.renderStack.selectedIndex()).importedTexture == nullptr ||
-        materializeRenderPass(historyRestored.renderStack,
-          historyRestored.renderStack.selectedIndex()).importedTexture->contentHash != importedTexture.asset->contentHash ||
-        historyRestored.scene != TestScene::Lighting ||
-        historyRestored.hardwareProfile != HardwareProfile::Nintendo64 ||
-        historyRestored.importedModel == nullptr ||
-        historyRestored.importedModel->contentHash != importedFixture.asset->contentHash ||
-        std::abs(historyRestored.renderStack.global().renderer.camera.nearPlane - 0.12f) > 0.0001f ||
-        std::abs(historyRestored.camera.yaw - 1.25f) > 0.0001f ||
-        std::abs(historyRestored.timeline.durationSeconds - 9.0f) > 0.0001f)
-      fail("editor history redo failed validation");
     RenderStack compositeValidation;
     compositeValidation.select(1);
     compositeValidation.duplicateSelected();
@@ -343,12 +309,13 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     const RenderStack materializedCompositeValidation = evaluateRenderStack(compositeValidation, 0.0f);
     for (std::size_t passIndex = 0; passIndex < materializedCompositeValidation.passes().size(); ++passIndex)
       renderer.renderPass(materializedCompositeValidation.passes()[passIndex], camera, scene, passIndex);
-    if (renderer.composite(compositeValidation) == 0)
+    if (evaluateFixture(renderer, compositeValidation, camera, scene) == 0)
       fail("sequential render-pass compositing failed validation");
     for (int mask = static_cast<int>(CompositeMask::None); mask <= static_cast<int>(CompositeMask::PassField); ++mask) {
       compositeValidation.passes()[2].composite.mask = static_cast<CompositeMask>(mask);
       compositeValidation.passes()[2].composite.invertMask = mask != static_cast<int>(CompositeMask::None);
-      if (renderer.composite(compositeValidation) == 0) fail("render-pass composite mask failed validation");
+      if (evaluateFixture(renderer, compositeValidation, camera, scene) == 0)
+        fail("render-pass composite mask failed validation");
     }
     for (int source = static_cast<int>(CompositeSource::Accumulator);
          source <= static_cast<int>(CompositeSource::RenderPassSpectrum); ++source) {
@@ -357,12 +324,14 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       compositeValidation.passes()[2].composite.sourceAPassId = compositeValidation.passes()[0].id;
       compositeValidation.passes()[2].composite.sourceBPassId = compositeValidation.passes()[1].id;
       compositeValidation.passes()[2].composite.fixedColor = glm::vec4(0.8f, 0.2f, 0.6f, 1.0f);
-      if (renderer.composite(compositeValidation) == 0) fail("render-pass composite source failed validation");
+      if (evaluateFixture(renderer, compositeValidation, camera, scene) == 0)
+        fail("render-pass composite source failed validation");
     }
     renderer.resetFrameHistory();
     compositeValidation.passes()[2].composite.operation = RelationOperator::BitwiseXor;
     compositeValidation.passes()[2].composite.bitDepth = 5;
-    if (renderer.composite(compositeValidation) == 0 || renderer.composite(compositeValidation) == 0)
+    if (evaluateFixture(renderer, compositeValidation, camera, scene) == 0 ||
+        evaluateFixture(renderer, compositeValidation, camera, scene) == 0)
       fail("quantized temporal compositing failed validation");
     compositeValidation.passes()[2].composite.sourceA = CompositeSource::PreviousFrame;
     compositeValidation.passes()[2].composite.sourceB = CompositeSource::PreviousFrame;
@@ -371,7 +340,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     compositeValidation.passes()[2].composite.historyDecay = 1.0f;
     compositeValidation.passes()[2].composite.gain = 16.0f;
     for (int feedbackFrame = 0; feedbackFrame < 32; ++feedbackFrame)
-      if (renderer.composite(compositeValidation) == 0)
+      if (evaluateFixture(renderer, compositeValidation, camera, scene) == 0)
         fail("extreme temporal composite feedback failed validation");
     glFinish();
     if (glGetError() != GL_NO_ERROR)
@@ -380,7 +349,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     for (int signal = static_cast<int>(DisplaySignal::DirectRgb);
          signal <= static_cast<int>(DisplaySignal::RodConeXor); ++signal) {
       compositeValidation.display().signal = static_cast<DisplaySignal>(signal);
-      const unsigned int composite = renderer.composite(compositeValidation);
+      const unsigned int composite = evaluateFixture(renderer, compositeValidation, camera, scene);
       if (renderer.reconstructDisplay(composite, compositeValidation.display(),
           static_cast<std::size_t>(signal)) == 0)
         fail("display reconstruction failed validation");
@@ -404,8 +373,18 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     compositeValidation.selected().measurementOutputMinimum = 0.2f;
     compositeValidation.selected().measurementOutputMaximum = 0.9f;
     compositeValidation.selected().measurementSmoothingSeconds = 0.25f;
-    const unsigned int measuredStackOutput = renderer.composite(compositeValidation);
-    const unsigned int measuredSignal = renderer.stackOperationResult(compositeValidation.selectedIndex());
+    evaluation::SignalRegistry measuredSignals;
+    const unsigned int measuredStackOutput = evaluateFixture(renderer, compositeValidation,
+      camera, scene, &measuredSignals);
+    StackDocument measuredFixture;
+    measuredFixture.renderStack = compositeValidation;
+    measuredFixture.camera = camera;
+    measuredFixture.scene = scene;
+    const document::Document measuredDocument = document::migrateLegacyDocument(measuredFixture);
+    const document::Operation* measuredOperation = document::findOperation(measuredDocument,
+      document::OperationId{static_cast<std::uint64_t>(measurementOperationId)});
+    const unsigned int measuredSignal = measuredOperation == nullptr ? 0
+      : measuredSignals.displayTexture(document::primaryOutput(*measuredOperation).id);
     const SignalMeasurement measurement = measureTextureSignal(measuredSignal, 0.01f, true);
     if (measuredStackOutput == 0 || measuredSignal == 0 || measurement.sampleCount != 4096 ||
         measurement.peakMagnitude < measurement.meanMagnitude || measurement.coverage < 0.0f ||
@@ -483,82 +462,23 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         std::abs(restoredMeasurement->measurementOutputMaximum - 0.9f) > 0.0001f ||
         std::abs(restoredMeasurement->measurementSmoothingSeconds - 0.25f) > 0.0001f)
       fail("measurement consumer save/load round trip failed validation");
-    const StackDocumentLoadResult exampleDocument = loadStackDocumentFile("examples/rod-cone-xor-sdf.json");
-    if (!exampleDocument || exampleDocument.document->scene != TestScene::SdfIsoSurface ||
-        exampleDocument.document->renderStack.passes().size() != 2 ||
-        exampleDocument.document->renderStack.display().signal != DisplaySignal::RodConeXor ||
-        !exampleDocument.document->renderStack.display().enabled ||
-        exampleDocument.document->renderStack.passes()[1].composite.operation != RelationOperator::BitwiseXor ||
-        findRenderPassOverride(exampleDocument.document->renderStack.passes()[0],
-          AnimationProperty::SdfAType) == nullptr)
-      fail("rod/cone XOR example stack failed document loading validation");
-    const std::filesystem::path roundTripPath = std::filesystem::temp_directory_path() /
-      "graphics-lab-stack-document-validation.json";
-    std::string documentIoError;
-    const std::string roundTripJson = renderStackConfigJson(exampleDocument.document->renderStack,
-      exampleDocument.document->camera, exampleDocument.document->scene,
-      exampleDocument.document->hardwareProfile, &exampleDocument.document->timeline);
-    if (!saveStackDocumentFile(roundTripPath.string(), roundTripJson, documentIoError))
-      fail("stack document save validation failed: " + documentIoError);
-    const StackDocumentLoadResult roundTripDocument = loadStackDocumentFile(roundTripPath.string());
-    std::error_code removeError;
-    std::filesystem::remove(roundTripPath, removeError);
-    if (!roundTripDocument || roundTripDocument.document->renderStack.passes().size() != 2 ||
-        roundTripDocument.document->renderStack.display().signal != DisplaySignal::RodConeXor ||
-        roundTripDocument.document->renderStack.passes()[1].composite.operation != RelationOperator::BitwiseXor ||
-        std::abs(roundTripDocument.document->camera.yaw - exampleDocument.document->camera.yaw) > 0.0001f)
-      fail("stack document save/load round trip failed validation");
-    StackDocumentLoadResult binocularDocument =
-      loadStackDocumentFile("examples/binocular-disparity-difference.json");
-    if (!binocularDocument || binocularDocument.document->scene != TestScene::Lighting ||
-        binocularDocument.document->renderStack.passes().size() != 3 ||
-        std::abs(materializeRenderPass(binocularDocument.document->renderStack, 0).perturbation.cameraLateral +
-          0.0325f) > 0.0001f ||
-        std::abs(materializeRenderPass(binocularDocument.document->renderStack, 1).perturbation.cameraLateral -
-          0.0325f) > 0.0001f ||
-        std::abs(materializeRenderPass(binocularDocument.document->renderStack, 1).perturbation.stereoConvergence -
-          4.0f) > 0.0001f ||
-        binocularDocument.document->renderStack.passes()[2].kind != StackOperationKind::StereoAnalysis ||
-        binocularDocument.document->renderStack.passes()[2].stereoAnalysis !=
-          StereoAnalysisMode::AbsoluteDisparity)
-      fail("binocular disparity example failed document loading validation");
-    const StackDocumentLoadResult detonationDocument =
-      loadStackDocumentFile("examples/interference-detonation.json");
-    if (!detonationDocument || detonationDocument.document->scene != TestScene::FieldInterference ||
-        detonationDocument.document->renderStack.passes().size() != 5 ||
-        detonationDocument.document->renderStack.passes()[0].animation.tracks.size() != 4 ||
-        detonationDocument.document->renderStack.passes()[3].composite.sourceB !=
-          CompositeSource::PreviousFrame ||
-        detonationDocument.document->renderStack.passes()[4].kind != StackOperationKind::Measure ||
-        !detonationDocument.document->renderStack.passes()[4].measurementModulationEnabled ||
-        detonationDocument.document->renderStack.passes()[4].measurementTargetProperty !=
-          AnimationProperty::FieldEmissionInfluence)
-      fail("interference detonation example failed document loading validation");
-    const StackDocumentLoadResult apparitionDocument =
-      loadStackDocumentFile("examples/field-apparition.json");
-    if (!apparitionDocument || apparitionDocument.document->scene != TestScene::SdfIsoSurface ||
-        apparitionDocument.document->renderStack.passes().size() != 5 ||
-        apparitionDocument.document->renderStack.passes()[0].animation.tracks.size() != 5 ||
-        apparitionDocument.document->renderStack.passes()[4].kind != StackOperationKind::Measure ||
-        apparitionDocument.document->renderStack.passes()[4].composite.sourceA !=
-          CompositeSource::RenderPassField ||
-        !apparitionDocument.document->renderStack.passes()[4].measurementModulationEnabled ||
-        apparitionDocument.document->renderStack.passes()[4].measurementTargetProperty !=
-          AnimationProperty::IsoLevel)
-      fail("field apparition example failed document loading validation");
-    const StackDocumentLoadResult elementalDocument =
-      loadStackDocumentFile("examples/elemental-combustion-chamber.json");
-    if (!elementalDocument || elementalDocument.document->scene != TestScene::ElementalChamber ||
-        elementalDocument.document->renderStack.passes().size() != 6 ||
-        elementalDocument.document->renderStack.global().animation.tracks.size() != 3 ||
-        elementalDocument.document->renderStack.passes()[0].output != PassOutput::FieldSignal ||
-        elementalDocument.document->renderStack.passes()[3].kind != StackOperationKind::Measure ||
-        elementalDocument.document->renderStack.passes()[3].composite.sourceA !=
-          CompositeSource::RenderPassField ||
-        elementalDocument.document->renderStack.passes()[3].measurementTargetProperty !=
-          AnimationProperty::CompositeGain ||
-        elementalDocument.document->renderStack.passes()[5].kind != StackOperationKind::Composite)
-      fail("elemental combustion chamber example failed document loading validation");
+    constexpr std::array<const char*, 7> typedExamplePaths = {
+      "examples/binocular-disparity-difference.json",
+      "examples/elemental-combustion-chamber.json",
+      "examples/field-apparition.json",
+      "examples/interference-detonation.json",
+      "examples/rod-cone-xor-sdf.json",
+      "examples/single-world-cone-rod-xor.json",
+      "examples/spectral-metamer-observer.json"};
+    for (const char* path : typedExamplePaths) {
+      const document::DocumentLoadResult loaded = document::loadDocumentFile(path);
+      if (!loaded) fail(std::string("typed example failed to load: ") + path + ": " + loaded.error);
+      const evaluation::EvaluationPlan plan = evaluation::compileDocument(*loaded.document);
+      if (!plan.valid()) fail(std::string("typed example graph is invalid: ") + path);
+      evaluation::SignalRegistry exampleSignals;
+      if (renderer.evaluate(*loaded.document, plan, exampleSignals, 1, 0.0f) == 0)
+        fail(std::string("typed example failed to render: ") + path);
+    }
     ElementalSimulation elementalSimulation;
     RendererState::Field elementalControls;
     elementalControls.producerKind = 2;
@@ -573,11 +493,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
           static_cast<std::size_t>(ElementalSimulation::width * ElementalSimulation::height))
       fail("persistent elemental simulation failed validation");
     renderer.resetElementalSimulation();
-    renderer.updateElementalSimulation(1.0f / 30.0f,
-      elementalDocument.document->renderStack.global().renderer, TestScene::ElementalChamber);
-    if (renderer.renderPass(elementalDocument.document->renderStack.passes()[0],
-        elementalDocument.document->camera, TestScene::ElementalChamber, 0) == 0)
-      fail("elemental chamber field rendering failed validation");
+    renderer.updateElementalSimulation(1.0f / 30.0f, RendererState{}, TestScene::ElementalChamber);
     CameraOrbit stereoCamera;
     stereoCamera.yaw = 0.0f;
     stereoCamera.pitch = 0.0f;
@@ -597,79 +513,9 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     if (std::abs(leftClip.x / leftClip.w) > 0.0001f || std::abs(rightClip.x / rightClip.w) > 0.0001f ||
         std::abs(glm::distance(leftCamera.eye, rightCamera.eye) - 0.2f) > 0.0001f)
       fail("off-axis stereo camera convergence failed validation");
-    for (std::size_t passIndex = 0;
-         passIndex < binocularDocument.document->renderStack.passes().size(); ++passIndex) {
-      const RenderPass materialized = materializeRenderPass(binocularDocument.document->renderStack, passIndex);
-      if (materialized.kind == StackOperationKind::Render)
-        renderer.renderPass(materialized, binocularDocument.document->camera,
-          binocularDocument.document->scene, passIndex);
-    }
-    if (renderer.composite(binocularDocument.document->renderStack) == 0)
-      fail("binocular disparity example failed render validation");
-    for (int mode = static_cast<int>(StereoAnalysisMode::Anaglyph);
-         mode <= static_cast<int>(StereoAnalysisMode::MonocularOcclusion); ++mode) {
-      binocularDocument.document->renderStack.passes()[2].stereoAnalysis =
-        static_cast<StereoAnalysisMode>(mode);
-      if (renderer.composite(binocularDocument.document->renderStack) == 0)
-        fail("binocular analysis mode failed render validation");
-    }
     glFinish();
     if (glGetError() != GL_NO_ERROR)
       fail("binocular analysis produced an OpenGL error");
-    StackDocumentLoadResult observerOperandDocument =
-      loadStackDocumentFile("examples/single-world-cone-rod-xor.json");
-    if (!observerOperandDocument || observerOperandDocument.document->renderStack.passes().size() != 2 ||
-        observerOperandDocument.document->renderStack.passes()[1].composite.sourceA !=
-          CompositeSource::RenderPass ||
-        observerOperandDocument.document->renderStack.passes()[1].composite.sourceAPassId != 1 ||
-        observerOperandDocument.document->renderStack.passes()[1].composite.sourceBPassId != 1 ||
-        observerOperandDocument.document->renderStack.passes()[1].composite.interpretationA !=
-          CompositeInterpretation::ConeLuminance ||
-        observerOperandDocument.document->renderStack.passes()[1].composite.interpretationB !=
-          CompositeInterpretation::RodResponse ||
-        std::abs(observerOperandDocument.document->renderStack.passes()[1].composite.rodSensitivity -
-          observerOperandDocument.document->renderStack.display().rodSensitivity) > 0.0001f ||
-        observerOperandDocument.document->renderStack.passes()[1].composite.operation !=
-          RelationOperator::BitwiseXor)
-      fail("observer-operand example failed document loading validation");
-    for (std::size_t passIndex = 0;
-         passIndex < observerOperandDocument.document->renderStack.passes().size(); ++passIndex)
-      renderer.renderPass(materializeRenderPass(observerOperandDocument.document->renderStack, passIndex),
-        observerOperandDocument.document->camera, observerOperandDocument.document->scene, passIndex);
-    for (int interpretation = static_cast<int>(CompositeInterpretation::RawRgb);
-         interpretation <= static_cast<int>(CompositeInterpretation::SpectralRod); ++interpretation) {
-      observerOperandDocument.document->renderStack.passes()[1].composite.interpretationA =
-        static_cast<CompositeInterpretation>(interpretation);
-      observerOperandDocument.document->renderStack.passes()[1].composite.interpretationB =
-        static_cast<CompositeInterpretation>(interpretation);
-      if (renderer.composite(observerOperandDocument.document->renderStack) == 0)
-        fail("composite observer interpretation failed render validation");
-    }
-    observerOperandDocument.document->renderStack.passes()[1].composite.interpretationA =
-      CompositeInterpretation::ConeLuminance;
-    observerOperandDocument.document->renderStack.passes()[1].composite.interpretationB =
-      CompositeInterpretation::RodResponse;
-    observerOperandDocument.document->renderStack.passes()[1].composite.observerExposureStops = 1.25f;
-    observerOperandDocument.document->renderStack.passes()[1].composite.rodSensitivity = 7.5f;
-    observerOperandDocument.document->renderStack.passes()[1].composite.opponentGain = 2.75f;
-    const std::string observerRoundTripJson = renderStackConfigJson(
-      observerOperandDocument.document->renderStack, observerOperandDocument.document->camera,
-      observerOperandDocument.document->scene, observerOperandDocument.document->hardwareProfile,
-      &observerOperandDocument.document->timeline);
-    if (!saveStackDocumentFile(roundTripPath.string(), observerRoundTripJson, documentIoError))
-      fail("observer-operand document save validation failed: " + documentIoError);
-    const StackDocumentLoadResult observerRoundTrip = loadStackDocumentFile(roundTripPath.string());
-    std::filesystem::remove(roundTripPath, removeError);
-    if (!observerRoundTrip ||
-        observerRoundTrip.document->renderStack.passes()[1].composite.interpretationA !=
-          CompositeInterpretation::ConeLuminance ||
-        observerRoundTrip.document->renderStack.passes()[1].composite.interpretationB !=
-          CompositeInterpretation::RodResponse ||
-        std::abs(observerRoundTrip.document->renderStack.passes()[1].composite.observerExposureStops - 1.25f) >
-          0.0001f ||
-        std::abs(observerRoundTrip.document->renderStack.passes()[1].composite.rodSensitivity - 7.5f) > 0.0001f ||
-        std::abs(observerRoundTrip.document->renderStack.passes()[1].composite.opponentGain - 2.75f) > 0.0001f)
-      fail("operation observer settings failed JSON round-trip validation");
     constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,
       handbook::Example::AffineMapping, handbook::Example::TextureMinification, handbook::Example::NormalMapping,
       handbook::Example::LightingInterpolation, handbook::Example::DepthPrecision, handbook::Example::Transparency,

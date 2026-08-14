@@ -130,10 +130,10 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   CONT("field_discard_threshold", "Field discard threshold", "Field consumers", 1, K::Float, 0, 1),
   CONT("field_surface_color_influence", "Field surface color influence", "Field consumers", 1, K::Float, 0, 1),
   CONT("field_emission_influence", "Field emission influence", "Field consumers", 1, K::Float, 0, 8),
-  STEP("sdf_a_type", "SDF producer A type", "SDF producers", K::Enumeration, 0, 2),
+  STEP("sdf_a_type", "SDF producer A type", "SDF producers", K::Enumeration, 0, 4),
   CONT("sdf_a_position", "SDF producer A position", "SDF producers", 3, K::Vec3, -8, 8),
   CONT("sdf_a_parameters", "SDF producer A parameters", "SDF producers", 3, K::Vec3, 0.01f, 8),
-  STEP("sdf_b_type", "SDF producer B type", "SDF producers", K::Enumeration, 0, 2),
+  STEP("sdf_b_type", "SDF producer B type", "SDF producers", K::Enumeration, 0, 4),
   CONT("sdf_b_position", "SDF producer B position", "SDF producers", 3, K::Vec3, -8, 8),
   CONT("sdf_b_parameters", "SDF producer B parameters", "SDF producers", 3, K::Vec3, 0.01f, 8),
   STEP("sdf_operation", "SDF combination", "SDF combination", K::Enumeration, 0, 3),
@@ -281,7 +281,8 @@ const char* animationPropertyDiscreteValueLabel(const AnimationProperty property
   case AnimationProperty::FieldProducerKind: { constexpr std::array labels = {
     "Wave interference", "Signed distance field", "Persistent elemental simulation"}; return label(labels); }
   case AnimationProperty::SdfAType:
-  case AnimationProperty::SdfBType: { constexpr std::array labels = {"Sphere", "Box", "Torus"}; return label(labels); }
+  case AnimationProperty::SdfBType: { constexpr std::array labels = {"Sphere", "Box", "Torus",
+    "4D Hypersphere Slice", "Pulsating Sphere"}; return label(labels); }
   case AnimationProperty::SdfOperation: { constexpr std::array labels = {"Union", "Intersection", "A subtract B", "Smooth union"}; return label(labels); }
   case AnimationProperty::DepthComparison: { constexpr std::array labels = {"Less", "Less or equal", "Greater", "Always"}; return label(labels); }
   case AnimationProperty::DepthVisualization: { constexpr std::array labels = {"Off", "Raw window depth", "Linear camera depth"}; return label(labels); }

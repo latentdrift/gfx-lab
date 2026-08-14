@@ -79,7 +79,7 @@ void drawScopePanel(bool& open, const document::Document& document,
       for (const document::Operation& operation : document.operations) {
         for (const document::SignalDescriptor& descriptor : operation.outputs) {
           const document::SignalRef signal{descriptor.id, 0};
-          ImGui::PushID(static_cast<int>(descriptor.id.value));
+          ImGui::PushID(static_cast<int>(std::hash<document::SignalId>{}(descriptor.id)));
           ImGui::TableNextRow();
           ImGui::TableNextColumn(); ImGui::TextUnformatted(operation.name.c_str());
           ImGui::TableNextColumn(); ImGui::TextUnformatted(descriptor.name.c_str());
@@ -109,7 +109,7 @@ void drawScopePanel(bool& open, const document::Document& document,
     for (const auto& [id, resource] : signals.resources()) {
       if (resource.descriptor.kind != document::SignalKind::Scalar) continue;
       any = true;
-      ImGui::PushID(static_cast<int>(id.value));
+      ImGui::PushID(static_cast<int>(std::hash<document::SignalId>{}(id)));
       ImGui::Text("%s", resource.descriptor.name.c_str());
       ImGui::SameLine(220.0f);
       if (resource.scalar.has_value()) ImGui::Text("%.6f", *resource.scalar);

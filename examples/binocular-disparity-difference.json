@@ -1,120 +1,883 @@
 {
-  "schema": "graphics-lab.render-stack.v8",
-  "hardware_target": "unrestricted",
-  "test_scene": "lighting_comparison",
-  "view": {
-    "orbit_yaw_radians": 0.66,
-    "orbit_pitch_radians": 0.34,
-    "distance_units": 5.6,
-    "target": [0.0, 0.0, 0.0]
-  },
-  "display_reconstruction": {
-    "enabled": false,
-    "signal": "direct_rgb",
-    "chroma_bleed": 0.0,
-    "luma_chroma_crosstalk": 0.0,
-    "scanline_strength": 0.0,
-    "phosphor_mask_strength": 0.0,
-    "bloom_strength": 0.0,
-    "bloom_radius_pixels": 2.0
-  },
-  "animation_timeline": {
-    "duration_seconds": 4.0,
-    "playback_rate": 1.0,
-    "loop": true,
-    "auto_key": false,
-    "show_all_passes": false,
-    "snap_to_frames": true,
-    "frames_per_second": 24,
-    "current_time_seconds": 0.0
-  },
-  "global_base": {
-    "properties": {
-      "texture_source": [1.0],
-      "smooth_shading": [1.0],
-      "lighting_model": [4.0],
-      "ambient": [0.16],
-      "shininess": [28.0],
-      "camera_lateral": [0.0],
-      "stereo_convergence": [4.0],
-      "bits_per_channel": [8.0],
-      "linear_light": [1.0],
-      "internal_resolution": [640.0, 480.0]
-    },
-    "property_tracks": []
-  },
-  "passes": [
+  "animation": [],
+  "hardware_profile": 0,
+  "modulation": [],
+  "next_operation_id": 4,
+  "operations": [
     {
+      "enabled": true,
       "id": 1,
       "name": "Left eye",
-      "enabled": true,
-      "operation_kind": "render",
-      "output_buffer": "color",
-      "overrides": [
-        {"property": "camera_lateral", "value": [-0.0325]}
+      "output": 0,
+      "outputs": [
+        {
+          "domain": 1,
+          "encoding": 1,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 0,
+          "name": "Color",
+          "port": "color",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 0,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 1,
+          "name": "Depth",
+          "port": "depth",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 0,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 2,
+          "name": "Normal",
+          "port": "normal",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 3,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 3,
+          "name": "Field",
+          "port": "field",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 0,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 4,
+          "name": "Spectrum16",
+          "port": "spectrum16",
+          "units": ""
+        }
       ],
-      "composite_into_previous": {
-        "operation": "absolute_difference",
-        "source_a": {"type": "accumulated_result", "pass_id": 1},
-        "source_b": {"type": "current_pass", "pass_id": 1},
-        "gain": 1.0,
-        "bias": 0.0,
-        "opacity": 1.0,
-        "arithmetic_color_space": "encoded_rgb",
-        "range_behavior": "clamp_0_to_1",
-        "mask": "none",
-        "invert_mask": false
+      "overrides": [
+        {
+          "property": "camera_lateral",
+          "value": [
+            -0.032499998807907104
+          ]
+        }
+      ],
+      "perturbation": {
+        "camera_distance": 0.0,
+        "camera_lateral": 0.0,
+        "camera_pitch": 0.0,
+        "camera_yaw": 0.0,
+        "fov_offset": 0.0,
+        "normal_inflation": 0.0,
+        "scale": 1.0,
+        "stereo_convergence": 4.0,
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "uv_mapping": 0,
+        "uv_offset": [
+          0.0,
+          0.0
+        ],
+        "uv_pivot": [
+          0.5,
+          0.5
+        ],
+        "uv_rotation": 0.0,
+        "uv_scale": [
+          1.0,
+          1.0
+        ]
       },
-      "animation": {"enabled": true, "property_tracks": []}
+      "texture": {
+        "asset": "",
+        "source": 0,
+        "srgb": true
+      },
+      "time": {
+        "offset_seconds": 0.0,
+        "scale": 1.0
+      },
+      "type": "render"
     },
     {
+      "enabled": true,
       "id": 2,
       "name": "Right eye",
-      "enabled": true,
-      "operation_kind": "render",
-      "output_buffer": "color",
-      "overrides": [
-        {"property": "camera_lateral", "value": [0.0325]}
+      "output": 0,
+      "outputs": [
+        {
+          "domain": 1,
+          "encoding": 1,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 0,
+          "name": "Color",
+          "port": "color",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 0,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 1,
+          "name": "Depth",
+          "port": "depth",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 0,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 2,
+          "name": "Normal",
+          "port": "normal",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 3,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 3,
+          "name": "Field",
+          "port": "field",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 0,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 4,
+          "name": "Spectrum16",
+          "port": "spectrum16",
+          "units": ""
+        }
       ],
-      "composite_into_previous": {
-        "operation": "absolute_difference",
-        "source_a": {"type": "accumulated_result", "pass_id": 1},
-        "source_b": {"type": "current_pass", "pass_id": 2},
-        "gain": 8.0,
-        "bias": 0.0,
-        "opacity": 1.0,
-        "arithmetic_color_space": "encoded_rgb",
-        "range_behavior": "clamp_0_to_1",
-        "mask": "none",
-        "invert_mask": false
+      "overrides": [
+        {
+          "property": "camera_lateral",
+          "value": [
+            0.032499998807907104
+          ]
+        }
+      ],
+      "perturbation": {
+        "camera_distance": 0.0,
+        "camera_lateral": 0.0,
+        "camera_pitch": 0.0,
+        "camera_yaw": 0.0,
+        "fov_offset": 0.0,
+        "normal_inflation": 0.0,
+        "scale": 1.0,
+        "stereo_convergence": 4.0,
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "uv_mapping": 0,
+        "uv_offset": [
+          0.0,
+          0.0
+        ],
+        "uv_pivot": [
+          0.5,
+          0.5
+        ],
+        "uv_rotation": 0.0,
+        "uv_scale": [
+          1.0,
+          1.0
+        ]
       },
-      "animation": {"enabled": true, "property_tracks": []}
+      "texture": {
+        "asset": "",
+        "source": 0,
+        "srgb": true
+      },
+      "time": {
+        "offset_seconds": 0.0,
+        "scale": 1.0
+      },
+      "type": "render"
     },
     {
-      "id": 3,
-      "name": "Geometry disparity",
       "enabled": true,
-      "operation_kind": "stereo_analysis",
-      "output_buffer": "color",
-      "overrides": [],
-      "composite_into_previous": {
-        "operation": "absolute_difference",
-        "source_a": {"type": "render_pass", "pass_id": 1},
-        "source_b": {"type": "render_pass", "pass_id": 2},
-        "gain": 1.0,
-        "bias": 0.0,
-        "opacity": 1.0,
-        "arithmetic_color_space": "linear_light",
-        "range_behavior": "clamp_0_to_1",
-        "mask": "none",
-        "invert_mask": false
+      "id": 3,
+      "left": {
+        "frame_offset": 0,
+        "operation": 1,
+        "port": "color"
       },
-      "stereo_analysis": {
-        "mode": "absolute_disparity",
-        "maximum_disparity_pixels": 64.0,
-        "occlusion_depth_tolerance": 0.0025
+      "maximum_disparity": 64.0,
+      "mode": 2,
+      "name": "Geometry disparity",
+      "occlusion_tolerance": 0.0024999999441206455,
+      "outputs": [
+        {
+          "domain": 1,
+          "encoding": 1,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 0,
+          "name": "Stereo analysis",
+          "port": "color",
+          "units": ""
+        }
+      ],
+      "right": {
+        "frame_offset": 0,
+        "operation": 2,
+        "port": "color"
       },
-      "animation": {"enabled": true, "property_tracks": []}
+      "type": "stereo"
     }
-  ]
+  ],
+  "presentation": {
+    "display": {
+      "bloom": 0.0,
+      "bloom_radius": 2.0,
+      "chroma_bleed": 0.0,
+      "crosstalk": 0.0,
+      "dark_adaptation": 0.6499999761581421,
+      "enabled": false,
+      "exposure": 0.0,
+      "opponent_gain": 4.0,
+      "phosphor_mask": 0.0,
+      "rod_sensitivity": 4.0,
+      "scanlines": 0.0,
+      "signal": 0,
+      "xor_bits": 5
+    },
+    "input": {
+      "frame_offset": 0,
+      "operation": 3,
+      "port": "color"
+    }
+  },
+  "render_defaults": {
+    "properties": {
+      "affine_mapping": [
+        0.0
+      ],
+      "alpha_cutoff": [
+        0.5
+      ],
+      "alpha_threshold": [
+        0.5
+      ],
+      "ambient": [
+        0.1599999964237213
+      ],
+      "anisotropy": [
+        1.0
+      ],
+      "bits_per_channel": [
+        8.0
+      ],
+      "camera_distance": [
+        0.0
+      ],
+      "camera_lateral": [
+        0.0
+      ],
+      "camera_pitch": [
+        0.0
+      ],
+      "camera_yaw": [
+        0.0
+      ],
+      "clipping_enabled": [
+        0.0
+      ],
+      "clipping_height": [
+        0.0
+      ],
+      "clipping_keep_above": [
+        0.0
+      ],
+      "composite_bias": [
+        0.0
+      ],
+      "composite_bit_depth": [
+        8.0
+      ],
+      "composite_color_space": [
+        0.0
+      ],
+      "composite_fixed_color": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "composite_gain": [
+        4.0
+      ],
+      "composite_history_decay": [
+        0.9599999785423279
+      ],
+      "composite_history_uv_offset": [
+        0.0,
+        0.0
+      ],
+      "composite_history_uv_scale": [
+        1.0,
+        1.0
+      ],
+      "composite_interpretation_a": [
+        0.0
+      ],
+      "composite_interpretation_b": [
+        0.0
+      ],
+      "composite_mask": [
+        0.0
+      ],
+      "composite_mask_inverted": [
+        0.0
+      ],
+      "composite_opacity": [
+        1.0
+      ],
+      "composite_operation": [
+        0.0
+      ],
+      "composite_range": [
+        0.0
+      ],
+      "composite_source_a": [
+        0.0
+      ],
+      "composite_source_a_pass": [
+        1.0
+      ],
+      "composite_source_b": [
+        1.0
+      ],
+      "composite_source_b_pass": [
+        1.0
+      ],
+      "cull_mode": [
+        1.0
+      ],
+      "depth_comparison": [
+        0.0
+      ],
+      "depth_cue_enabled": [
+        0.0
+      ],
+      "depth_cue_end": [
+        7.0
+      ],
+      "depth_cue_start": [
+        3.0
+      ],
+      "depth_precision": [
+        24.0
+      ],
+      "depth_test_enabled": [
+        1.0
+      ],
+      "depth_visualization": [
+        0.0
+      ],
+      "depth_write_enabled": [
+        1.0
+      ],
+      "dithering_enabled": [
+        0.0
+      ],
+      "environment_color": [
+        0.18000000715255737,
+        0.23999999463558197,
+        0.30000001192092896,
+        1.0
+      ],
+      "far_color": [
+        0.11999999731779099,
+        0.1599999964237213,
+        0.2199999988079071
+      ],
+      "field_amplitude_a": [
+        1.0
+      ],
+      "field_amplitude_b": [
+        1.0
+      ],
+      "field_band_sharpness": [
+        1.350000023841858
+      ],
+      "field_discard_enabled": [
+        0.0
+      ],
+      "field_discard_threshold": [
+        0.5
+      ],
+      "field_emission_influence": [
+        0.0
+      ],
+      "field_enabled": [
+        0.0
+      ],
+      "field_falloff": [
+        0.07999999821186066
+      ],
+      "field_high_color": [
+        1.0,
+        0.7799999713897705,
+        0.41999998688697815
+      ],
+      "field_low_color": [
+        0.004999999888241291,
+        0.009999999776482582,
+        0.02500000037252903
+      ],
+      "field_of_view": [
+        45.0
+      ],
+      "field_of_view_offset": [
+        0.0
+      ],
+      "field_phase_offset": [
+        0.0
+      ],
+      "field_producer_kind": [
+        0.0
+      ],
+      "field_signed_displacement": [
+        0.0
+      ],
+      "field_source_a": [
+        -1.350000023841858,
+        0.0,
+        0.0
+      ],
+      "field_source_b": [
+        1.350000023841858,
+        0.0,
+        0.0
+      ],
+      "field_surface_color_influence": [
+        0.0
+      ],
+      "field_vertex_displacement": [
+        0.0
+      ],
+      "field_visualization": [
+        3.0
+      ],
+      "field_wavelength": [
+        0.7200000286102295
+      ],
+      "fog_enabled": [
+        0.0
+      ],
+      "fog_end": [
+        7.0
+      ],
+      "fog_start": [
+        3.0
+      ],
+      "internal_resolution": [
+        640.0,
+        480.0
+      ],
+      "iso_color": [
+        0.7200000286102295,
+        0.8199999928474426,
+        1.0
+      ],
+      "iso_hit_epsilon": [
+        0.0020000000949949026
+      ],
+      "iso_level": [
+        0.0
+      ],
+      "iso_maximum_distance": [
+        30.0
+      ],
+      "iso_maximum_steps": [
+        128.0
+      ],
+      "iso_surface_enabled": [
+        0.0
+      ],
+      "light_azimuth": [
+        34.0
+      ],
+      "light_elevation": [
+        52.0
+      ],
+      "lighting_model": [
+        4.0
+      ],
+      "linear_light": [
+        1.0
+      ],
+      "mipmapping": [
+        0.0
+      ],
+      "model_scale": [
+        1.0
+      ],
+      "model_translation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "multisample_count": [
+        1.0
+      ],
+      "n64_alpha_compare": [
+        0.0
+      ],
+      "n64_color_dither": [
+        1.0
+      ],
+      "n64_coverage_antialiasing": [
+        1.0
+      ],
+      "n64_cycle_0_a": [
+        1.0
+      ],
+      "n64_cycle_0_b": [
+        0.0
+      ],
+      "n64_cycle_0_c": [
+        3.0
+      ],
+      "n64_cycle_0_d": [
+        0.0
+      ],
+      "n64_cycle_1_a": [
+        7.0
+      ],
+      "n64_cycle_1_b": [
+        0.0
+      ],
+      "n64_cycle_1_c": [
+        2.0
+      ],
+      "n64_cycle_1_d": [
+        0.0
+      ],
+      "n64_cycle_type": [
+        1.0
+      ],
+      "n64_framebuffer_format": [
+        0.0
+      ],
+      "n64_mipmap_mode": [
+        0.0
+      ],
+      "n64_mirror_s": [
+        0.0
+      ],
+      "n64_mirror_t": [
+        0.0
+      ],
+      "n64_shift_s": [
+        0.0
+      ],
+      "n64_shift_t": [
+        0.0
+      ],
+      "n64_surface_mode": [
+        0.0
+      ],
+      "n64_texture_filter": [
+        1.0
+      ],
+      "n64_texture_format": [
+        0.0
+      ],
+      "n64_texture_generation": [
+        0.0
+      ],
+      "n64_tile_size": [
+        32.0,
+        32.0
+      ],
+      "n64_vi_divot": [
+        1.0
+      ],
+      "n64_vi_reconstruction": [
+        1.0
+      ],
+      "n64_z_compare": [
+        1.0
+      ],
+      "n64_z_update": [
+        1.0
+      ],
+      "near_plane": [
+        0.05000000074505806
+      ],
+      "nearest_filtering": [
+        0.0
+      ],
+      "nearest_upscaling": [
+        1.0
+      ],
+      "normal_inflation": [
+        0.0
+      ],
+      "normal_mapping_enabled": [
+        0.0
+      ],
+      "normal_strength": [
+        1.0
+      ],
+      "ordering_buckets": [
+        32.0
+      ],
+      "ordering_table_enabled": [
+        0.0
+      ],
+      "orthographic_size": [
+        4.0
+      ],
+      "overdraw_enabled": [
+        0.0
+      ],
+      "overdraw_range": [
+        8.0
+      ],
+      "pass_enabled": [
+        1.0
+      ],
+      "pass_output": [
+        0.0
+      ],
+      "polygon_offset_enabled": [
+        0.0
+      ],
+      "polygon_offset_factor": [
+        1.0
+      ],
+      "polygon_offset_units": [
+        1.0
+      ],
+      "primitive_color": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "projection_orthographic": [
+        0.0
+      ],
+      "reverse_draw_order": [
+        0.0
+      ],
+      "sdf_a_parameters": [
+        1.149999976158142,
+        0.3499999940395355,
+        0.3499999940395355
+      ],
+      "sdf_a_position": [
+        -0.8500000238418579,
+        0.0,
+        0.0
+      ],
+      "sdf_a_type": [
+        0.0
+      ],
+      "sdf_b_parameters": [
+        0.8500000238418579,
+        0.2800000011920929,
+        0.2800000011920929
+      ],
+      "sdf_b_position": [
+        0.8500000238418579,
+        0.0,
+        0.0
+      ],
+      "sdf_b_type": [
+        2.0
+      ],
+      "sdf_operation": [
+        3.0
+      ],
+      "sdf_preview_range": [
+        1.5
+      ],
+      "sdf_smoothness": [
+        0.44999998807907104
+      ],
+      "shadow_bias": [
+        0.0020000000949949026
+      ],
+      "shadow_map_visualization": [
+        0.0
+      ],
+      "shadow_pcf": [
+        1.0
+      ],
+      "shadow_resolution": [
+        1024.0
+      ],
+      "shadows_enabled": [
+        0.0
+      ],
+      "shininess": [
+        28.0
+      ],
+      "smooth_shading": [
+        1.0
+      ],
+      "spectral_exposure": [
+        0.0
+      ],
+      "spectral_illuminant": [
+        0.0
+      ],
+      "spectral_observer": [
+        0.0
+      ],
+      "stencil_enabled": [
+        0.0
+      ],
+      "stencil_inverted": [
+        0.0
+      ],
+      "stencil_reference": [
+        1.0
+      ],
+      "stereo_analysis_mode": [
+        2.0
+      ],
+      "stereo_convergence": [
+        4.0
+      ],
+      "stereo_maximum_disparity": [
+        64.0
+      ],
+      "stereo_occlusion_tolerance": [
+        0.0024999999441206455
+      ],
+      "surface_visualization": [
+        0.0
+      ],
+      "texture_color_interpretation": [
+        1.0
+      ],
+      "texture_color_storage": [
+        0.0
+      ],
+      "texture_repeat": [
+        1.0
+      ],
+      "texture_source": [
+        1.0
+      ],
+      "transparency_operation": [
+        0.0
+      ],
+      "trilinear_filtering": [
+        0.0
+      ],
+      "uv_mapping": [
+        0.0
+      ],
+      "uv_offset": [
+        0.0,
+        0.0
+      ],
+      "uv_pivot": [
+        0.5,
+        0.5
+      ],
+      "uv_rotation": [
+        0.0
+      ],
+      "uv_scale": [
+        1.0,
+        1.0
+      ],
+      "vertex_quantization": [
+        0.0
+      ],
+      "wireframe_overlay": [
+        0.0
+      ]
+    },
+    "texture": {
+      "asset": "",
+      "source": 1,
+      "srgb": true
+    }
+  },
+  "scene": {
+    "camera": {
+      "distance": 5.599999904632568,
+      "pitch": 0.3400000035762787,
+      "target": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yaw": 0.6600000262260437
+    },
+    "model": "",
+    "type": 4
+  },
+  "schema": "graphics-lab.document.v10",
+  "timeline": {
+    "auto_key": false,
+    "current": 0.0,
+    "duration": 4.0,
+    "fps": 24,
+    "loop": true,
+    "rate": 1.0,
+    "show_all": false,
+    "snap": true
+  }
 }

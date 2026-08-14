@@ -1,6 +1,7 @@
 # Graphics Lab
 
-A small native desktop instrument for inspecting realtime rendering techniques one operation at a time.
+A native, layer-based 3D compositing instrument. Render operations create different live views of a scene;
+typed effect, analysis, mask, and composite operations reinterpret and combine their signals.
 
 ## Run
 
@@ -36,27 +37,32 @@ src/
   main.cpp                    process entry point only
   app/
     Application.cpp           GLFW/ImGui lifecycle and workspace orchestration
-    Animation.cpp             keyframe capture, interpolation, and stack evaluation
-    EditorHistory.cpp         document snapshots and coalesced undo/redo transactions
+    Animation.cpp             renderer-property keyframe capture and interpolation
     HardwareProfile.cpp       target capabilities and state normalization
-    PassEditing.cpp           global/local inspector reconciliation
-    RenderStack.cpp           typed signal operations, compositing state, and stack export
-    StackDocument.cpp         validated JSON document loading and file persistence
+    RenderStack.cpp           renderer-property and composite parameter vocabulary
     State.cpp                 explicit renderer state, scene setups, JSON export
     Validation.cpp            opt-in renderer, document, import, and UI validation suite
   assets/
     ModelAsset.cpp            mesh/material import, image decoding, validation, and normalization
+  document/
+    Document.cpp              authoritative scene, operation, automation, and presentation state
+    Operations.cpp            typed operation factories and stable signal outputs
+    Identifiers.hpp           typed owners and operation/port signal addresses
+    Persistence.cpp           native typed-v10 JSON save/load
+  evaluation/
+    Compiler.cpp              dependency validation and typed evaluation planning
+    SignalRegistry.cpp        named GPU/scalar resources produced by evaluation
+  editor/
+    Commands.cpp              validated mutations and typed undo/redo history
   renderer/
-    Renderer.cpp              OpenGL resources, state application, and render passes
+    Renderer.cpp              direct EvaluationPlan execution and OpenGL resources
     Shaders.hpp               scene, output, shadow, and analysis GLSL programs
     TestGeometry.cpp          procedural diagnostic meshes
   ui/
     AnimationControls.cpp     inspector diamonds and property-key editing
     Inspector.cpp             pipeline-category controls and visual styling
-    AnimationEditor.cpp       transport, dope sheet, tracks, and selected-key editing
-    ContextInspector.cpp      selection-owned Overview, Render, Texture, and Final Output editing
-    PassInspector.cpp         contextual Render, Interpret, and Composite controls
-    PassDifferenceAudit.cpp   authored selected/reference pass comparison and restore
+    DocumentInspector.cpp     typed Essentials, Changes, All Properties, and operation editing
+    DocumentTimeline.cpp      typed track, playhead, and selected-key editing
     Workspace.cpp             document navigator, viewport, menu, and docking layout
   handbook/
     Handbook.cpp              searchable articles, diagrams, and live comparisons
@@ -73,11 +79,9 @@ src/
 - Redo: Ctrl+Shift+Z or Ctrl+Y
 - Play/pause animation: Space
 
-Use **File → Save Stack JSON…** (`Ctrl+S`) to save the complete authored document, and
-**File → Open Stack JSON…** (`Ctrl+O`) to restore it. Loading restores the global base, sparse pass
-overrides, pass identities and operands, animation tracks and timeline, camera, scene, hardware target,
-display reconstruction, and imported asset references. A parse or asset error leaves the current document
-untouched.
+Use **File → Save Stack JSON…** (`Ctrl+S`) to save the complete `graphics-lab.document.v10` document, and
+**File → Open Stack JSON…** (`Ctrl+O`) to restore it. Stable operations and signal references, sparse overrides,
+animation and modulation, camera, scene, hardware target, presentation, and asset references are preserved.
 
 The [`examples`](examples) directory contains loadable stack documents. Start with
 [`rod-cone-xor-sdf.json`](examples/rod-cone-xor-sdf.json): it XORs two related SDF render passes, then sends
@@ -107,11 +111,16 @@ under the reference daylight/human condition. Its Composite operation reads the 
 and displays human-versus-shifted-observer disagreement. Disable that pass to see the reference match; use the
 Spectral section in Render Settings to switch to tungsten or tri-band illumination and watch the metameric match fail.
 
-Graphics Lab uses one persistent document-editing workspace. The **Document** navigator contains the scene, inherited **Scene Defaults**, the ordered operation stack, and **Final Output**. Selecting one of those objects drives the single contextual **Inspector**: Render operations expose Overview, Render Settings, and Material & Texture; Interpret, Composite, and Stereo Analysis expose only their owned controls; Final Output owns display reconstruction. **Window → Workspace Layout** supplies Edit, Animate, and Analyze arrangements without changing document state. ImGui saves subsequent docking changes between runs.
+Graphics Lab uses one persistent document-editing workspace: the typed operation stack on the left, an
+always-visible signal canvas in the center, and contextual **Properties** on the right. Selecting an operation
+does not change the viewed signal. Render properties use **Essentials**, **Changes**, and **All Properties**;
+Interpret, Composite, Stereo, Measure, and Final Output expose only the state they own.
 
-Render Settings are organized by editing intent: **Transform & Camera**, **Lighting**, **Visibility & Raster**, **Effects & Signals**, and **Output**. Renderer implementation categories are preserved in the state model without becoming peer workspace windows. On a selected Render, each inherited renderer property carries an **inherited** or **override** badge beside its animation diamond. Hover the badge to compare Scene Defaults with the effective value; click an override badge to resume inheritance.
+The renderer implementation catalog remains available under **All Properties** without dictating workspace
+navigation. **Changes** stays beside a variant so inherited state and local deviations do not require touring
+separate panels.
 
-Observer parameters used while an Interpret or Composite operation evaluates are stored on that operation. Final Output keeps a separate presentation observer. Older documents that stored only the former shared observer values migrate those values into each signal operation when loaded, and subsequent saves record the ownership explicitly.
+Observer parameters used while an Interpret or Composite operation evaluates are stored on that operation. Final Output keeps a separate presentation observer.
 
 Use **View → UI Scale** to resize text, controls, spacing, tabs, and interaction targets together from 75% to
 200%. `Ctrl+-` and `Ctrl+=` step between the supplied sizes; `Ctrl+0` returns to 100%. Every font size is loaded
@@ -127,35 +136,42 @@ The **Texture source** control can be authored on the global base and inherited 
 
 This first material boundary intentionally imports only base color and alpha. Normal, emissive, metallic-roughness, occlusion, multiple UV sets, skeletal animation, morph targets, cameras, and lights remain separate future systems. Copying stack JSON records source paths, content hashes, dimensions, material facts, and normalization scale rather than embedding image pixels or vertex buffers.
 
-The Inspector's **Material & Texture** tab keeps image assignment and application together. It previews the imported source image and controls mesh UV0 versus model-space planar projection, scale/tiling, rotation and pivot, offset, axis flips, repeat/clamp addressing, filtering, mipmapping, and sRGB interpretation. Every mapping parameter follows the Scene Defaults / selected Render scope; UV transforms and coordinate source can also be keyed in the timeline.
+Render **Essentials** keeps image assignment and mapping together: mesh UV0 versus model-space planar projection,
+scale/tiling, rotation and pivot, offset, axis flips, repeat/clamp addressing, filtering, mipmapping, and sRGB
+interpretation. UV transforms and coordinate source remain keyable.
 
-Undo and redo cover the authored render stack, all renderer and composite settings, pass order and names, animation tracks, camera, scene, hardware target, and timeline configuration. Continuous sliders and viewport-camera drags collapse into one history entry. Playback time, pass selection, comparison view, open windows, and temporary evaluated animation frames are workspace state rather than authored operations, so they do not flood document history.
+Undo and redo operate on typed document commands, covering renderer and composite settings, operation order and
+names, animation tracks, scene state, hardware target, and presentation. Continuous property and gizmo edits
+collapse into one history entry; selection, comparison view, and open windows remain workspace state.
 
 The document has explicit **Scene Defaults** followed by a top-to-bottom operation stack and **Final Output**. A **Render** operation applies inherited renderer state plus sparse local overrides and produces named Color, Depth, Field, and Spectrum16 resources. An **Interpret** operation converts one spectral resource through a selected observer without rerendering the scene. A **Composite** operation combines two named signals with explicit arithmetic. A **Measure** operation reduces an upstream image or field to a scalar—mean, RMS, peak, threshold coverage, or one mean color channel—and maps that signal onto a continuous property of another operation. Input/output endpoints, clamping, and temporal smoothing make the relationship explicit; the preceding frame's measurement is used so feedback loops remain finite. Diagnostic statistics remain available but do not replace the image flowing through the stack. The Inspector shows only controls owned by the selected object. Editing a local Render value creates an override, and returning it to the scene-default value restores inheritance.
 
-Use **Add operation** to add a Render, spectrum Interpret, or two-input Composite stage. Duplicate a Render to preserve most of a look and change only what should disagree. Named operands use stable identities, so reordering the stack does not silently redirect them. Per-channel operations include difference, multiply, screen, exclusion, minimum/maximum, additive and subtractive hardware color math, half-add, quarter-add, signed color offset, and quantized bitwise XOR. Previous-frame inputs expose decay and UV transformation for controlled feedback; reset their persistent buffer with **View → Reset Frame History**. Each Composite also exposes opacity, gain, bias, encoded-RGB versus linear-light arithmetic, clamp/preserve/wrap range behavior, and optional luminance/depth/edge masks. Files authored before typed operations still load as explicit **Render + composite (legacy)** rows and preserve their original result.
+Use **Add operation** to add a Render, spectrum Interpret, or two-input Composite stage. Duplicate a Render to preserve its authored state, animation tracks, and modulation targets, then change only what should disagree. Named operands use stable operation/port addresses, so reordering the stack does not silently redirect them. Per-channel operations include difference, multiply, screen, exclusion, minimum/maximum, additive and subtractive hardware color math, half-add, quarter-add, signed color offset, and quantized bitwise XOR. Previous-frame inputs expose decay and UV transformation for controlled feedback; reset their persistent buffer with **View → Reset Frame History**. Each Composite also exposes opacity, gain, bias, encoded-RGB versus linear-light arithmetic, clamp/preserve/wrap range behavior, and optional luminance/depth/edge masks.
 
 **Final Output** is deliberately downstream of the render stack. Its Inspector can leave the final image as direct RGB or approximate composite-NTSC chroma bandwidth and luma/chroma crosstalk, then model scanlines, an aperture grille, and display bloom. These controls affect presentation only: raw pass textures and all A/B arithmetic remain unchanged and inspectable.
 
 Its RGB observer modes reinterpret the completed image through approximate L, M, S cone and scotopic rod responses. Outputs include the LMS triplet, individual receptor channels, rod vision, a mesopic rod/cone mixture, L-minus-M and blue/yellow opponent channels, rod/cone absolute difference, and quantized rod/cone XOR. Exposure, dark adaptation, rod sensitivity, opponent gain, and XOR precision remain explicit. This is an RGB observer approximation rather than spectral rendering, so it cannot separate metameric spectra that already collapsed to the same RGB value.
 
-The **Animation dope sheet** stores a separate sparse track for each animated property. Global tracks move the shared base for all inheriting passes; local tracks move only one pass and take precedence over its static override and the evaluated global value. Track rows use the same technical names as the inspector and show every keyed time as a diamond. Click a diamond to select it, scrub by clicking a track, and edit the selected key's exact time, value, and step/linear/smooth-step interpolation at the right. **All passes** shows the global tracks and every pass's local tracks together.
+The **Timeline** stores a sparse typed track for every animated property. Render-default tracks affect inheriting
+operations; operation tracks take final precedence. Track rows show key times as diamonds and expose exact time,
+value, deletion, and step/linear/smooth-step interpolation editing.
 
 Animatable inspector controls have a right-aligned diamond: gray outline means unanimated, blue means the property has a track, and gold means it has a key at the playhead. Click the diamond to add or remove that exact key. Once a property is animated, changing its ordinary control writes that property at the playhead; **Auto Key** allows an ordinary control edit to create its first track. The control displays the evaluated playhead value, so editing does not require copying a sampled pose into the pass first.
 
-The animation catalog covers eligible state across every pipeline category. Continuous numbers, vectors, colors, and angles support step, linear, or smooth-step interpolation. Booleans, integers, algorithm selections, filtering modes, depth/stencil modes, texture sources, composite operations, and N64 fixed-function selections use step tracks because intermediate values have no meaning. Settings that reallocate large GPU resources during playback—MSAA count, shadow-map resolution, internal resolution, and N64 tile dimensions—remain visible in the catalog but deliberately non-keyable. Playback evaluates a temporary render stack and does not overwrite authored base values.
-
-In the dope sheet, click a diamond to select it and drag horizontally to retime it. Keys snap to the chosen frame rate; hold Alt while dragging to bypass snapping. Double-click an empty track position to insert a sampled key there, and press Delete or Backspace to remove the selected key. Exact time, value, and interpolation remain editable in the Selected Key pane.
-
-Open **Window > Property Comparison** after duplicating a Render to audit effective disagreements against a reference. Each property is labelled inherited or overridden, alongside its local track state. Matching adopts the reference Render's override/inheritance choice and local track; if the reference inherits, the selected Render resumes tracking Scene Defaults. Imported texture resources are compared separately from their sampling state.
+The animation catalog covers eligible state across every pipeline category. Continuous numbers, vectors, colors,
+and angles support step, linear, or smooth-step interpolation. Discrete settings use step tracks. Settings that
+reallocate large GPU resources during playback remain deliberately non-keyable. Playback evaluates typed operation
+values without overwriting authored state.
 
 The top bar's **Target** selector defaults to **Unrestricted**. **PlayStation (PS1)** and **Nintendo 64** normalize every Render to target-representable state, remove unavailable sections and controls, narrow shared controls to supported choices, and display important forced values or labelled emulation substitutes as profile facts. Switching back to Unrestricted unlocks the controls but does not restore values discarded during normalization. Reset buttons are also normalized by the active target.
 
 The Nintendo 64 target exposes the standard RSP/RDP/VI model: one- or two-cycle `(A - B) x C + D` color combiners, named combiner sources, primitive/environment registers, RDP surface and alpha-compare modes, point/three-point/box texture filters, mip/trilinear/sharpen/detail modes, nine texture formats, tile addressing and calculated 4096-byte TMEM use, RSP texture generation and vertex fog, Z compare/update, coverage antialiasing, RGBA16/RGBA32 framebuffer state, color dithering, and VI reconstruction/divot filters. Coverage and VI behavior are explicitly labelled approximations; the combiner, format quantization, three-point filter, alpha comparison, and TMEM accounting are modeled directly.
 
-The unrestricted **Field** tool can produce either wave interference or a genuine signed-distance field. SDF producers currently include sphere, box, and torus primitives with union, intersection, A-minus-B, and smooth-union operations. The pass field attachment stores signed world-unit distance in `R16F`; preview colors are only a display mapping, while named pass-field operands retain negative and positive values for composite arithmetic. A proximity mapping lets the same field drive mesh-vertex displacement, fragment discard, surface color, emission, and pass masks. **Ray-march iso-surface** renders the selected level as implicit geometry and writes fragment depth, so it participates in ordinary occlusion with rasterized meshes. Producer transforms, dimensions, combination, smoothing, iso level, and iso color are animatable.
+The unrestricted **Field** tool can produce either wave interference or a genuine signed-distance field. SDF producers include sphere, box, torus, a rotating 4D hypersphere slice, and a pulsating sphere, with union, intersection, A-minus-B, and smooth-union operations. Every Render owns a procedural time transform: `local = timeline × scale + offset`; negative scale reverses time and zero freezes it. Both values are keyable and drivable. The pass field attachment stores signed world-unit distance in `R16F`; preview colors are only a display mapping, while named pass-field operands retain negative and positive values for composite arithmetic. A proximity mapping lets the same field drive mesh-vertex displacement, fragment discard, surface color, emission, and pass masks. **Ray-march iso-surface** renders the selected level as implicit geometry and writes fragment depth, so it participates in ordinary occlusion with rasterized meshes.
 
-Use **File > Copy Stack JSON** to place the same human-readable `graphics-lab.render-stack.v8` document on the clipboard. It records the global base, sparse local overrides, global and local property tracks, effective time-zero renderers, texture mapping, pass perturbations, selected output buffers, composite equations, masks, color spaces, range behavior, scene, camera, and display/observer state. Evaluation order is explicit: global base, global track, local override, then local track.
+Use **File > Copy Stack JSON** to place the human-readable `graphics-lab.document.v10` document on the clipboard.
+It records typed operations and signal references directly, together with sparse overrides, property tracks,
+modulation routes, texture mapping, perturbations, masks, scene, camera, and presentation state.
 
 Use **Help > Graphics Handbook** to open the built-in technical reference. Start with **From mesh to pixel**, then follow its related-concept links or browse the knowledge map. Every article begins with a plain causal **Quick read** before preserving the precise definition, pipeline location, visible results, interactions, engine vocabulary, and technical diagram. The map groups the pipeline, shading, visibility and output, engine systems, animation, and ray tracing. Reading never changes renderer state; example buttons apply configurations deliberately.
 

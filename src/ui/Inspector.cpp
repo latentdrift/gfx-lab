@@ -634,7 +634,8 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       ImGui::EndDisabled();
       ImGui::SeparatorText("SIGNED DISTANCE PRODUCERS");
       ImGui::BeginDisabled(state.field.producerKind != 1);
-      constexpr const char* sdfTypes[] = {"Sphere", "Box", "Torus"};
+      constexpr const char* sdfTypes[] = {"Sphere", "Box", "Torus", "4D Hypersphere Slice",
+        "Pulsating Sphere"};
       const auto sdfParameterControls = [&](const char* id, RendererState::Field::SdfProducer& producer,
           const AnimationProperty property) {
         ImGui::PushID(id);
@@ -644,21 +645,28 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
         } else if (producer.type == 1) {
           changed = ImGui::DragFloat3("Half-extents XYZ", &producer.parameters.x,
             0.01f, 0.01f, 8.0f, "%.2f units");
-        } else {
+        } else if (producer.type == 2) {
           changed = ImGui::DragFloat("Major radius", &producer.parameters.x,
             0.01f, 0.01f, 8.0f, "%.2f units");
           changed |= ImGui::DragFloat("Tube radius", &producer.parameters.y,
             0.01f, 0.01f, 8.0f, "%.2f units");
+        } else {
+          changed = ImGui::DragFloat(producer.type == 3 ? "4D radius" : "Base radius",
+            &producer.parameters.x, 0.01f, 0.01f, 8.0f, "%.2f units");
+          changed |= ImGui::DragFloat("Evolution speed", &producer.parameters.y,
+            0.01f, -8.0f, 8.0f, "%.2f");
+          changed |= ImGui::DragFloat(producer.type == 3 ? "Fourth-axis span" : "Pulse amplitude",
+            &producer.parameters.z, 0.01f, 0.0f, 8.0f, "%.2f units");
         }
         animationKeyControl(pass, property, timeline, changed);
         ImGui::PopID();
       };
-      bool sdfATypeChanged = ImGui::Combo("Producer A", &state.field.sdfA.type, sdfTypes, 3);
+      bool sdfATypeChanged = ImGui::Combo("Producer A", &state.field.sdfA.type, sdfTypes, 5);
       animationKeyControl(pass, AnimationProperty::SdfAType, timeline, sdfATypeChanged);
       animationKeyControl(pass, AnimationProperty::SdfAPosition, timeline,
         ImGui::DragFloat3("A position", &state.field.sdfA.position.x, 0.01f, -8.0f, 8.0f, "%.2f"));
       sdfParameterControls("producer-a-parameters", state.field.sdfA, AnimationProperty::SdfAParameters);
-      bool sdfBTypeChanged = ImGui::Combo("Producer B", &state.field.sdfB.type, sdfTypes, 3);
+      bool sdfBTypeChanged = ImGui::Combo("Producer B", &state.field.sdfB.type, sdfTypes, 5);
       animationKeyControl(pass, AnimationProperty::SdfBType, timeline, sdfBTypeChanged);
       animationKeyControl(pass, AnimationProperty::SdfBPosition, timeline,
         ImGui::DragFloat3("B position", &state.field.sdfB.position.x, 0.01f, -8.0f, 8.0f, "%.2f"));

@@ -11,9 +11,20 @@
 
 namespace gfxlab::editor {
 
-struct AddOperation { document::Operation operation; std::size_t index = static_cast<std::size_t>(-1); };
+struct AddOperation {
+  document::Operation operation;
+  std::size_t index = static_cast<std::size_t>(-1);
+  bool setAsFinal = false;
+};
 struct RemoveOperation { document::OperationId operation; };
+struct DuplicateOperation {
+  document::OperationId source;
+  document::OperationId duplicate;
+  std::size_t index = static_cast<std::size_t>(-1);
+};
 struct MoveOperation { document::OperationId operation; std::size_t index = 0; };
+struct SetOperationEnabled { document::OperationId operation; bool enabled = true; };
+struct ReplaceDocument { document::Document document; };
 
 enum class InputSocket { Primary, A, B, Left, Right };
 struct ConnectSignal {
@@ -42,7 +53,8 @@ struct RemoveKeyframe {
 struct ConnectModulation { document::ModulationRoute route; };
 struct RemoveModulation { std::size_t index = 0; };
 
-using Command = std::variant<AddOperation, RemoveOperation, MoveOperation, ConnectSignal,
+using Command = std::variant<AddOperation, RemoveOperation, DuplicateOperation, MoveOperation, SetOperationEnabled,
+  ReplaceDocument, ConnectSignal,
   SetFinalSignal, SetRenderOverride, SetKeyframe, RemoveKeyframe, ConnectModulation,
   RemoveModulation>;
 
@@ -59,6 +71,8 @@ public:
   static constexpr std::size_t maximumEntries = 256;
 
   [[nodiscard]] CommandResult execute(document::Document& document, const Command& command);
+  [[nodiscard]] CommandResult executeContinuous(document::Document& document, const Command& command);
+  void finishContinuous(const document::Document& document);
   [[nodiscard]] bool undo(document::Document& document);
   [[nodiscard]] bool redo(document::Document& document);
   [[nodiscard]] bool canUndo() const { return !undo_.empty(); }
@@ -70,6 +84,7 @@ private:
     const document::Document& document);
   std::vector<document::Document> undo_;
   std::vector<document::Document> redo_;
+  std::optional<document::Document> continuousStart_;
 };
 
 } // namespace gfxlab::editor

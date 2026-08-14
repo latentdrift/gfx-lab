@@ -2,6 +2,9 @@
 
 #include "app/State.hpp"
 #include "app/RenderStack.hpp"
+#include "document/Document.hpp"
+#include "evaluation/EvaluationPlan.hpp"
+#include "evaluation/SignalRegistry.hpp"
 
 #include <array>
 #include <memory>
@@ -26,11 +29,9 @@ public:
     float gain = 1.0f, float bias = 0.0f);
   unsigned int renderPass(const RenderPass& pass, const CameraOrbit& camera, TestScene scene,
     std::size_t targetIndex);
-  unsigned int composite(const RenderStack& stack);
-  [[nodiscard]] unsigned int stackOperationResult(std::size_t operationIndex) const;
-  [[nodiscard]] unsigned int stackOperationDepthResult(std::size_t operationIndex) const;
-  [[nodiscard]] unsigned int stackOperationFieldResult(std::size_t operationIndex) const;
-  [[nodiscard]] std::array<unsigned int, 4> stackOperationSpectrumResult(std::size_t operationIndex) const;
+  unsigned int evaluate(const document::Document& document,
+    const evaluation::EvaluationPlan& plan, evaluation::SignalRegistry& signals,
+    std::uint64_t revision, float timeSeconds);
   unsigned int reconstructDisplay(unsigned int sourceTexture, const DisplayReconstructionState& state,
     std::size_t targetIndex);
   void updateElementalSimulation(float deltaSeconds, const RendererState& state, TestScene scene);

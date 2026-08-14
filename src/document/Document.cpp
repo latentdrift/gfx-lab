@@ -25,4 +25,28 @@ const SignalDescriptor* findSignal(const Document& document, const SignalId id) 
   return nullptr;
 }
 
+OperationId nextOperationId(const Document& document) {
+  return {document.nextOperationIdentity};
+}
+
+std::optional<OperationId> operationFromObject(const ObjectId object) {
+  if (object.kind != ObjectKind::Operation || object.value == 0) return std::nullopt;
+  return OperationId{object.value};
+}
+
+Document makeDefaultDocument() {
+  Document result;
+  Operation a = makeRenderOperation({1}, "Base Render");
+  Operation b = makeRenderOperation({2}, "Variant");
+  Operation composite = makeCompositeOperation({3}, "Composite",
+    primaryOutput(a), primaryOutput(b));
+  result.operations.push_back(std::move(a));
+  result.operations.push_back(std::move(b));
+  result.operations.push_back(std::move(composite));
+  result.presentation.input = primaryOutput(result.operations.back());
+  result.nextOperationIdentity = 4;
+  result.scene.cameraAuthored = true;
+  return result;
+}
+
 } // namespace gfxlab::document

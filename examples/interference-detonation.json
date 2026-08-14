@@ -1,274 +1,1356 @@
 {
-  "schema": "graphics-lab.render-stack.v8",
-  "hardware_target": "unrestricted",
-  "test_scene": "field_interference",
-  "view": {
-    "orbit_yaw_radians": 0.72,
-    "orbit_pitch_radians": 0.56,
-    "distance_units": 7.4,
-    "target": [0.0, -0.35, 0.0]
-  },
-  "display_reconstruction": {
-    "enabled": false,
-    "signal": "direct_rgb",
-    "chroma_bleed": 0.0,
-    "luma_chroma_crosstalk": 0.0,
-    "scanline_strength": 0.0,
-    "phosphor_mask_strength": 0.0,
-    "bloom_strength": 0.0,
-    "bloom_radius_pixels": 3.0
-  },
-  "animation_timeline": {
-    "duration_seconds": 6.0,
-    "playback_rate": 1.0,
-    "loop": true,
-    "auto_key": false,
-    "show_all_passes": true,
-    "snap_to_frames": true,
-    "frames_per_second": 24,
-    "current_time_seconds": 0.0
-  },
-  "global_base": {
-    "properties": {
-      "field_enabled": [1.0],
-      "field_producer_kind": [0.0],
-      "field_source_a": [-0.15, 0.0, 0.0],
-      "field_source_b": [0.15, 0.0, 0.0],
-      "field_wavelength": [0.78],
-      "field_phase_offset": [0.0],
-      "field_amplitude_a": [1.25],
-      "field_amplitude_b": [1.25],
-      "field_falloff": [0.14],
-      "field_band_sharpness": [1.65],
-      "field_visualization": [3.0],
-      "field_low_color": [0.004, 0.008, 0.025],
-      "field_high_color": [1.0, 0.32, 0.06],
-      "field_vertex_displacement": [0.08],
-      "field_signed_displacement": [1.0],
-      "field_surface_color_influence": [0.62],
-      "field_emission_influence": [0.75],
-      "smooth_shading": [1.0],
-      "lighting_model": [0.0],
-      "ambient": [0.07],
-      "bits_per_channel": [6.0],
-      "dithering_enabled": [1.0],
-      "linear_light": [1.0],
-      "internal_resolution": [640.0, 480.0],
-      "nearest_upscaling": [0.0]
-    },
-    "property_tracks": []
-  },
-  "passes": [
+  "animation": [
     {
+      "interpolation": 2,
+      "keys": [
+        {
+          "time": 0.0,
+          "value": [
+            -0.15000000596046448,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "time": 1.600000023841858,
+          "value": [
+            -2.75,
+            0.10000000149011612,
+            0.0
+          ]
+        },
+        {
+          "time": 5.199999809265137,
+          "value": [
+            -3.3499999046325684,
+            0.30000001192092896,
+            0.0
+          ]
+        },
+        {
+          "time": 6.0,
+          "value": [
+            -0.15000000596046448,
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "owner": {
+        "id": 1,
+        "kind": "operation"
+      },
+      "property": "field_source_a"
+    },
+    {
+      "interpolation": 2,
+      "keys": [
+        {
+          "time": 0.0,
+          "value": [
+            0.15000000596046448,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "time": 1.600000023841858,
+          "value": [
+            2.75,
+            -0.10000000149011612,
+            0.0
+          ]
+        },
+        {
+          "time": 5.199999809265137,
+          "value": [
+            3.3499999046325684,
+            -0.30000001192092896,
+            0.0
+          ]
+        },
+        {
+          "time": 6.0,
+          "value": [
+            0.15000000596046448,
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "owner": {
+        "id": 1,
+        "kind": "operation"
+      },
+      "property": "field_source_b"
+    },
+    {
+      "interpolation": 2,
+      "keys": [
+        {
+          "time": 0.0,
+          "value": [
+            1.25
+          ]
+        },
+        {
+          "time": 0.699999988079071,
+          "value": [
+            0.2199999988079071
+          ]
+        },
+        {
+          "time": 3.799999952316284,
+          "value": [
+            0.5799999833106995
+          ]
+        },
+        {
+          "time": 6.0,
+          "value": [
+            1.25
+          ]
+        }
+      ],
+      "owner": {
+        "id": 1,
+        "kind": "operation"
+      },
+      "property": "field_wavelength"
+    },
+    {
+      "interpolation": 2,
+      "keys": [
+        {
+          "time": 0.0,
+          "value": [
+            0.019999999552965164
+          ]
+        },
+        {
+          "time": 0.550000011920929,
+          "value": [
+            0.46000000834465027
+          ]
+        },
+        {
+          "time": 2.4000000953674316,
+          "value": [
+            0.14000000059604645
+          ]
+        },
+        {
+          "time": 6.0,
+          "value": [
+            0.019999999552965164
+          ]
+        }
+      ],
+      "owner": {
+        "id": 1,
+        "kind": "operation"
+      },
+      "property": "field_vertex_displacement"
+    },
+    {
+      "interpolation": 2,
+      "keys": [
+        {
+          "time": 0.0,
+          "value": [
+            0.0,
+            0.0,
+            -0.10000000149011612
+          ]
+        },
+        {
+          "time": 2.0,
+          "value": [
+            -2.25,
+            0.6499999761581421,
+            -0.699999988079071
+          ]
+        },
+        {
+          "time": 5.199999809265137,
+          "value": [
+            -3.0,
+            -0.20000000298023224,
+            0.3499999940395355
+          ]
+        },
+        {
+          "time": 6.0,
+          "value": [
+            0.0,
+            0.0,
+            -0.10000000149011612
+          ]
+        }
+      ],
+      "owner": {
+        "id": 2,
+        "kind": "operation"
+      },
+      "property": "field_source_a"
+    },
+    {
+      "interpolation": 2,
+      "keys": [
+        {
+          "time": 0.0,
+          "value": [
+            0.0,
+            0.0,
+            0.10000000149011612
+          ]
+        },
+        {
+          "time": 2.0,
+          "value": [
+            2.25,
+            -0.6499999761581421,
+            0.699999988079071
+          ]
+        },
+        {
+          "time": 5.199999809265137,
+          "value": [
+            3.0,
+            0.20000000298023224,
+            -0.3499999940395355
+          ]
+        },
+        {
+          "time": 6.0,
+          "value": [
+            0.0,
+            0.0,
+            0.10000000149011612
+          ]
+        }
+      ],
+      "owner": {
+        "id": 2,
+        "kind": "operation"
+      },
+      "property": "field_source_b"
+    },
+    {
+      "interpolation": 1,
+      "keys": [
+        {
+          "time": 0.0,
+          "value": [
+            -3.0
+          ]
+        },
+        {
+          "time": 3.0,
+          "value": [
+            3.0
+          ]
+        },
+        {
+          "time": 6.0,
+          "value": [
+            -3.0
+          ]
+        }
+      ],
+      "owner": {
+        "id": 2,
+        "kind": "operation"
+      },
+      "property": "field_phase_offset"
+    },
+    {
+      "interpolation": 2,
+      "keys": [
+        {
+          "time": 0.0,
+          "value": [
+            0.009999999776482582
+          ]
+        },
+        {
+          "time": 0.8999999761581421,
+          "value": [
+            0.3400000035762787
+          ]
+        },
+        {
+          "time": 3.0,
+          "value": [
+            0.07999999821186066
+          ]
+        },
+        {
+          "time": 6.0,
+          "value": [
+            0.009999999776482582
+          ]
+        }
+      ],
+      "owner": {
+        "id": 2,
+        "kind": "operation"
+      },
+      "property": "field_vertex_displacement"
+    },
+    {
+      "interpolation": 2,
+      "keys": [
+        {
+          "time": 0.0,
+          "value": [
+            1.25
+          ]
+        },
+        {
+          "time": 0.550000011920929,
+          "value": [
+            7.0
+          ]
+        },
+        {
+          "time": 3.0,
+          "value": [
+            3.200000047683716
+          ]
+        },
+        {
+          "time": 6.0,
+          "value": [
+            1.25
+          ]
+        }
+      ],
+      "owner": {
+        "id": 3,
+        "kind": "operation"
+      },
+      "property": "composite_gain"
+    }
+  ],
+  "hardware_profile": 0,
+  "modulation": [
+    {
+      "clamp": true,
+      "input": [
+        0.019999999552965164,
+        0.47999998927116394
+      ],
+      "output": [
+        0.15000000596046448,
+        4.5
+      ],
+      "owner": {
+        "id": 2,
+        "kind": "operation"
+      },
+      "property": "field_emission_influence",
+      "smoothing": 0.18000000715255737,
+      "source": {
+        "frame_offset": 0,
+        "operation": 5,
+        "port": "value"
+      }
+    }
+  ],
+  "next_operation_id": 6,
+  "operations": [
+    {
+      "enabled": true,
       "id": 1,
       "name": "Outward impulse",
-      "enabled": true,
-      "operation_kind": "render",
-      "output_buffer": "color",
+      "output": 0,
+      "outputs": [
+        {
+          "domain": 1,
+          "encoding": 1,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 0,
+          "name": "Color",
+          "port": "color",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 0,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 1,
+          "name": "Depth",
+          "port": "depth",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 0,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 2,
+          "name": "Normal",
+          "port": "normal",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 3,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 3,
+          "name": "Field",
+          "port": "field",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 0,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 4,
+          "name": "Spectrum16",
+          "port": "spectrum16",
+          "units": ""
+        }
+      ],
       "overrides": [],
-      "animation": {
-        "enabled": true,
-        "property_tracks": [
-          {
-            "property": "field_source_a",
-            "interpolation": "smooth_step",
-            "keys": [
-              {"time_seconds": 0.0, "value": [-0.15, 0.0, 0.0]},
-              {"time_seconds": 1.6, "value": [-2.75, 0.1, 0.0]},
-              {"time_seconds": 5.2, "value": [-3.35, 0.3, 0.0]},
-              {"time_seconds": 6.0, "value": [-0.15, 0.0, 0.0]}
-            ]
-          },
-          {
-            "property": "field_source_b",
-            "interpolation": "smooth_step",
-            "keys": [
-              {"time_seconds": 0.0, "value": [0.15, 0.0, 0.0]},
-              {"time_seconds": 1.6, "value": [2.75, -0.1, 0.0]},
-              {"time_seconds": 5.2, "value": [3.35, -0.3, 0.0]},
-              {"time_seconds": 6.0, "value": [0.15, 0.0, 0.0]}
-            ]
-          },
-          {
-            "property": "field_wavelength",
-            "interpolation": "smooth_step",
-            "keys": [
-              {"time_seconds": 0.0, "value": [1.25]},
-              {"time_seconds": 0.7, "value": [0.22]},
-              {"time_seconds": 3.8, "value": [0.58]},
-              {"time_seconds": 6.0, "value": [1.25]}
-            ]
-          },
-          {
-            "property": "field_vertex_displacement",
-            "interpolation": "smooth_step",
-            "keys": [
-              {"time_seconds": 0.0, "value": [0.02]},
-              {"time_seconds": 0.55, "value": [0.46]},
-              {"time_seconds": 2.4, "value": [0.14]},
-              {"time_seconds": 6.0, "value": [0.02]}
-            ]
-          }
+      "perturbation": {
+        "camera_distance": 0.0,
+        "camera_lateral": 0.0,
+        "camera_pitch": 0.0,
+        "camera_yaw": 0.0,
+        "fov_offset": 0.0,
+        "normal_inflation": 0.0,
+        "scale": 1.0,
+        "stereo_convergence": 4.0,
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "uv_mapping": 0,
+        "uv_offset": [
+          0.0,
+          0.0
+        ],
+        "uv_pivot": [
+          0.5,
+          0.5
+        ],
+        "uv_rotation": 0.0,
+        "uv_scale": [
+          1.0,
+          1.0
         ]
-      }
+      },
+      "texture": {
+        "asset": "",
+        "source": 0,
+        "srgb": true
+      },
+      "time": {
+        "offset_seconds": 0.0,
+        "scale": 1.0
+      },
+      "type": "render"
     },
     {
+      "enabled": true,
       "id": 2,
       "name": "Phase-lagged impulse",
-      "enabled": true,
-      "operation_kind": "render",
-      "output_buffer": "color",
-      "overrides": [
-        {"property": "field_high_color", "value": [0.12, 0.68, 1.0]},
-        {"property": "field_wavelength", "value": [0.64]},
-        {"property": "field_phase_offset", "value": [1.1]},
-        {"property": "field_emission_influence", "value": [0.55]}
-      ],
-      "animation": {
-        "enabled": true,
-        "property_tracks": [
-          {
-            "property": "field_source_a",
-            "interpolation": "smooth_step",
-            "keys": [
-              {"time_seconds": 0.0, "value": [0.0, 0.0, -0.1]},
-              {"time_seconds": 2.0, "value": [-2.25, 0.65, -0.7]},
-              {"time_seconds": 5.2, "value": [-3.0, -0.2, 0.35]},
-              {"time_seconds": 6.0, "value": [0.0, 0.0, -0.1]}
-            ]
-          },
-          {
-            "property": "field_source_b",
-            "interpolation": "smooth_step",
-            "keys": [
-              {"time_seconds": 0.0, "value": [0.0, 0.0, 0.1]},
-              {"time_seconds": 2.0, "value": [2.25, -0.65, 0.7]},
-              {"time_seconds": 5.2, "value": [3.0, 0.2, -0.35]},
-              {"time_seconds": 6.0, "value": [0.0, 0.0, 0.1]}
-            ]
-          },
-          {
-            "property": "field_phase_offset",
-            "interpolation": "linear",
-            "keys": [
-              {"time_seconds": 0.0, "value": [-3.0]},
-              {"time_seconds": 3.0, "value": [3.0]},
-              {"time_seconds": 6.0, "value": [-3.0]}
-            ]
-          },
-          {
-            "property": "field_vertex_displacement",
-            "interpolation": "smooth_step",
-            "keys": [
-              {"time_seconds": 0.0, "value": [0.01]},
-              {"time_seconds": 0.9, "value": [0.34]},
-              {"time_seconds": 3.0, "value": [0.08]},
-              {"time_seconds": 6.0, "value": [0.01]}
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 3,
-      "name": "Impulse disagreement",
-      "enabled": true,
-      "operation_kind": "composite",
-      "output_buffer": "color",
-      "overrides": [],
-      "composite_into_previous": {
-        "operation": "absolute_difference",
-        "source_a": {"type": "render_pass", "pass_id": 1},
-        "source_b": {"type": "render_pass", "pass_id": 2},
-        "interpretation_a": "raw_rgb",
-        "interpretation_b": "raw_rgb",
-        "gain": 4.5,
-        "bias": 0.0,
-        "opacity": 1.0,
-        "arithmetic_color_space": "linear_light",
-        "range_behavior": "clamp_0_to_1",
-        "mask": "none",
-        "invert_mask": false
-      },
-      "animation": {
-        "enabled": true,
-        "property_tracks": [
-          {
-            "property": "composite_gain",
-            "interpolation": "smooth_step",
-            "keys": [
-              {"time_seconds": 0.0, "value": [1.25]},
-              {"time_seconds": 0.55, "value": [7.0]},
-              {"time_seconds": 3.0, "value": [3.2]},
-              {"time_seconds": 6.0, "value": [1.25]}
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 4,
-      "name": "Persistent corona",
-      "enabled": true,
-      "operation_kind": "composite",
-      "output_buffer": "color",
-      "overrides": [],
-      "composite_into_previous": {
-        "operation": "screen",
-        "source_a": {"type": "render_pass", "pass_id": 3},
-        "source_b": {"type": "previous_frame", "pass_id": 3},
-        "interpretation_a": "raw_rgb",
-        "interpretation_b": "raw_rgb",
-        "previous_frame": {
-          "decay": 0.91,
-          "uv_offset": [0.0, 0.0015],
-          "uv_scale": [0.997, 0.997]
+      "output": 0,
+      "outputs": [
+        {
+          "domain": 1,
+          "encoding": 1,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 0,
+          "name": "Color",
+          "port": "color",
+          "units": ""
         },
-        "gain": 1.0,
-        "bias": 0.0,
-        "opacity": 0.72,
-        "arithmetic_color_space": "linear_light",
-        "range_behavior": "clamp_0_to_1",
-        "mask": "none",
-        "invert_mask": false
+        {
+          "domain": 1,
+          "encoding": 0,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 1,
+          "name": "Depth",
+          "port": "depth",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 0,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 2,
+          "name": "Normal",
+          "port": "normal",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 3,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 3,
+          "name": "Field",
+          "port": "field",
+          "units": ""
+        },
+        {
+          "domain": 1,
+          "encoding": 0,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 4,
+          "name": "Spectrum16",
+          "port": "spectrum16",
+          "units": ""
+        }
+      ],
+      "overrides": [
+        {
+          "property": "field_high_color",
+          "value": [
+            0.11999999731779099,
+            0.6800000071525574,
+            1.0
+          ]
+        },
+        {
+          "property": "field_wavelength",
+          "value": [
+            0.6399999856948853
+          ]
+        },
+        {
+          "property": "field_phase_offset",
+          "value": [
+            1.100000023841858
+          ]
+        },
+        {
+          "property": "field_emission_influence",
+          "value": [
+            0.550000011920929
+          ]
+        }
+      ],
+      "perturbation": {
+        "camera_distance": 0.0,
+        "camera_lateral": 0.0,
+        "camera_pitch": 0.0,
+        "camera_yaw": 0.0,
+        "fov_offset": 0.0,
+        "normal_inflation": 0.0,
+        "scale": 1.0,
+        "stereo_convergence": 4.0,
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "uv_mapping": 0,
+        "uv_offset": [
+          0.0,
+          0.0
+        ],
+        "uv_pivot": [
+          0.5,
+          0.5
+        ],
+        "uv_rotation": 0.0,
+        "uv_scale": [
+          1.0,
+          1.0
+        ]
       },
-      "animation": {"enabled": true, "property_tracks": []}
+      "texture": {
+        "asset": "",
+        "source": 0,
+        "srgb": true
+      },
+      "time": {
+        "offset_seconds": 0.0,
+        "scale": 1.0
+      },
+      "type": "render"
     },
     {
-      "id": 5,
-      "name": "Disagreement drives blue emission",
-      "enabled": true,
-      "operation_kind": "measure",
-      "output_buffer": "color",
-      "overrides": [],
-      "composite_into_previous": {
-        "operation": "absolute_difference",
-        "source_a": {"type": "render_pass", "pass_id": 3},
-        "source_b": {"type": "fixed_color", "pass_id": 3},
-        "fixed_color_rgba": [0.0, 0.0, 0.0, 1.0],
-        "gain": 1.0,
+      "a": {
+        "frame_offset": 0,
+        "operation": 1,
+        "port": "color"
+      },
+      "arithmetic": {
         "bias": 0.0,
+        "bit_depth": 8,
+        "color_space": 1,
+        "gain": 4.5,
         "opacity": 1.0,
-        "arithmetic_color_space": "linear_light",
-        "range_behavior": "clamp_0_to_1",
-        "mask": "none",
-        "invert_mask": false
+        "operation": 0,
+        "range": 0
       },
-      "measurement": {
-        "threshold": 0.12,
-        "absolute_magnitude": true,
-        "metric": "coverage_above_threshold",
-        "modulation": {
-          "enabled": true,
-          "target_pass_id": 2,
-          "target_property": "field_emission_influence",
-          "input_range": [0.02, 0.48],
-          "output_range": [0.15, 4.5],
-          "clamp": true,
-          "smoothing_seconds": 0.18
+      "b": {
+        "frame_offset": 0,
+        "operation": 2,
+        "port": "color"
+      },
+      "enabled": true,
+      "id": 3,
+      "interpretation_a": 0,
+      "interpretation_b": 0,
+      "invert_mask": false,
+      "mask": 0,
+      "name": "Impulse disagreement",
+      "observer": {
+        "exposure": 0.0,
+        "opponent_gain": 4.0,
+        "rod_sensitivity": 4.0
+      },
+      "outputs": [
+        {
+          "domain": 1,
+          "encoding": 1,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 0,
+          "name": "Composite color",
+          "port": "color",
+          "units": ""
         }
+      ],
+      "type": "composite"
+    },
+    {
+      "a": {
+        "frame_offset": 0,
+        "operation": 3,
+        "port": "color"
       },
-      "animation": {"enabled": true, "property_tracks": []}
+      "arithmetic": {
+        "bias": 0.0,
+        "bit_depth": 8,
+        "color_space": 1,
+        "gain": 1.0,
+        "opacity": 0.7200000286102295,
+        "operation": 5,
+        "range": 0
+      },
+      "b": {
+        "frame_offset": -1,
+        "operation": 3,
+        "port": "color"
+      },
+      "enabled": true,
+      "feedback": {
+        "decay": 0.9100000262260437,
+        "offset": [
+          0.0,
+          0.001500000013038516
+        ],
+        "scale": [
+          0.996999979019165,
+          0.996999979019165
+        ]
+      },
+      "id": 4,
+      "interpretation_a": 0,
+      "interpretation_b": 0,
+      "invert_mask": false,
+      "mask": 0,
+      "name": "Persistent corona",
+      "observer": {
+        "exposure": 0.0,
+        "opponent_gain": 4.0,
+        "rod_sensitivity": 4.0
+      },
+      "outputs": [
+        {
+          "domain": 1,
+          "encoding": 1,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 0,
+          "name": "Composite color",
+          "port": "color",
+          "units": ""
+        }
+      ],
+      "type": "composite"
+    },
+    {
+      "absolute": true,
+      "enabled": true,
+      "id": 5,
+      "input": {
+        "frame_offset": 0,
+        "operation": 3,
+        "port": "color"
+      },
+      "metric": 3,
+      "name": "Disagreement drives blue emission",
+      "outputs": [
+        {
+          "domain": 0,
+          "encoding": 0,
+          "extent": [
+            0,
+            0,
+            0
+          ],
+          "kind": 5,
+          "name": "Measurement",
+          "port": "value",
+          "units": ""
+        }
+      ],
+      "threshold": 0.11999999731779099,
+      "type": "measure"
     }
-  ]
+  ],
+  "presentation": {
+    "display": {
+      "bloom": 0.0,
+      "bloom_radius": 3.0,
+      "chroma_bleed": 0.0,
+      "crosstalk": 0.0,
+      "dark_adaptation": 0.6499999761581421,
+      "enabled": false,
+      "exposure": 0.0,
+      "opponent_gain": 4.0,
+      "phosphor_mask": 0.0,
+      "rod_sensitivity": 4.0,
+      "scanlines": 0.0,
+      "signal": 0,
+      "xor_bits": 5
+    },
+    "input": {
+      "frame_offset": 0,
+      "operation": 5,
+      "port": "value"
+    }
+  },
+  "render_defaults": {
+    "properties": {
+      "affine_mapping": [
+        0.0
+      ],
+      "alpha_cutoff": [
+        0.5
+      ],
+      "alpha_threshold": [
+        0.5
+      ],
+      "ambient": [
+        0.07000000029802322
+      ],
+      "anisotropy": [
+        1.0
+      ],
+      "bits_per_channel": [
+        6.0
+      ],
+      "camera_distance": [
+        0.0
+      ],
+      "camera_lateral": [
+        0.0
+      ],
+      "camera_pitch": [
+        0.0
+      ],
+      "camera_yaw": [
+        0.0
+      ],
+      "clipping_enabled": [
+        0.0
+      ],
+      "clipping_height": [
+        0.0
+      ],
+      "clipping_keep_above": [
+        0.0
+      ],
+      "composite_bias": [
+        0.0
+      ],
+      "composite_bit_depth": [
+        8.0
+      ],
+      "composite_color_space": [
+        0.0
+      ],
+      "composite_fixed_color": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "composite_gain": [
+        4.0
+      ],
+      "composite_history_decay": [
+        0.9599999785423279
+      ],
+      "composite_history_uv_offset": [
+        0.0,
+        0.0
+      ],
+      "composite_history_uv_scale": [
+        1.0,
+        1.0
+      ],
+      "composite_interpretation_a": [
+        0.0
+      ],
+      "composite_interpretation_b": [
+        0.0
+      ],
+      "composite_mask": [
+        0.0
+      ],
+      "composite_mask_inverted": [
+        0.0
+      ],
+      "composite_opacity": [
+        1.0
+      ],
+      "composite_operation": [
+        0.0
+      ],
+      "composite_range": [
+        0.0
+      ],
+      "composite_source_a": [
+        0.0
+      ],
+      "composite_source_a_pass": [
+        1.0
+      ],
+      "composite_source_b": [
+        1.0
+      ],
+      "composite_source_b_pass": [
+        1.0
+      ],
+      "cull_mode": [
+        1.0
+      ],
+      "depth_comparison": [
+        0.0
+      ],
+      "depth_cue_enabled": [
+        0.0
+      ],
+      "depth_cue_end": [
+        7.0
+      ],
+      "depth_cue_start": [
+        3.0
+      ],
+      "depth_precision": [
+        24.0
+      ],
+      "depth_test_enabled": [
+        1.0
+      ],
+      "depth_visualization": [
+        0.0
+      ],
+      "depth_write_enabled": [
+        1.0
+      ],
+      "dithering_enabled": [
+        1.0
+      ],
+      "environment_color": [
+        0.18000000715255737,
+        0.23999999463558197,
+        0.30000001192092896,
+        1.0
+      ],
+      "far_color": [
+        0.11999999731779099,
+        0.1599999964237213,
+        0.2199999988079071
+      ],
+      "field_amplitude_a": [
+        1.25
+      ],
+      "field_amplitude_b": [
+        1.25
+      ],
+      "field_band_sharpness": [
+        1.649999976158142
+      ],
+      "field_discard_enabled": [
+        0.0
+      ],
+      "field_discard_threshold": [
+        0.5
+      ],
+      "field_emission_influence": [
+        0.75
+      ],
+      "field_enabled": [
+        1.0
+      ],
+      "field_falloff": [
+        0.14000000059604645
+      ],
+      "field_high_color": [
+        1.0,
+        0.3199999928474426,
+        0.05999999865889549
+      ],
+      "field_low_color": [
+        0.004000000189989805,
+        0.00800000037997961,
+        0.02500000037252903
+      ],
+      "field_of_view": [
+        45.0
+      ],
+      "field_of_view_offset": [
+        0.0
+      ],
+      "field_phase_offset": [
+        0.0
+      ],
+      "field_producer_kind": [
+        0.0
+      ],
+      "field_signed_displacement": [
+        1.0
+      ],
+      "field_source_a": [
+        -0.15000000596046448,
+        0.0,
+        0.0
+      ],
+      "field_source_b": [
+        0.15000000596046448,
+        0.0,
+        0.0
+      ],
+      "field_surface_color_influence": [
+        0.6200000047683716
+      ],
+      "field_vertex_displacement": [
+        0.07999999821186066
+      ],
+      "field_visualization": [
+        3.0
+      ],
+      "field_wavelength": [
+        0.7799999713897705
+      ],
+      "fog_enabled": [
+        0.0
+      ],
+      "fog_end": [
+        7.0
+      ],
+      "fog_start": [
+        3.0
+      ],
+      "internal_resolution": [
+        640.0,
+        480.0
+      ],
+      "iso_color": [
+        0.7200000286102295,
+        0.8199999928474426,
+        1.0
+      ],
+      "iso_hit_epsilon": [
+        0.0020000000949949026
+      ],
+      "iso_level": [
+        0.0
+      ],
+      "iso_maximum_distance": [
+        30.0
+      ],
+      "iso_maximum_steps": [
+        128.0
+      ],
+      "iso_surface_enabled": [
+        0.0
+      ],
+      "light_azimuth": [
+        34.0
+      ],
+      "light_elevation": [
+        52.0
+      ],
+      "lighting_model": [
+        0.0
+      ],
+      "linear_light": [
+        1.0
+      ],
+      "mipmapping": [
+        0.0
+      ],
+      "model_scale": [
+        1.0
+      ],
+      "model_translation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "multisample_count": [
+        1.0
+      ],
+      "n64_alpha_compare": [
+        0.0
+      ],
+      "n64_color_dither": [
+        1.0
+      ],
+      "n64_coverage_antialiasing": [
+        1.0
+      ],
+      "n64_cycle_0_a": [
+        1.0
+      ],
+      "n64_cycle_0_b": [
+        0.0
+      ],
+      "n64_cycle_0_c": [
+        3.0
+      ],
+      "n64_cycle_0_d": [
+        0.0
+      ],
+      "n64_cycle_1_a": [
+        7.0
+      ],
+      "n64_cycle_1_b": [
+        0.0
+      ],
+      "n64_cycle_1_c": [
+        2.0
+      ],
+      "n64_cycle_1_d": [
+        0.0
+      ],
+      "n64_cycle_type": [
+        1.0
+      ],
+      "n64_framebuffer_format": [
+        0.0
+      ],
+      "n64_mipmap_mode": [
+        0.0
+      ],
+      "n64_mirror_s": [
+        0.0
+      ],
+      "n64_mirror_t": [
+        0.0
+      ],
+      "n64_shift_s": [
+        0.0
+      ],
+      "n64_shift_t": [
+        0.0
+      ],
+      "n64_surface_mode": [
+        0.0
+      ],
+      "n64_texture_filter": [
+        1.0
+      ],
+      "n64_texture_format": [
+        0.0
+      ],
+      "n64_texture_generation": [
+        0.0
+      ],
+      "n64_tile_size": [
+        32.0,
+        32.0
+      ],
+      "n64_vi_divot": [
+        1.0
+      ],
+      "n64_vi_reconstruction": [
+        1.0
+      ],
+      "n64_z_compare": [
+        1.0
+      ],
+      "n64_z_update": [
+        1.0
+      ],
+      "near_plane": [
+        0.05000000074505806
+      ],
+      "nearest_filtering": [
+        0.0
+      ],
+      "nearest_upscaling": [
+        0.0
+      ],
+      "normal_inflation": [
+        0.0
+      ],
+      "normal_mapping_enabled": [
+        0.0
+      ],
+      "normal_strength": [
+        1.0
+      ],
+      "ordering_buckets": [
+        32.0
+      ],
+      "ordering_table_enabled": [
+        0.0
+      ],
+      "orthographic_size": [
+        4.0
+      ],
+      "overdraw_enabled": [
+        0.0
+      ],
+      "overdraw_range": [
+        8.0
+      ],
+      "pass_enabled": [
+        1.0
+      ],
+      "pass_output": [
+        0.0
+      ],
+      "polygon_offset_enabled": [
+        0.0
+      ],
+      "polygon_offset_factor": [
+        1.0
+      ],
+      "polygon_offset_units": [
+        1.0
+      ],
+      "primitive_color": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "projection_orthographic": [
+        0.0
+      ],
+      "reverse_draw_order": [
+        0.0
+      ],
+      "sdf_a_parameters": [
+        1.149999976158142,
+        0.3499999940395355,
+        0.3499999940395355
+      ],
+      "sdf_a_position": [
+        -0.8500000238418579,
+        0.0,
+        0.0
+      ],
+      "sdf_a_type": [
+        0.0
+      ],
+      "sdf_b_parameters": [
+        0.8500000238418579,
+        0.2800000011920929,
+        0.2800000011920929
+      ],
+      "sdf_b_position": [
+        0.8500000238418579,
+        0.0,
+        0.0
+      ],
+      "sdf_b_type": [
+        2.0
+      ],
+      "sdf_operation": [
+        3.0
+      ],
+      "sdf_preview_range": [
+        1.5
+      ],
+      "sdf_smoothness": [
+        0.44999998807907104
+      ],
+      "shadow_bias": [
+        0.0020000000949949026
+      ],
+      "shadow_map_visualization": [
+        0.0
+      ],
+      "shadow_pcf": [
+        1.0
+      ],
+      "shadow_resolution": [
+        1024.0
+      ],
+      "shadows_enabled": [
+        0.0
+      ],
+      "shininess": [
+        32.0
+      ],
+      "smooth_shading": [
+        1.0
+      ],
+      "spectral_exposure": [
+        0.0
+      ],
+      "spectral_illuminant": [
+        0.0
+      ],
+      "spectral_observer": [
+        0.0
+      ],
+      "stencil_enabled": [
+        0.0
+      ],
+      "stencil_inverted": [
+        0.0
+      ],
+      "stencil_reference": [
+        1.0
+      ],
+      "stereo_analysis_mode": [
+        2.0
+      ],
+      "stereo_convergence": [
+        4.0
+      ],
+      "stereo_maximum_disparity": [
+        64.0
+      ],
+      "stereo_occlusion_tolerance": [
+        0.0024999999441206455
+      ],
+      "surface_visualization": [
+        0.0
+      ],
+      "texture_color_interpretation": [
+        1.0
+      ],
+      "texture_color_storage": [
+        0.0
+      ],
+      "texture_repeat": [
+        1.0
+      ],
+      "texture_source": [
+        0.0
+      ],
+      "transparency_operation": [
+        0.0
+      ],
+      "trilinear_filtering": [
+        0.0
+      ],
+      "uv_mapping": [
+        0.0
+      ],
+      "uv_offset": [
+        0.0,
+        0.0
+      ],
+      "uv_pivot": [
+        0.5,
+        0.5
+      ],
+      "uv_rotation": [
+        0.0
+      ],
+      "uv_scale": [
+        1.0,
+        1.0
+      ],
+      "vertex_quantization": [
+        0.0
+      ],
+      "wireframe_overlay": [
+        0.0
+      ]
+    },
+    "texture": {
+      "asset": "",
+      "source": 0,
+      "srgb": true
+    }
+  },
+  "scene": {
+    "camera": {
+      "distance": 7.400000095367432,
+      "pitch": 0.5600000023841858,
+      "target": [
+        0.0,
+        -0.3499999940395355,
+        0.0
+      ],
+      "yaw": 0.7200000286102295
+    },
+    "model": "",
+    "type": 6
+  },
+  "schema": "graphics-lab.document.v10",
+  "timeline": {
+    "auto_key": false,
+    "current": 0.0,
+    "duration": 6.0,
+    "fps": 24,
+    "loop": true,
+    "rate": 1.0,
+    "show_all": true,
+    "snap": true
+  }
 }
