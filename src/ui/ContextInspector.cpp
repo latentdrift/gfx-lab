@@ -4,6 +4,7 @@
 #include "app/PassEditing.hpp"
 #include "app/RenderStack.hpp"
 #include "ui/DisplayInspector.hpp"
+#include "ui/AnimationControls.hpp"
 #include "ui/Inspector.hpp"
 #include "ui/PassInspector.hpp"
 #include "ui/TextureMappingEditor.hpp"
@@ -30,46 +31,136 @@ void applyInspectorEdit(RenderStack& stack, const bool sceneDefaults, const Rend
   else applyEditedLocalPass(stack, before, edited, timeSeconds);
 }
 
+void beginInheritanceContext(RenderStack& stack, const bool sceneDefaults, const float timeSeconds) {
+  if (!sceneDefaults && rendersScene(stack.selected()))
+    setPropertyInheritanceContext(&stack.selected(), evaluateRenderPass(stack.global(), timeSeconds));
+  else
+    clearPropertyInheritanceContext();
+}
+
 void drawOverview(RenderStack& stack, AnimationTimeline& timeline, const bool sceneDefaults,
     const float timeSeconds) {
   const RenderPass before = sceneDefaults ? evaluateRenderPass(stack.global(), timeSeconds)
     : materializeRenderPass(stack, stack.selectedIndex(), timeSeconds);
   RenderStack editingStack = stack;
   editingStack.selected() = before;
+  beginInheritanceContext(stack, sceneDefaults, timeSeconds);
   drawPassInspector(editingStack, timeline, sceneDefaults);
+  clearPropertyInheritanceContext();
   applyInspectorEdit(stack, sceneDefaults, before, editingStack.selected(), timeSeconds);
 }
 
 void drawRenderSettings(RenderStack& stack, AnimationTimeline& timeline, const bool sceneDefaults,
     const HardwareProfile profile, const ModelAsset* importedModel, const TestScene scene,
     const float timeSeconds, Category& activeCategory) {
-  constexpr std::array categories = {Category::Geometry, Category::Camera, Category::Rasterization,
-    Category::Surface, Category::Texture, Category::Lighting, Category::Field, Category::Spectral,
-    Category::Depth, Category::Stencil, Category::Color, Category::Post, Category::Output};
-  if (!categoryAvailableForHardwareProfile(profile, activeCategory)) activeCategory = Category::Geometry;
-  ImGui::SetNextItemWidth(-1.0f);
-  if (ImGui::BeginCombo("##render-section", categoryName(activeCategory))) {
-    for (const Category candidate : categories) {
-      if (!categoryAvailableForHardwareProfile(profile, candidate)) continue;
-      if (ImGui::Selectable(categoryName(candidate), candidate == activeCategory)) activeCategory = candidate;
+  enum class Section { TransformCamera, Lighting, VisibilityRaster, EffectsSignals, Output };
+  const auto sectionFor = [](const Category category) {
+    switch (category) {
+      case Category::Geometry:
+      case Category::Camera: return Section::TransformCamera;
+      case Category::Lighting: return Section::Lighting;
+      case Category::Rasterization:
+      case Category::Surface:
+      case Category::Depth:
+      case Category::Stencil: return Section::VisibilityRaster;
+      case Category::Field:
+      case Category::Spectral:
+      case Category::Post: return Section::EffectsSignals;
+      case Category::Color:
+      case Category::Output: return Section::Output;
+      case Category::Texture: return Section::TransformCamera;
     }
-    ImGui::EndCombo();
+    return Section::TransformCamera;
+  };
+  Section section = sectionFor(activeCategory);
+  constexpr std::array sectionLabels = {"Transform & Camera", "Lighting", "Visibility & Raster",
+    "Effects & Signals", "Output"};
+  int sectionIndex = static_cast<int>(section);
+  ImGui::SetNextItemWidth(-1.0f);
+  if (ImGui::Combo("##render-section", &sectionIndex, sectionLabels.data(), sectionLabels.size())) {
+    section = static_cast<Section>(sectionIndex);
+    constexpr std::array representatives = {Category::Geometry, Category::Lighting,
+      Category::Rasterization, Category::Field, Category::Color};
+    activeCategory = representatives[static_cast<std::size_t>(section)];
   }
   ImGui::Separator();
   const RenderPass before = sceneDefaults ? evaluateRenderPass(stack.global(), timeSeconds)
     : materializeRenderPass(stack, stack.selectedIndex(), timeSeconds);
   RenderPass edited = before;
-  drawInspector(activeCategory, edited, profile, timeline, importedModel, scene);
+  beginInheritanceContext(stack, sceneDefaults, timeSeconds);
+  const auto drawCategory = [&](const Category category) {
+    if (categoryAvailableForHardwareProfile(profile, category))
+      drawInspector(category, edited, profile, timeline, importedModel, scene);
+  };
+  switch (section) {
+    case Section::TransformCamera:
+      drawCategory(Category::Geometry);
+      ImGui::SeparatorText("CAMERA & PROJECTION");
+      drawCategory(Category::Camera);
+      break;
+    case Section::Lighting:
+      drawCategory(Category::Lighting);
+      break;
+    case Section::VisibilityRaster:
+      drawCategory(Category::Rasterization);
+      ImGui::SeparatorText("SURFACE & TRANSPARENCY");
+      drawCategory(Category::Surface);
+      if (categoryAvailableForHardwareProfile(profile, Category::Depth)) {
+        ImGui::SeparatorText("DEPTH");
+        drawCategory(Category::Depth);
+      }
+      if (categoryAvailableForHardwareProfile(profile, Category::Stencil)) {
+        ImGui::SeparatorText("STENCIL");
+        drawCategory(Category::Stencil);
+      }
+      break;
+    case Section::EffectsSignals:
+      drawCategory(Category::Field);
+      if (categoryAvailableForHardwareProfile(profile, Category::Spectral)) {
+        ImGui::SeparatorText("SPECTRAL");
+        drawCategory(Category::Spectral);
+      }
+      ImGui::SeparatorText("POST EFFECTS");
+      drawCategory(Category::Post);
+      break;
+    case Section::Output:
+      drawCategory(Category::Color);
+      ImGui::SeparatorText("RENDER TARGET");
+      drawCategory(Category::Output);
+      break;
+  }
+  clearPropertyInheritanceContext();
   applyInspectorEdit(stack, sceneDefaults, before, edited, timeSeconds);
 }
 
 void drawTextureSettings(RenderStack& stack, AnimationTimeline& timeline, const bool sceneDefaults,
-    const ModelAsset* importedModel, const TestScene scene, const float timeSeconds,
+    const HardwareProfile profile, const ModelAsset* importedModel, const TestScene scene, const float timeSeconds,
     const unsigned int texturePreview) {
   const RenderPass before = sceneDefaults ? evaluateRenderPass(stack.global(), timeSeconds)
     : materializeRenderPass(stack, stack.selectedIndex(), timeSeconds);
   RenderPass edited = before;
+  beginInheritanceContext(stack, sceneDefaults, timeSeconds);
+  if (!sceneDefaults) {
+    const bool assetOverride = stack.selected().importedTextureOverride;
+    ImGui::TextDisabled("IMPORTED IMAGE RESOURCE");
+    ImGui::SameLine();
+    if (assetOverride) {
+      ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.31f, 0.24f, 0.14f, 1.0f));
+      if (ImGui::SmallButton("override##image-resource")) {
+        stack.selected().importedTextureOverride = false;
+        stack.selected().importedTexture.reset();
+        edited.importedTexture = stack.global().importedTexture;
+      }
+      ImGui::PopStyleColor();
+      if (ImGui::IsItemHovered()) ImGui::SetTooltip("Click to use the image resource from Scene Defaults.");
+    } else {
+      ImGui::TextDisabled("inherited");
+    }
+  }
   drawTextureMappingEditorContents(edited, timeline, importedModel, scene, texturePreview);
+  ImGui::SeparatorText("SAMPLING & STORAGE");
+  drawInspector(Category::Texture, edited, profile, timeline, importedModel, scene, true);
+  clearPropertyInheritanceContext();
   applyInspectorEdit(stack, sceneDefaults, before, edited, timeSeconds);
 }
 
@@ -178,14 +269,18 @@ void drawContextInspector(bool& open, RenderStack& stack, AnimationTimeline& tim
       drawOverview(stack, timeline, sceneDefaults, timeSeconds);
       ImGui::EndTabItem();
     }
-    const ImGuiTabItemFlags renderTabFlags = focusRenderSettings ? ImGuiTabItemFlags_SetSelected : 0;
+    const bool focusTexture = focusRenderSettings && activeCategory == Category::Texture;
+    const ImGuiTabItemFlags renderTabFlags = focusRenderSettings && !focusTexture
+      ? ImGuiTabItemFlags_SetSelected : 0;
     if (selectedRenders && ImGui::BeginTabItem("Render Settings", nullptr, renderTabFlags)) {
       drawRenderSettings(stack, timeline, sceneDefaults, profile, importedModel, scene,
         timeSeconds, activeCategory);
       ImGui::EndTabItem();
     }
-    if (selectedRenders && ImGui::BeginTabItem("Material & Texture")) {
-      drawTextureSettings(stack, timeline, sceneDefaults, importedModel, scene, timeSeconds, texturePreview);
+    const ImGuiTabItemFlags textureTabFlags = focusTexture ? ImGuiTabItemFlags_SetSelected : 0;
+    if (selectedRenders && ImGui::BeginTabItem("Material & Texture", nullptr, textureTabFlags)) {
+      drawTextureSettings(stack, timeline, sceneDefaults, profile, importedModel, scene, timeSeconds,
+        texturePreview);
       ImGui::EndTabItem();
     }
     ImGui::EndTabBar();

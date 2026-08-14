@@ -92,6 +92,9 @@ struct CompositeStep {
   int sourceBPassId = 1;
   CompositeInterpretation interpretationA = CompositeInterpretation::RawRgb;
   CompositeInterpretation interpretationB = CompositeInterpretation::RawRgb;
+  float observerExposureStops = 0.0f;
+  float rodSensitivity = 4.0f;
+  float opponentGain = 4.0f;
   glm::vec4 fixedColor{1.0f};
   int bitDepth = 8;
   float historyDecay = 0.96f;

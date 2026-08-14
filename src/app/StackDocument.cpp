@@ -157,7 +157,8 @@ void parsePerturbation(const Json& source, PassPerturbation& perturbation) {
   perturbation.fieldOfView = source.value("field_of_view_offset_degrees", perturbation.fieldOfView);
 }
 
-void parseComposite(const Json& source, CompositeStep& composite) {
+void parseComposite(const Json& source, CompositeStep& composite,
+    const DisplayReconstructionState& legacyObserver) {
   if (!source.is_object()) return;
   constexpr std::array sourceIds = {"accumulated_result", "current_pass", "render_pass", "fixed_color",
     "previous_frame", "render_pass_field", "render_pass_spectrum"};
@@ -188,6 +189,15 @@ void parseComposite(const Json& source, CompositeStep& composite) {
     CompositeInterpretation::RawRgb);
   composite.interpretationB = enumFromId(source.value("interpretation_b", "raw_rgb"), interpretationIds,
     CompositeInterpretation::RawRgb);
+  composite.observerExposureStops = legacyObserver.observerExposureStops;
+  composite.rodSensitivity = legacyObserver.rodSensitivity;
+  composite.opponentGain = legacyObserver.opponentGain;
+  if (source.contains("rgb_observer_approximation") && source.at("rgb_observer_approximation").is_object()) {
+    const Json& observer = source.at("rgb_observer_approximation");
+    composite.observerExposureStops = observer.value("exposure_stops", composite.observerExposureStops);
+    composite.rodSensitivity = observer.value("rod_sensitivity", composite.rodSensitivity);
+    composite.opponentGain = observer.value("opponent_gain", composite.opponentGain);
+  }
   composite.bitDepth = std::clamp(source.value("bit_depth", composite.bitDepth), 1, 8);
   if (source.contains("previous_frame") && source.at("previous_frame").is_object()) {
     const Json& history = source.at("previous_frame");
@@ -290,7 +300,8 @@ StackDocumentLoadResult loadStackDocumentFile(const std::string& path) {
       }
       if (sourcePass.contains("perturbation")) parsePerturbation(sourcePass.at("perturbation"), pass.perturbation);
       if (sourcePass.contains("composite_into_previous"))
-        parseComposite(sourcePass.at("composite_into_previous"), pass.composite);
+        parseComposite(sourcePass.at("composite_into_previous"), pass.composite,
+          document.renderStack.display());
       if (sourcePass.contains("stereo_analysis") && sourcePass.at("stereo_analysis").is_object()) {
         const Json& analysis = sourcePass.at("stereo_analysis");
         constexpr std::array stereoIds = {"anaglyph", "signed_disparity", "absolute_disparity",

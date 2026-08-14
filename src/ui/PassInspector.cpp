@@ -211,17 +211,6 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
   description("Lateral offset translates an eye camera without rotating it. Perspective projection uses an off-axis frustum so points at the convergence distance have zero disparity.");
   animationKeyControl(pass, AnimationProperty::FieldOfViewOffset, timeline,
     ImGui::DragFloat("Field-of-view offset", &pass.perturbation.fieldOfView, 0.05f, -20.0f, 20.0f, "%.2f deg"));
-
-  ImGui::Spacing();
-  ImGui::TextDisabled("SAMPLING PERTURBATION");
-  animationKeyControl(pass, AnimationProperty::UvOffset, timeline,
-    ImGui::DragFloat2("UV offset", &pass.perturbation.uvOffset.x, 1.0f / 512.0f, -1.0f, 1.0f, "%.5f"));
-  animationKeyControl(pass, AnimationProperty::UvScale, timeline,
-    ImGui::DragFloat2("UV scale", &pass.perturbation.uvScale.x, 0.001f, 0.25f, 4.0f, "%.4f"));
-  animationKeyControl(pass, AnimationProperty::UvRotation, timeline,
-    ImGui::SliderAngle("UV rotation", &pass.perturbation.uvRotation, -180.0f, 180.0f, "%.1f deg"));
-  animationKeyControl(pass, AnimationProperty::UvPivot, timeline,
-    ImGui::DragFloat2("UV pivot", &pass.perturbation.uvPivot.x, 0.005f, -2.0f, 2.0f, "%.3f"));
   }
 
   if (globalScope) return;
@@ -265,17 +254,18 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
     animationKeyControl(pass, AnimationProperty::CompositeInterpretationA, timeline, observerChanged);
     description("Interpret converts one stored signal into displayable RGB. Spectral observers integrate the same sixteen wavelength bands without rerendering the scene.");
     ImGui::SeparatorText("INTERPRETATION OUTPUT");
-    DisplayReconstructionState& observer = stack.display();
-    ImGui::SliderFloat("Observer exposure", &observer.observerExposureStops, -6.0f, 6.0f, "%+.1f stops");
-    ImGui::SliderFloat("Rod sensitivity", &observer.rodSensitivity, 0.25f, 16.0f, "%.2fx",
+    ImGui::SliderFloat("Observer exposure", &pass.composite.observerExposureStops,
+      -6.0f, 6.0f, "%+.1f stops");
+    ImGui::SliderFloat("Rod sensitivity", &pass.composite.rodSensitivity, 0.25f, 16.0f, "%.2fx",
       ImGuiSliderFlags_Logarithmic);
-    ImGui::SliderFloat("Opponent gain", &observer.opponentGain, 0.25f, 16.0f, "%.2fx",
+    ImGui::SliderFloat("Opponent gain", &pass.composite.opponentGain, 0.25f, 16.0f, "%.2fx",
       ImGuiSliderFlags_Logarithmic);
     animationKeyControl(pass, AnimationProperty::CompositeGain, timeline,
       ImGui::SliderFloat("Output gain", &pass.composite.gain, 0.1f, 16.0f, "%.2fx",
         ImGuiSliderFlags_Logarithmic));
     animationKeyControl(pass, AnimationProperty::CompositeBias, timeline,
       ImGui::SliderFloat("Output bias", &pass.composite.bias, -1.0f, 1.0f, "%.3f"));
+    description("These observer parameters belong to this Interpret operation. Final Output has a separate presentation observer.");
     return;
   }
 
@@ -545,14 +535,14 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
   description("A and B independently choose both a signal source and an interpretation. Receptor interpretations measure encoded RGB through an approximate observer before arithmetic. A named pass field remains a dedicated scalar field buffer rather than material color.");
   if (pass.composite.interpretationA != CompositeInterpretation::RawRgb ||
       pass.composite.interpretationB != CompositeInterpretation::RawRgb) {
-    DisplayReconstructionState& observer = stack.display();
     ImGui::SeparatorText("RGB OBSERVER APPROXIMATION");
-    ImGui::SliderFloat("Receptor exposure", &observer.observerExposureStops, -6.0f, 6.0f, "%+.1f stops");
-    ImGui::SliderFloat("Rod sensitivity", &observer.rodSensitivity, 0.25f, 16.0f, "%.2fx",
+    ImGui::SliderFloat("Receptor exposure", &pass.composite.observerExposureStops, -6.0f, 6.0f,
+      "%+.1f stops");
+    ImGui::SliderFloat("Rod sensitivity", &pass.composite.rodSensitivity, 0.25f, 16.0f, "%.2fx",
       ImGuiSliderFlags_Logarithmic);
-    ImGui::SliderFloat("Opponent gain", &observer.opponentGain, 0.25f, 16.0f, "%.2fx",
+    ImGui::SliderFloat("Opponent gain", &pass.composite.opponentGain, 0.25f, 16.0f, "%.2fx",
       ImGuiSliderFlags_Logarithmic);
-    description("These parameters belong to the shared RGB observer model. Operand interpretation runs before composite color-space conversion and does not require final display reconstruction to be enabled.");
+    description("These parameters belong to this Composite operation. Operand interpretation runs before composite color-space conversion and does not require final display reconstruction to be enabled.");
   }
 
   ImGui::Spacing();

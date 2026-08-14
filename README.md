@@ -109,6 +109,10 @@ Spectral section in Render Settings to switch to tungsten or tri-band illuminati
 
 Graphics Lab uses one persistent document-editing workspace. The **Document** navigator contains the scene, inherited **Scene Defaults**, the ordered operation stack, and **Final Output**. Selecting one of those objects drives the single contextual **Inspector**: Render operations expose Overview, Render Settings, and Material & Texture; Interpret, Composite, and Stereo Analysis expose only their owned controls; Final Output owns display reconstruction. **Window → Workspace Layout** supplies Edit, Animate, and Analyze arrangements without changing document state. ImGui saves subsequent docking changes between runs.
 
+Render Settings are organized by editing intent: **Transform & Camera**, **Lighting**, **Visibility & Raster**, **Effects & Signals**, and **Output**. Renderer implementation categories are preserved in the state model without becoming peer workspace windows. On a selected Render, each inherited renderer property carries an **inherited** or **override** badge beside its animation diamond. Hover the badge to compare Scene Defaults with the effective value; click an override badge to resume inheritance.
+
+Observer parameters used while an Interpret or Composite operation evaluates are stored on that operation. Final Output keeps a separate presentation observer. Older documents that stored only the former shared observer values migrate those values into each signal operation when loaded, and subsequent saves record the ownership explicitly.
+
 Use **View → UI Scale** to resize text, controls, spacing, tabs, and interaction targets together from 75% to
 200%. `Ctrl+-` and `Ctrl+=` step between the supplied sizes; `Ctrl+0` returns to 100%. Every font size is loaded
 once at startup, so enlarged text remains crisp and repeatedly changing scale does not rebuild live GPU resources.

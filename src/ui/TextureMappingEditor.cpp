@@ -144,21 +144,6 @@ void drawTextureMappingEditorContents(RenderPass& edited, AnimationTimeline& tim
   ImGui::SameLine();
   if (ImGui::Button("Flip V")) edited.perturbation.uvScale.y *= -1.0f;
 
-  ImGui::Separator();
-  ImGui::TextDisabled("SAMPLING");
-  animationKeyControl(edited, AnimationProperty::TextureRepeat, timeline,
-    ImGui::Checkbox("Repeat addressing", &edited.renderer.texture.repeat));
-  description("When disabled, coordinates outside 0 to 1 clamp to the image edge.");
-  bool bilinear = !edited.renderer.texture.nearestFiltering;
-  const bool bilinearChanged = ImGui::Checkbox("Bilinear filtering", &bilinear);
-  if (bilinearChanged) edited.renderer.texture.nearestFiltering = !bilinear;
-  animationKeyControl(edited, AnimationProperty::NearestFiltering, timeline, bilinearChanged);
-  animationKeyControl(edited, AnimationProperty::Mipmapping, timeline,
-    ImGui::Checkbox("Mipmapping", &edited.renderer.texture.mipmapping));
-  if (edited.renderer.texture.mipmapping && !edited.renderer.texture.nearestFiltering)
-    animationKeyControl(edited, AnimationProperty::TrilinearFiltering, timeline,
-      ImGui::Checkbox("Trilinear mip interpolation", &edited.renderer.texture.trilinear));
-
 }
 
 } // namespace gfxlab::ui

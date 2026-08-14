@@ -94,7 +94,7 @@ int n64TextureBytes(const RendererState::N64& state) {
 }
 
 void drawInspector(Category category, RenderPass& pass, HardwareProfile profile, AnimationTimeline& timeline,
-    const ModelAsset* importedModel, const TestScene scene) {
+    const ModelAsset* importedModel, const TestScene scene, const bool textureSamplingOnly) {
   RendererState& state = pass.renderer;
   const ProfileCapabilities& capabilities = hardwareProfileCapabilities(profile);
   switch (category) {
@@ -275,15 +275,16 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       break;
     }
     case Category::Texture: {
-      ImGui::TextUnformatted("TEXTURE"); ImGui::Separator();
+      ImGui::TextUnformatted(textureSamplingOnly ? "SAMPLING & STORAGE" : "TEXTURE"); ImGui::Separator();
+      const bool imageAssetSource = pass.textureSource == TextureSource::ImportedOverride ||
+        (pass.textureSource == TextureSource::SceneMaterial && scene == TestScene::ImportedModel);
+      if (!textureSamplingOnly) {
       const char* sourceLabels[] = {"Scene material", "Built-in checker", "Imported override", "White texel"};
       int textureSource = static_cast<int>(pass.textureSource);
       const bool textureSourceChanged = ImGui::Combo("Texture source", &textureSource, sourceLabels, 4);
       if (textureSourceChanged)
         pass.textureSource = static_cast<TextureSource>(textureSource);
       animationKeyControl(pass, AnimationProperty::TextureSource, timeline, textureSourceChanged);
-      const bool imageAssetSource = pass.textureSource == TextureSource::ImportedOverride ||
-        (pass.textureSource == TextureSource::SceneMaterial && scene == TestScene::ImportedModel);
       if (pass.textureSource == TextureSource::SceneMaterial) {
         if (scene == TestScene::ImportedModel && importedModel != nullptr) {
           ImGui::TextDisabled("%zu materials   %zu base-color images", importedModel->materials.size(),
@@ -370,6 +371,7 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       }
       ImGui::Spacing();
       ImGui::Separator();
+      }
       if (profile == HardwareProfile::Nintendo64) {
         ImGui::TextUnformatted("RDP texture filter");
         const char* filterLabels[] = {"Point sampling", "Three-point approximate bilinear", "Four-texel box average"};

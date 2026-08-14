@@ -59,7 +59,7 @@ target_compile_definitions(graphics-lab PRIVATE
   GRAPHICS_LAB_FFMPEG_EXECUTABLE="${GRAPHICS_LAB_FFMPEG_EXECUTABLE}")
 target_link_libraries(graphics-lab PRIVATE
   OpenGL::GL
-  GLEW::GLEW
+  GLEW::glew
   glfw
   glm::glm
   imgui::imgui

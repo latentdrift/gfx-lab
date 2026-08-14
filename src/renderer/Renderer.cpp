@@ -1112,7 +1112,7 @@ public:
       const GLuint maskField, const std::array<GLuint, 4>& spectrumA,
       const std::array<GLuint, 4>& spectrumB,
       const RendererState& maskState, const CompositeStep& step,
-      const DisplayReconstructionState& observer, const std::size_t outputIndex) {
+      const std::size_t outputIndex) {
     const std::size_t pingPong = outputIndex % relationFbos_.size();
     glBindFramebuffer(GL_FRAMEBUFFER, relationFbos_[pingPong]);
     glViewport(0, 0, relationWidth_, relationHeight_);
@@ -1143,9 +1143,9 @@ public:
     glUniform1i(glGetUniformLocation(relationProgram_, "uInterpretationB"),
       static_cast<int>(step.interpretationB));
     glUniform1f(glGetUniformLocation(relationProgram_, "uObserverExposureStops"),
-      observer.observerExposureStops);
-    glUniform1f(glGetUniformLocation(relationProgram_, "uRodSensitivity"), observer.rodSensitivity);
-    glUniform1f(glGetUniformLocation(relationProgram_, "uOpponentGain"), observer.opponentGain);
+      step.observerExposureStops);
+    glUniform1f(glGetUniformLocation(relationProgram_, "uRodSensitivity"), step.rodSensitivity);
+    glUniform1f(glGetUniformLocation(relationProgram_, "uOpponentGain"), step.opponentGain);
     glUniform4fv(glGetUniformLocation(relationProgram_, "uFixedColor"), 1, glm::value_ptr(step.fixedColor));
     glUniform1i(glGetUniformLocation(relationProgram_, "uBitDepth"), std::clamp(step.bitDepth, 1, 8));
     glUniform1f(glGetUniformLocation(relationProgram_, "uHistoryDecay"), step.historyDecay);
@@ -1186,7 +1186,7 @@ public:
     step.bias = bias;
     return compositeTextures(passTargets_[0].outputTexture, passTargets_[1].outputTexture,
       passTargets_[1].depthTexture, passTargets_[1].fieldTexture, {}, {}, RendererState{}, step,
-      DisplayReconstructionState{}, 0);
+      0);
   }
 
   GLuint analyzeStereo(const RenderTarget& left, const RenderTarget& right, const RenderPass& operation,
@@ -1304,7 +1304,7 @@ public:
         maskPassIndex = passIndexForId(step.sourceBPassId);
       accumulated = compositeTextures(imageA, imageB, passTargets_[maskPassIndex].depthTexture,
         passTargets_[maskPassIndex].fieldTexture, spectrumA, spectrumB, pass.renderer, step,
-        stack.display(), passIndex);
+        passIndex);
       operationTextures_[passIndex] = accumulated;
     }
     if (accumulated != 0) copyToFrameHistory(accumulated);

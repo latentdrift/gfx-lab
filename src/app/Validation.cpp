@@ -538,6 +538,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
           CompositeInterpretation::ConeLuminance ||
         observerOperandDocument.document->renderStack.passes()[1].composite.interpretationB !=
           CompositeInterpretation::RodResponse ||
+        std::abs(observerOperandDocument.document->renderStack.passes()[1].composite.rodSensitivity -
+          observerOperandDocument.document->renderStack.display().rodSensitivity) > 0.0001f ||
         observerOperandDocument.document->renderStack.passes()[1].composite.operation !=
           RelationOperator::BitwiseXor)
       fail("observer-operand example failed document loading validation");
@@ -558,6 +560,9 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       CompositeInterpretation::ConeLuminance;
     observerOperandDocument.document->renderStack.passes()[1].composite.interpretationB =
       CompositeInterpretation::RodResponse;
+    observerOperandDocument.document->renderStack.passes()[1].composite.observerExposureStops = 1.25f;
+    observerOperandDocument.document->renderStack.passes()[1].composite.rodSensitivity = 7.5f;
+    observerOperandDocument.document->renderStack.passes()[1].composite.opponentGain = 2.75f;
     const std::string observerRoundTripJson = renderStackConfigJson(
       observerOperandDocument.document->renderStack, observerOperandDocument.document->camera,
       observerOperandDocument.document->scene, observerOperandDocument.document->hardwareProfile,
@@ -570,8 +575,12 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         observerRoundTrip.document->renderStack.passes()[1].composite.interpretationA !=
           CompositeInterpretation::ConeLuminance ||
         observerRoundTrip.document->renderStack.passes()[1].composite.interpretationB !=
-          CompositeInterpretation::RodResponse)
-      fail("composite observer interpretations failed JSON round-trip validation");
+          CompositeInterpretation::RodResponse ||
+        std::abs(observerRoundTrip.document->renderStack.passes()[1].composite.observerExposureStops - 1.25f) >
+          0.0001f ||
+        std::abs(observerRoundTrip.document->renderStack.passes()[1].composite.rodSensitivity - 7.5f) > 0.0001f ||
+        std::abs(observerRoundTrip.document->renderStack.passes()[1].composite.opponentGain - 2.75f) > 0.0001f)
+      fail("operation observer settings failed JSON round-trip validation");
     constexpr std::array examples = {handbook::Example::VertexQuantization, handbook::Example::Projection,
       handbook::Example::AffineMapping, handbook::Example::TextureMinification, handbook::Example::NormalMapping,
       handbook::Example::LightingInterpolation, handbook::Example::DepthPrecision, handbook::Example::Transparency,

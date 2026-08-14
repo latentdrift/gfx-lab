@@ -590,7 +590,10 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
       "spectral_alternate", "spectral_rod"};
     json << interpretationIds[static_cast<int>(c.interpretationA)] << "\", \"interpretation_b\": \""
          << interpretationIds[static_cast<int>(c.interpretationB)]
-         << "\", \"fixed_color_rgba\": [" << c.fixedColor.r << ", " << c.fixedColor.g << ", "
+         << "\", \"rgb_observer_approximation\": {\"exposure_stops\": " << c.observerExposureStops
+         << ", \"rod_sensitivity\": " << c.rodSensitivity
+         << ", \"opponent_gain\": " << c.opponentGain << "}"
+         << ", \"fixed_color_rgba\": [" << c.fixedColor.r << ", " << c.fixedColor.g << ", "
          << c.fixedColor.b << ", " << c.fixedColor.a << "]"
          << ", \"bit_depth\": " << c.bitDepth << ", \"previous_frame\": {\"decay\": " << c.historyDecay
          << ", \"uv_offset\": [" << c.historyUvOffset.x << ", " << c.historyUvOffset.y
