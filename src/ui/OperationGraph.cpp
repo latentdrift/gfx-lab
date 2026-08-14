@@ -592,6 +592,31 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
     ImGui::SameLine();
     ImGui::TextDisabled("%s", executionClass(operation));
     ImNodes::EndStaticAttribute();
+    if (const auto* render = std::get_if<document::RenderOperation>(&operation.data)) {
+      ImNodes::BeginStaticAttribute(15'000 + id);
+      ImGui::TextDisabled(render->field && render->fieldMode == document::RenderFieldMode::SurfaceOnly
+        ? "SCENE: %s (HIDDEN)" : "SCENE: %s", testSceneName(document.scene.testScene));
+      ImNodes::EndStaticAttribute();
+    }
+    if (const auto* render = std::get_if<document::RenderOperation>(&operation.data);
+        render != nullptr && render->field) {
+      bool isoSurface = document.renderDefaults.renderer.field.isoSurfaceEnabled;
+      const auto authoredIso = std::find_if(render->overrides.begin(), render->overrides.end(),
+        [](const PropertyOverride& value) {
+          return value.property == AnimationProperty::IsoSurfaceEnabled;
+        });
+      if (authoredIso != render->overrides.end()) isoSurface = authoredIso->value.x >= 0.5f;
+      const document::SignalDescriptor* field = document::findSignal(document, render->field.id);
+      ImNodes::BeginStaticAttribute(20'000 + id);
+      if (field != nullptr && field->metadata.semantic == document::SignalSemantic::SignedDistance) {
+        const char* use = render->fieldMode == document::RenderFieldMode::SurfaceOnly
+          ? "FIELD SURFACE ONLY" : render->fieldMode == document::RenderFieldMode::SceneAndSurface
+            ? "SCENE + FIELD SURFACE" : isoSurface ? "SDF SURFACE + SAMPLE" : "FIELD: SAMPLE ONLY";
+        ImGui::TextDisabled("%s", use);
+      }
+      else ImGui::TextDisabled("FIELD: SAMPLE ONLY");
+      ImNodes::EndStaticAttribute();
+    }
     for (const InputPort& input : inputsFor(operation)) {
       inputPins[input.pin] = input;
       const document::SignalDescriptor* descriptor = document::findSignal(document, input.signal.id);

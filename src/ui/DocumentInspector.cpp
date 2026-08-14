@@ -690,17 +690,51 @@ void drawDocumentInspector(bool& open, document::Document& document,
         };
 
         ImGui::TextDisabled("WORLD FIELD");
-        changed |= signalPicker("Field input", edited, editorState, *operation, render->field,
-          document::SignalShape::Scalar, std::nullopt, document::SignalDomain::World3D);
+        const bool fieldConnectionChanged = signalPicker("Field input", edited, editorState,
+          *operation, render->field, document::SignalShape::Scalar, std::nullopt,
+          document::SignalDomain::World3D);
+        changed |= fieldConnectionChanged;
+        if (fieldConnectionChanged) {
+          const document::SignalDescriptor* connected = document::findSignal(edited, render->field.id);
+          const bool isoAlreadyAuthored = std::any_of(render->overrides.begin(), render->overrides.end(),
+            [](const PropertyOverride& value) {
+              return value.property == AnimationProperty::IsoSurfaceEnabled;
+            });
+          if (connected != nullptr &&
+              connected->metadata.semantic == document::SignalSemantic::SignedDistance &&
+              !isoAlreadyAuthored) {
+            view.renderer.field.isoSurfaceEnabled = true;
+            if (render->fieldMode == document::RenderFieldMode::SampleOnly)
+              render->fieldMode = document::RenderFieldMode::SurfaceOnly;
+          } else if (connected == nullptr ||
+              connected->metadata.semantic != document::SignalSemantic::SignedDistance)
+            render->fieldMode = document::RenderFieldMode::SampleOnly;
+        }
         if (render->field) {
           if (ImGui::SmallButton("Disconnect##render-field")) {
             render->field = {};
+            render->fieldMode = document::RenderFieldMode::SampleOnly;
             changed = true;
           }
           const document::SignalDescriptor* field = document::findSignal(edited, render->field.id);
           if (field != nullptr && field->metadata.semantic == document::SignalSemantic::SignedDistance) {
+            int fieldMode = static_cast<int>(render->fieldMode);
+            constexpr const char* fieldModes[] = {"Sample only", "Field surface only",
+              "Scene + field surface"};
+            if (ImGui::Combo("Field use", &fieldMode, fieldModes, 3)) {
+              render->fieldMode = static_cast<document::RenderFieldMode>(fieldMode);
+              view.renderer.field.isoSurfaceEnabled = fieldMode != 0;
+              changed = true;
+            }
+            const bool surfaceVisibilityChanged = ImGui::Checkbox("Render field surface",
+              &view.renderer.field.isoSurfaceEnabled);
             animationKeyControl(view, AnimationProperty::IsoSurfaceEnabled, timeline,
-              ImGui::Checkbox("Render field surface", &view.renderer.field.isoSurfaceEnabled));
+              surfaceVisibilityChanged);
+            if (surfaceVisibilityChanged) {
+              render->fieldMode = view.renderer.field.isoSurfaceEnabled
+                ? document::RenderFieldMode::SurfaceOnly : document::RenderFieldMode::SampleOnly;
+              changed = true;
+            }
             ImGui::BeginDisabled(!view.renderer.field.isoSurfaceEnabled);
             animationKeyControl(view, AnimationProperty::IsoLevel, timeline,
               ImGui::DragFloat("Surface level", &view.renderer.field.isoLevel,

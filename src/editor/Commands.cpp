@@ -276,6 +276,26 @@ std::string mutate(document::Document& document, const Command& command) {
       document::SignalRef* input = inputSignal(*operation, data.socket);
       if (input == nullptr) return "That input socket does not exist on the target operation.";
       *input = data.signal;
+      if (data.socket == InputSocket::Field) {
+        auto* render = std::get_if<document::RenderOperation>(&operation->data);
+        const document::SignalDescriptor* field = document::findSignal(document, data.signal.id);
+        if (render != nullptr && field != nullptr &&
+            field->metadata.semantic == document::SignalSemantic::SignedDistance) {
+          const auto iso = std::find_if(render->overrides.begin(), render->overrides.end(),
+            [](const PropertyOverride& value) {
+              return value.property == AnimationProperty::IsoSurfaceEnabled;
+            });
+          if (iso == render->overrides.end()) {
+            render->overrides.push_back({AnimationProperty::IsoSurfaceEnabled, glm::vec4(1.0f)});
+            render->fieldMode = document::RenderFieldMode::SurfaceOnly;
+          } else if (iso->value.x >= 0.5f &&
+              render->fieldMode == document::RenderFieldMode::SampleOnly) {
+            render->fieldMode = document::RenderFieldMode::SurfaceOnly;
+          } else if (iso->value.x < 0.5f) {
+            render->fieldMode = document::RenderFieldMode::SampleOnly;
+          }
+        } else if (render != nullptr) render->fieldMode = document::RenderFieldMode::SampleOnly;
+      }
       document::synchronizeOperationSignalMetadata(*operation);
     } else if constexpr (std::is_same_v<Type, DisconnectSignal>) {
       document::Operation* operation = document::findOperation(document, data.operation);
@@ -286,6 +306,9 @@ std::string mutate(document::Document& document, const Command& command) {
       if (data.socket != InputSocket::Mask && data.socket != InputSocket::Field)
         return "That input is required. Rewire it or delete the operation instead.";
       *input = {};
+      if (data.socket == InputSocket::Field)
+        if (auto* render = std::get_if<document::RenderOperation>(&operation->data))
+          render->fieldMode = document::RenderFieldMode::SampleOnly;
       document::synchronizeOperationSignalMetadata(*operation);
     } else if constexpr (std::is_same_v<Type, SetFinalSignal>) {
       document.presentation.input = data.signal;

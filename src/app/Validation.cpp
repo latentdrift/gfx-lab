@@ -127,7 +127,13 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     sdfGraph.operations.push_back(std::move(waveField));
     sdfGraph.operations.push_back(std::move(elementalField));
     sdfGraph.nextOperationIdentity = 7;
-    std::get<document::RenderOperation>(sdfGraph.operations.front().data).field = worldDistance;
+    const editor::CommandResult connectedSdf = editor::applyCommand(sdfGraph,
+      editor::ConnectSignal{{1}, editor::InputSocket::Field, worldDistance});
+    const auto& connectedRender = std::get<document::RenderOperation>(sdfGraph.operations.front().data);
+    const bool sdfMadeVisible = std::any_of(connectedRender.overrides.begin(),
+      connectedRender.overrides.end(), [](const PropertyOverride& value) {
+        return value.property == AnimationProperty::IsoSurfaceEnabled && value.value.x >= 0.5f;
+      }) && connectedRender.fieldMode == document::RenderFieldMode::SurfaceOnly;
     const document::SignalDescriptor* worldDistanceDescriptor =
       document::findSignal(sdfGraph, worldDistance.id);
     const evaluation::EvaluationPlan sdfPlan = evaluation::compileDocument(sdfGraph);
@@ -138,12 +144,14 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       ? document::loadDocumentFile(sdfGraphPath.string()) : document::DocumentLoadResult{};
     std::error_code sdfRemoveError;
     std::filesystem::remove(sdfGraphPath, sdfRemoveError);
-    if (!sdfPlan.valid() || worldDistanceDescriptor == nullptr ||
+    if (!connectedSdf.applied || !sdfMadeVisible || !sdfPlan.valid() || worldDistanceDescriptor == nullptr ||
         worldDistanceDescriptor->metadata.domain != document::SignalDomain::World3D ||
         worldDistanceDescriptor->metadata.semantic != document::SignalSemantic::SignedDistance ||
         !sdfRoundTrip || sdfRoundTrip.document->operations.size() != 6 ||
         std::get<document::RenderOperation>(sdfRoundTrip.document->operations.front().data).field !=
           worldDistance ||
+        std::get<document::RenderOperation>(sdfRoundTrip.document->operations.front().data).fieldMode !=
+          document::RenderFieldMode::SurfaceOnly ||
         std::get<document::SdfCombineOperation>(sdfRoundTrip.document->operations[3].data)
           .combination != 2 ||
         std::abs(std::get<document::WaveFieldOperation>(sdfRoundTrip.document->operations[4].data)

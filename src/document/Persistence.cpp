@@ -229,6 +229,7 @@ Json operation(const Operation& value) {
     if constexpr (std::is_same_v<Type, RenderOperation>) {
       result["type"] = "render"; result["overrides"] = overrides(data.overrides);
       if (data.field) result["field_input"] = signal(data.field);
+      result["field_mode"] = static_cast<int>(data.fieldMode);
       result["perturbation"] = perturbation(data.perturbation);
       result["output"] = static_cast<int>(data.presentedOutput); result["texture"] = texture(data.texture);
       result["time"] = {{"scale", data.time.scale}, {"offset_seconds", data.time.offsetSeconds}};
@@ -334,6 +335,8 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
     result = makeRenderOperation(id, name);
     auto& data = std::get<RenderOperation>(result.data);
     if (source.contains("field_input")) data.field = signal(source.at("field_input"));
+    data.fieldMode = static_cast<RenderFieldMode>(source.value("field_mode",
+      static_cast<int>(data.fieldMode)));
     data.overrides = overrides(source.value("overrides", Json::array()));
     data.perturbation = perturbation(source.value("perturbation", Json::object()));
     data.presentedOutput = static_cast<PassOutput>(source.value("output", 0));
@@ -703,6 +706,7 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
           definition.combination = effective.renderer.field.sdfOperation;
           definition.smoothness = effective.renderer.field.sdfSmoothness;
           render->field = primaryOutput(combine);
+          render->fieldMode = RenderFieldMode::SceneAndSurface;
           owners.a = operationObject(aId); owners.b = operationObject(bId);
           owners.combine = operationObject(combineId);
           result.operations.push_back(std::move(a)); result.operations.push_back(std::move(b));

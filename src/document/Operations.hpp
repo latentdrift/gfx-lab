@@ -30,8 +30,11 @@ struct TimeTransform {
   }
 };
 
+enum class RenderFieldMode { SampleOnly, SurfaceOnly, SceneAndSurface };
+
 struct RenderOperation {
   SignalRef field;
+  RenderFieldMode fieldMode = RenderFieldMode::SampleOnly;
   std::vector<PropertyOverride> overrides;
   PassPerturbation perturbation;
   PassOutput presentedOutput = PassOutput::Color;

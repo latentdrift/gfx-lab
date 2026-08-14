@@ -565,7 +565,8 @@ public:
       const PassPerturbation& perturbation = {}, const PassOutput output = PassOutput::Color,
       const TextureSource textureSource = TextureSource::SceneMaterial,
       const TextureAsset* importedTexture = nullptr, const bool importedTextureSrgb = true,
-      const float localTimeSeconds = 0.0f, const SdfInstructionProgram& sdfProgram = {}) {
+      const float localTimeSeconds = 0.0f, const bool drawSceneGeometry = true,
+      const SdfInstructionProgram& sdfProgram = {}) {
     ensureGraphTargets(targetIndex + 1);
     RenderTarget& target = passTargets_[targetIndex];
     const glm::mat4 passTransform = glm::translate(glm::mat4(1.0f), perturbation.modelTranslation) *
@@ -581,7 +582,7 @@ public:
     const bool shadowsEnabled = state.lighting.shadows &&
       (scene == TestScene::Lighting || scene == TestScene::ImportedModel);
 
-    if (shadowsEnabled) {
+    if (shadowsEnabled && drawSceneGeometry) {
       resizeShadowMap(state.lighting.shadowResolution);
       glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo_);
       glViewport(0, 0, shadowResolution_, shadowResolution_);
@@ -851,7 +852,7 @@ public:
       glDrawArrays(GL_TRIANGLES, mesh.first, mesh.count);
     };
     const glm::mat4 identity(1.0f);
-    switch (scene) {
+    if (drawSceneGeometry) switch (scene) {
       case TestScene::Torus:
         drawMesh(torus_, glm::rotate(identity, glm::radians(-14.0f), glm::vec3(1, 0, 0)), glm::vec3(1.0f));
         break;
@@ -1841,7 +1842,8 @@ public:
         normalizeForHardwareProfile(document.hardwareProfile, pass.renderer);
         output = render(pass.renderer, document.scene.authoredCamera, document.scene.testScene,
           renderSlot, pass.perturbation, pass.output, pass.textureSource,
-          pass.importedTexture.get(), pass.importedTextureSrgb, time.apply(timeSeconds), sdfProgram);
+          pass.importedTexture.get(), pass.importedTextureSrgb, time.apply(timeSeconds),
+          !data->field || data->fieldMode != document::RenderFieldMode::SurfaceOnly, sdfProgram);
         outputExtent = {passTargets_[renderSlot].width, passTargets_[renderSlot].height};
       } else if (std::holds_alternative<document::ConstantOperation>(operation->data) ||
           std::holds_alternative<document::SdfPrimitiveOperation>(operation->data) ||
