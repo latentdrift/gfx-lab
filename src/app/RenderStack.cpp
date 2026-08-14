@@ -145,6 +145,16 @@ void applyPassDefinition(RenderPass& materialized, const RenderPass& definition)
   materialized.stereoOcclusionTolerance = definition.stereoOcclusionTolerance;
   materialized.measurementThreshold = definition.measurementThreshold;
   materialized.measurementAbsolute = definition.measurementAbsolute;
+  materialized.measurementMetric = definition.measurementMetric;
+  materialized.measurementModulationEnabled = definition.measurementModulationEnabled;
+  materialized.measurementTargetPassId = definition.measurementTargetPassId;
+  materialized.measurementTargetProperty = definition.measurementTargetProperty;
+  materialized.measurementInputMinimum = definition.measurementInputMinimum;
+  materialized.measurementInputMaximum = definition.measurementInputMaximum;
+  materialized.measurementOutputMinimum = definition.measurementOutputMinimum;
+  materialized.measurementOutputMaximum = definition.measurementOutputMaximum;
+  materialized.measurementClamp = definition.measurementClamp;
+  materialized.measurementSmoothingSeconds = definition.measurementSmoothingSeconds;
   materialized.animation = definition.animation;
   materialized.overrides = definition.overrides;
   materialized.importedTextureOverride = definition.importedTextureOverride;
@@ -214,6 +224,7 @@ bool RenderStack::addOperation(const StackOperationKind kind) {
   } else if (kind == StackOperationKind::Measure) {
     operation.composite.sourceA = CompositeSource::RenderPass;
     operation.composite.gain = 1.0f;
+    operation.measurementTargetPassId = passes_.front().id;
   }
   const auto firstRender = std::find_if(passes_.begin(), passes_.end(), [](const RenderPass& candidate) {
     return candidate.kind == StackOperationKind::Render ||
@@ -239,8 +250,17 @@ bool RenderStack::addOperation(const StackOperationKind kind) {
 
 bool RenderStack::removeSelected() {
   if (passes_.size() <= 1) return false;
+  const int removedId = passes_[selected_].id;
   passes_.erase(passes_.begin() + static_cast<std::ptrdiff_t>(selected_));
   if (selected_ >= passes_.size()) selected_ = passes_.size() - 1;
+  for (RenderPass& pass : passes_) {
+    if (pass.kind != StackOperationKind::Measure || pass.measurementTargetPassId != removedId) continue;
+    const auto replacement = std::find_if(passes_.begin(), passes_.end(), [&](const RenderPass& candidate) {
+      return candidate.id != pass.id && candidate.kind != StackOperationKind::Measure;
+    });
+    pass.measurementModulationEnabled = false;
+    if (replacement != passes_.end()) pass.measurementTargetPassId = replacement->id;
+  }
   return true;
 }
 
@@ -336,6 +356,40 @@ const char* relationOperatorLabel(const RelationOperator operation) { return lab
 const char* relationOperatorId(const RelationOperator operation) { return ids[relationIndex(operation)]; }
 const char* relationOperatorEquation(const RelationOperator operation) { return equations[relationIndex(operation)]; }
 const char* relationOperatorMeaning(const RelationOperator operation) { return meanings[relationIndex(operation)]; }
+
+const char* measurementMetricLabel(const MeasurementMetric metric) {
+  constexpr std::array labels = {"Mean magnitude", "RMS energy", "Peak magnitude",
+    "Coverage above threshold", "Mean red", "Mean green", "Mean blue"};
+  return labels[static_cast<std::size_t>(std::clamp(static_cast<int>(metric), 0, 6))];
+}
+
+const char* measurementMetricId(const MeasurementMetric metric) {
+  constexpr std::array ids = {"mean_magnitude", "rms_magnitude", "peak_magnitude",
+    "coverage_above_threshold", "mean_red", "mean_green", "mean_blue"};
+  return ids[static_cast<std::size_t>(std::clamp(static_cast<int>(metric), 0, 6))];
+}
+
+bool measurementTargetPropertyCompatible(const StackOperationKind targetKind,
+    const AnimationProperty property) {
+  const AnimationPropertyInfo& info = animationPropertyInfo(property);
+  if (info.behavior != AnimationBehavior::Continuous || info.components != 1) return false;
+  const bool compositeScalar = property == AnimationProperty::CompositeGain ||
+    property == AnimationProperty::CompositeBias || property == AnimationProperty::CompositeOpacity ||
+    property == AnimationProperty::CompositeHistoryDecay;
+  const bool stereoScalar = property == AnimationProperty::StereoMaximumDisparity ||
+    property == AnimationProperty::StereoOcclusionTolerance;
+  switch (targetKind) {
+    case StackOperationKind::Render: return !animationPropertyIsPassLocal(property);
+    case StackOperationKind::LegacyRenderComposite:
+      return !animationPropertyIsPassLocal(property) || compositeScalar;
+    case StackOperationKind::Interpret:
+      return property == AnimationProperty::CompositeGain || property == AnimationProperty::CompositeBias;
+    case StackOperationKind::Composite: return compositeScalar;
+    case StackOperationKind::StereoAnalysis: return stereoScalar;
+    case StackOperationKind::Measure: return false;
+  }
+  return false;
+}
 
 void resetCompositeTransform(CompositeStep& step) {
   switch (step.operation) {
@@ -552,8 +606,18 @@ std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& c
          << stereoAnalysisIds[static_cast<int>(pass.stereoAnalysis)]
          << "\", \"maximum_disparity_pixels\": " << pass.stereoMaximumDisparityPixels
          << ", \"occlusion_depth_tolerance\": " << pass.stereoOcclusionTolerance << "},\n";
+    const AnimationPropertyInfo& measurementTarget = animationPropertyInfo(pass.measurementTargetProperty);
     json << "      \"measurement\": {\"threshold\": " << pass.measurementThreshold
-         << ", \"absolute_magnitude\": " << pass.measurementAbsolute << "},\n";
+         << ", \"absolute_magnitude\": " << pass.measurementAbsolute
+         << ", \"metric\": \"" << measurementMetricId(pass.measurementMetric)
+         << "\", \"modulation\": {\"enabled\": " << pass.measurementModulationEnabled
+         << ", \"target_pass_id\": " << pass.measurementTargetPassId
+         << ", \"target_property\": \"" << measurementTarget.id
+         << "\", \"input_range\": [" << pass.measurementInputMinimum << ", "
+         << pass.measurementInputMaximum << "], \"output_range\": ["
+         << pass.measurementOutputMinimum << ", " << pass.measurementOutputMaximum
+         << "], \"clamp\": " << pass.measurementClamp
+         << ", \"smoothing_seconds\": " << pass.measurementSmoothingSeconds << "}},\n";
     json << "      \"animation\": {\"enabled\": " << pass.animation.enabled << ", \"property_tracks\": [";
     for (std::size_t trackIndex = 0; trackIndex < pass.animation.tracks.size(); ++trackIndex) {
       const PropertyAnimationTrack& track = pass.animation.tracks[trackIndex];

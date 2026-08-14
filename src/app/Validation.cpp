@@ -362,6 +362,15 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       fail("signal measurement consumer setup failed validation");
     const int measurementOperationId = compositeValidation.selected().id;
     compositeValidation.selected().measurementThreshold = 0.01f;
+    compositeValidation.selected().measurementMetric = MeasurementMetric::RmsMagnitude;
+    compositeValidation.selected().measurementModulationEnabled = true;
+    compositeValidation.selected().measurementTargetPassId = compositeValidation.passes()[0].id;
+    compositeValidation.selected().measurementTargetProperty = AnimationProperty::Ambient;
+    compositeValidation.selected().measurementInputMinimum = 0.1f;
+    compositeValidation.selected().measurementInputMaximum = 0.7f;
+    compositeValidation.selected().measurementOutputMinimum = 0.2f;
+    compositeValidation.selected().measurementOutputMaximum = 0.9f;
+    compositeValidation.selected().measurementSmoothingSeconds = 0.25f;
     const unsigned int measuredStackOutput = renderer.composite(compositeValidation);
     const unsigned int measuredSignal = renderer.stackOperationResult(compositeValidation.selectedIndex());
     const SignalMeasurement measurement = measureTextureSignal(measuredSignal, 0.01f, true);
@@ -376,6 +385,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         stackConfig.find("\"operation_kind\"") == std::string::npos ||
         stackConfig.find("\"operation_kind\": \"measure\"") == std::string::npos ||
         stackConfig.find("\"measurement\"") == std::string::npos ||
+        stackConfig.find("\"metric\": \"rms_magnitude\"") == std::string::npos ||
+        stackConfig.find("\"target_property\": \"ambient\"") == std::string::npos ||
         stackConfig.find("\"field_resources\"") == std::string::npos ||
         stackConfig.find("render_pass_field") == std::string::npos ||
         stackConfig.find("pass_field") == std::string::npos ||
@@ -430,7 +441,14 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     if (restoredMeasurement == measurementRoundTrip.document->renderStack.passes().end() ||
         restoredMeasurement->kind != StackOperationKind::Measure ||
         std::abs(restoredMeasurement->measurementThreshold - 0.01f) > 0.0001f ||
-        restoredMeasurement->composite.sourceAPassId != compositeValidation.passes()[2].id)
+        restoredMeasurement->composite.sourceAPassId != compositeValidation.passes()[2].id ||
+        restoredMeasurement->measurementMetric != MeasurementMetric::RmsMagnitude ||
+        !restoredMeasurement->measurementModulationEnabled ||
+        restoredMeasurement->measurementTargetPassId != compositeValidation.passes()[0].id ||
+        restoredMeasurement->measurementTargetProperty != AnimationProperty::Ambient ||
+        std::abs(restoredMeasurement->measurementInputMinimum - 0.1f) > 0.0001f ||
+        std::abs(restoredMeasurement->measurementOutputMaximum - 0.9f) > 0.0001f ||
+        std::abs(restoredMeasurement->measurementSmoothingSeconds - 0.25f) > 0.0001f)
       fail("measurement consumer save/load round trip failed validation");
     const StackDocumentLoadResult exampleDocument = loadStackDocumentFile("examples/rod-cone-xor-sdf.json");
     if (!exampleDocument || exampleDocument.document->scene != TestScene::SdfIsoSurface ||

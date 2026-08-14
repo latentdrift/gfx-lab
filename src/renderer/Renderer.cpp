@@ -1268,8 +1268,8 @@ public:
         return passTexture;
       };
       if (pass.kind == StackOperationKind::Measure) {
-        // A measurement is a terminal consumer: it observes a named signal without replacing the
-        // image flowing through the accumulator. Keep the source available for inspection.
+        // A measurement is a control tap: it leaves the image accumulator unchanged while keeping
+        // its source available for CPU reduction and next-frame property modulation.
         operationTextures_[passIndex] = sourceTexture(pass.composite.sourceA,
           pass.composite.sourceAPassId);
         continue;

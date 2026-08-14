@@ -40,6 +40,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -107,6 +108,55 @@ void stepUiScale(float& scale, const int direction) {
       return candidate < scale - 0.001f;
     });
     scale = next == uiScales.rend() ? uiScales.front() : *next;
+  }
+}
+
+struct MeasurementRuntime {
+  SignalMeasurement measurement;
+  double lastSampleTime = -1.0;
+  float smoothedControl = 0.0f;
+  float mappedOutput = 0.0f;
+  MeasurementMetric smoothedMetric = MeasurementMetric::Coverage;
+  bool smoothingInitialized = false;
+  bool modulationApplied = false;
+};
+
+void applyMeasurementModulations(RenderStack& evaluated,
+    std::unordered_map<int, MeasurementRuntime>& runtime, const float deltaSeconds) {
+  for (auto& entry : runtime) entry.second.modulationApplied = false;
+  for (const RenderPass& controller : evaluated.passes()) {
+    if (!controller.enabled || controller.kind != StackOperationKind::Measure ||
+        !controller.measurementModulationEnabled) continue;
+    const auto sample = runtime.find(controller.id);
+    if (sample == runtime.end() || sample->second.measurement.sampleCount == 0) continue;
+    const auto target = std::find_if(evaluated.passes().begin(), evaluated.passes().end(),
+      [&](const RenderPass& candidate) { return candidate.id == controller.measurementTargetPassId; });
+    if (target == evaluated.passes().end() || !measurementTargetPropertyCompatible(target->kind,
+        controller.measurementTargetProperty)) continue;
+
+    MeasurementRuntime& state = sample->second;
+    const float measured = measurementMetricValue(state.measurement, controller.measurementMetric);
+    if (!state.smoothingInitialized || state.smoothedMetric != controller.measurementMetric) {
+      state.smoothedControl = measured;
+      state.smoothedMetric = controller.measurementMetric;
+      state.smoothingInitialized = true;
+    } else {
+      const float timeConstant = std::max(controller.measurementSmoothingSeconds, 0.0f);
+      const float response = timeConstant <= 0.00001f ? 1.0f :
+        1.0f - std::exp(-std::max(deltaSeconds, 0.0f) / timeConstant);
+      state.smoothedControl += (measured - state.smoothedControl) * response;
+    }
+    const float inputSpan = controller.measurementInputMaximum - controller.measurementInputMinimum;
+    float normalized = std::abs(inputSpan) <= 0.000001f ? 0.0f :
+      (state.smoothedControl - controller.measurementInputMinimum) / inputSpan;
+    if (controller.measurementClamp) normalized = std::clamp(normalized, 0.0f, 1.0f);
+    float output = controller.measurementOutputMinimum +
+      normalized * (controller.measurementOutputMaximum - controller.measurementOutputMinimum);
+    const AnimationPropertyInfo& targetInfo = animationPropertyInfo(controller.measurementTargetProperty);
+    output = std::clamp(output, targetInfo.minimum, targetInfo.maximum);
+    setAnimationPropertyValue(*target, controller.measurementTargetProperty, glm::vec4(output));
+    state.mappedOutput = output;
+    state.modulationApplied = true;
   }
 }
 
@@ -195,9 +245,7 @@ int runApplication() {
   bool recordingFailed = false;
   std::string documentMessage;
   bool documentOperationFailed = false;
-  SignalMeasurement cachedMeasurement;
-  int cachedMeasurementOperationId = 0;
-  double lastMeasurementTime = -1.0;
+  std::unordered_map<int, MeasurementRuntime> measurementRuntime;
   EditorHistory editorHistory(captureEditorSnapshot(renderStack, camera, scene, hardwareProfile,
     animationTimeline, importedModel));
   const auto restoreHistory = [&](const bool redo) {
@@ -206,6 +254,7 @@ int runApplication() {
     EditorSnapshot restored;
     const bool changed = redo ? editorHistory.redo(present, restored) : editorHistory.undo(present, restored);
     if (!changed) return;
+    measurementRuntime.clear();
     const std::shared_ptr<const ModelAsset> previousModel = importedModel;
     restoreEditorSnapshot(restored, renderStack, camera, scene, hardwareProfile, animationTimeline,
       &importedModel);
@@ -311,6 +360,7 @@ int runApplication() {
         } else {
           StackDocument document = std::move(*loaded.document);
           renderStack = std::move(document.renderStack);
+          measurementRuntime.clear();
           camera = document.camera;
           scene = document.scene;
           hardwareProfile = document.hardwareProfile;
@@ -439,6 +489,7 @@ int runApplication() {
     const bool evaluateAnimation = animationTimeline.playing || previewAnimation;
     RenderStack evaluatedStack = evaluateRenderStack(renderStack,
       evaluateAnimation ? animationTimeline.timeSeconds : 0.0f);
+    applyMeasurementModulations(evaluatedStack, measurementRuntime, deltaSeconds);
     for (RenderPass& pass : evaluatedStack.passes())
       normalizeForHardwareProfile(hardwareProfile, pass.renderer);
     std::array<GLuint, RenderStack::maximumPasses> passTextures{};
@@ -450,18 +501,30 @@ int runApplication() {
     const GLuint renderedComposite = renderer.composite(evaluatedStack);
     GLuint selectedTexture = renderer.stackOperationResult(renderStack.selectedIndex());
     if (selectedTexture == 0) selectedTexture = renderedComposite;
-    SignalMeasurement selectedMeasurement;
     const SignalMeasurement* selectedMeasurementPointer = nullptr;
-    if (renderStack.selected().kind == StackOperationKind::Measure && selectedTexture != 0) {
-      const bool differentConsumer = cachedMeasurementOperationId != renderStack.selected().id;
-      if (differentConsumer || frameTime - lastMeasurementTime >= 0.10) {
-        cachedMeasurement = measureTextureSignal(selectedTexture,
-          renderStack.selected().measurementThreshold, renderStack.selected().measurementAbsolute);
-        cachedMeasurementOperationId = renderStack.selected().id;
-        lastMeasurementTime = frameTime;
+    float selectedSmoothedControl = 0.0f;
+    float selectedMappedOutput = 0.0f;
+    bool selectedModulationApplied = false;
+    for (std::size_t index = 0; index < renderStack.passes().size(); ++index) {
+      const RenderPass& measure = renderStack.passes()[index];
+      if (!measure.enabled || measure.kind != StackOperationKind::Measure) continue;
+      const GLuint measuredTexture = renderer.stackOperationResult(index);
+      if (measuredTexture == 0) continue;
+      MeasurementRuntime& runtime = measurementRuntime[measure.id];
+      if (runtime.lastSampleTime < 0.0 || frameTime - runtime.lastSampleTime >= 0.10) {
+        runtime.measurement = measureTextureSignal(measuredTexture, measure.measurementThreshold,
+          measure.measurementAbsolute);
+        runtime.lastSampleTime = frameTime;
       }
-      selectedMeasurement = cachedMeasurement;
-      selectedMeasurementPointer = &selectedMeasurement;
+    }
+    if (renderStack.selected().kind == StackOperationKind::Measure) {
+      const auto selectedRuntime = measurementRuntime.find(renderStack.selected().id);
+      if (selectedRuntime != measurementRuntime.end()) {
+        selectedMeasurementPointer = &selectedRuntime->second.measurement;
+        selectedSmoothedControl = selectedRuntime->second.smoothedControl;
+        selectedMappedOutput = selectedRuntime->second.mappedOutput;
+        selectedModulationApplied = selectedRuntime->second.modulationApplied;
+      }
     }
     GLuint baseTexture = 0;
     GLuint leftEyeTexture = 0;
@@ -523,7 +586,8 @@ int runApplication() {
     const GLuint importedTexturePreview = renderer.texturePreview(textureMappingPass.importedTexture.get());
     drawContextInspector(workspaceWindows.inspector, renderStack, animationTimeline, editorSelection,
       hardwareProfile, importedModel.get(), scene, camera, inspectorTime, importedTexturePreview,
-      category, pipelineFocusRequested, selectedMeasurementPointer);
+      category, pipelineFocusRequested, selectedMeasurementPointer, selectedSmoothedControl,
+      selectedMappedOutput, selectedModulationApplied);
     pipelineFocusRequested = false;
 
     const handbook::Action handbookAction = graphicsHandbook.draw(hardwareProfile);
@@ -549,6 +613,7 @@ int runApplication() {
       pipelineFocusRequested = true;
     } else if (handbookAction.type == handbook::ActionType::LoadComparison) {
       renderStack = RenderStack{};
+      measurementRuntime.clear();
       applyHandbookExample(handbookAction.example, false, renderStack.global().renderer, camera, scene, category);
       RendererState comparisonState;
       CameraOrbit comparisonCamera = camera;

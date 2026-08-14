@@ -281,26 +281,121 @@ void drawPassInspector(RenderStack& stack, AnimationTimeline& timeline, const bo
 
   if (pass.kind == StackOperationKind::Measure) {
     ImGui::SeparatorText("SIGNAL INPUT");
+    constexpr const char* signalTypes[] = {"Operation output", "Render field buffer"};
+    int signalType = pass.composite.sourceA == CompositeSource::RenderPassField ? 1 : 0;
+    if (ImGui::Combo("Signal type", &signalType, signalTypes, 2))
+      pass.composite.sourceA = signalType == 1 ? CompositeSource::RenderPassField : CompositeSource::RenderPass;
     const RenderPass* selectedSource = nullptr;
     for (const RenderPass& candidate : stack.passes())
       if (candidate.id == pass.composite.sourceAPassId) selectedSource = &candidate;
+    if (selectedSource != nullptr && signalType == 1 && selectedSource->kind != StackOperationKind::Render &&
+        selectedSource->kind != StackOperationKind::LegacyRenderComposite)
+      selectedSource = nullptr;
     ImGui::SetNextItemWidth(-1.0f);
     if (ImGui::BeginCombo("Upstream operation", selectedSource != nullptr
         ? selectedSource->name.c_str() : "Select an earlier operation")) {
       for (std::size_t index = 0; index < stack.selectedIndex(); ++index) {
         const RenderPass& candidate = stack.passes()[index];
+        if (signalType == 1 && candidate.kind != StackOperationKind::Render &&
+            candidate.kind != StackOperationKind::LegacyRenderComposite) continue;
         ImGui::PushID(candidate.id);
         if (ImGui::Selectable(candidate.name.c_str(), candidate.id == pass.composite.sourceAPassId)) {
-          pass.composite.sourceA = CompositeSource::RenderPass;
+          pass.composite.sourceA = signalType == 1
+            ? CompositeSource::RenderPassField : CompositeSource::RenderPass;
           pass.composite.sourceAPassId = candidate.id;
         }
         ImGui::PopID();
       }
       ImGui::EndCombo();
     }
-    ImGui::DragFloat("Active threshold", &pass.measurementThreshold, 0.001f, 0.0f, 16.0f, "%.4f");
-    ImGui::Checkbox("Measure absolute magnitude", &pass.measurementAbsolute);
-    description("Measure samples the selected upstream result without changing the accumulated image. Coverage is the fraction of sampled pixels at or above the threshold.");
+    constexpr const char* metricLabels[] = {"Mean magnitude", "RMS energy", "Peak magnitude",
+      "Coverage above threshold", "Mean red", "Mean green", "Mean blue"};
+    int metric = static_cast<int>(pass.measurementMetric);
+    if (ImGui::Combo("Control value", &metric, metricLabels, 7))
+      pass.measurementMetric = static_cast<MeasurementMetric>(metric);
+    if (pass.measurementMetric == MeasurementMetric::Coverage)
+      ImGui::DragFloat("Active threshold", &pass.measurementThreshold, 0.001f, 0.0f, 16.0f, "%.4f");
+    if (pass.measurementMetric == MeasurementMetric::MeanMagnitude ||
+        pass.measurementMetric == MeasurementMetric::RmsMagnitude ||
+        pass.measurementMetric == MeasurementMetric::PeakMagnitude ||
+        pass.measurementMetric == MeasurementMetric::Coverage)
+      ImGui::Checkbox("Use absolute magnitude", &pass.measurementAbsolute);
+    description("The selected measurement reduces the entire upstream image to one continuously updated control value.");
+
+    ImGui::SeparatorText("MAP TO PROPERTY");
+    ImGui::Checkbox("Drive a property", &pass.measurementModulationEnabled);
+    ImGui::BeginDisabled(!pass.measurementModulationEnabled);
+    const RenderPass* targetPass = nullptr;
+    for (const RenderPass& candidate : stack.passes())
+      if (candidate.id == pass.measurementTargetPassId && candidate.kind != StackOperationKind::Measure)
+        targetPass = &candidate;
+    if (ImGui::BeginCombo("Destination operation", targetPass != nullptr
+        ? targetPass->name.c_str() : "Select an operation")) {
+      for (const RenderPass& candidate : stack.passes()) {
+        if (candidate.id == pass.id || candidate.kind == StackOperationKind::Measure) continue;
+        ImGui::PushID(candidate.id);
+        if (ImGui::Selectable(candidate.name.c_str(), candidate.id == pass.measurementTargetPassId)) {
+          pass.measurementTargetPassId = candidate.id;
+          targetPass = &candidate;
+          if (!measurementTargetPropertyCompatible(candidate.kind, pass.measurementTargetProperty)) {
+            for (int propertyIndex = 0; propertyIndex < static_cast<int>(AnimationProperty::Count);
+                 ++propertyIndex) {
+              const AnimationProperty candidateProperty = static_cast<AnimationProperty>(propertyIndex);
+              if (!measurementTargetPropertyCompatible(candidate.kind, candidateProperty)) continue;
+              pass.measurementTargetProperty = candidateProperty;
+              const AnimationPropertyInfo& info = animationPropertyInfo(candidateProperty);
+              pass.measurementOutputMinimum = info.minimum;
+              pass.measurementOutputMaximum = info.maximum;
+              break;
+            }
+          }
+        }
+        ImGui::PopID();
+      }
+      ImGui::EndCombo();
+    }
+    const bool compatibleProperty = targetPass != nullptr &&
+      measurementTargetPropertyCompatible(targetPass->kind, pass.measurementTargetProperty);
+    const char* propertyPreview = compatibleProperty
+      ? animationPropertyInfo(pass.measurementTargetProperty).label.data() : "Select a compatible property";
+    if (ImGui::BeginCombo("Destination property", propertyPreview)) {
+      if (targetPass != nullptr) {
+        std::string_view previousGroup;
+        for (int propertyIndex = 0; propertyIndex < static_cast<int>(AnimationProperty::Count);
+             ++propertyIndex) {
+          const AnimationProperty candidate = static_cast<AnimationProperty>(propertyIndex);
+          if (!measurementTargetPropertyCompatible(targetPass->kind, candidate)) continue;
+          const AnimationPropertyInfo& info = animationPropertyInfo(candidate);
+          if (info.group != previousGroup) {
+            ImGui::SeparatorText(info.group.data());
+            previousGroup = info.group;
+          }
+          ImGui::PushID(propertyIndex);
+          if (ImGui::Selectable(info.label.data(), candidate == pass.measurementTargetProperty)) {
+            pass.measurementTargetProperty = candidate;
+            pass.measurementOutputMinimum = info.minimum;
+            pass.measurementOutputMaximum = info.maximum;
+          }
+          ImGui::PopID();
+        }
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::DragFloat("Input low", &pass.measurementInputMinimum, 0.005f, -16.0f, 16.0f, "%.4f");
+    ImGui::DragFloat("Input high", &pass.measurementInputMaximum, 0.005f, -16.0f, 16.0f, "%.4f");
+    const AnimationPropertyInfo* targetInfo = compatibleProperty
+      ? &animationPropertyInfo(pass.measurementTargetProperty) : nullptr;
+    const float outputMinimum = targetInfo != nullptr ? targetInfo->minimum : -100.0f;
+    const float outputMaximum = targetInfo != nullptr ? targetInfo->maximum : 100.0f;
+    ImGui::DragFloat("Output at input low", &pass.measurementOutputMinimum, 0.005f,
+      outputMinimum, outputMaximum, "%.4f");
+    ImGui::DragFloat("Output at input high", &pass.measurementOutputMaximum, 0.005f,
+      outputMinimum, outputMaximum, "%.4f");
+    ImGui::Checkbox("Clamp outside input range", &pass.measurementClamp);
+    ImGui::DragFloat("Response smoothing", &pass.measurementSmoothingSeconds, 0.01f,
+      0.0f, 5.0f, "%.2f s");
+    ImGui::EndDisabled();
+    description("The measured value is remapped from the input range to the two output endpoints, then applied to the evaluated destination. Set the output endpoints in reverse order to invert the response. Measurement uses the preceding frame, so feedback remains finite and deliberate.");
     return;
   }
 

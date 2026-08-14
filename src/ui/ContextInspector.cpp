@@ -12,7 +12,9 @@
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace gfxlab::ui {
 namespace {
@@ -77,7 +79,8 @@ void drawContextInspector(bool& open, RenderStack& stack, AnimationTimeline& tim
     const EditorSelection& selection, const HardwareProfile profile, const ModelAsset* importedModel,
     const TestScene scene, CameraOrbit& camera, const float timeSeconds,
     const unsigned int texturePreview, Category& activeCategory, const bool focusRenderSettings,
-    const SignalMeasurement* measurement) {
+    const SignalMeasurement* measurement, const float smoothedControl, const float mappedOutput,
+    const bool modulationApplied) {
   if (!open) return;
   if (!ImGui::Begin("Inspector", &open)) {
     ImGui::End();
@@ -124,20 +127,48 @@ void drawContextInspector(bool& open, RenderStack& stack, AnimationTimeline& tim
 
   if (!sceneDefaults && stack.selected().kind == StackOperationKind::Measure) {
     drawOverview(stack, timeline, false, timeSeconds);
-    ImGui::SeparatorText("LIVE MEASUREMENT");
+    ImGui::SeparatorText("LIVE CONTROL");
     if (measurement == nullptr || measurement->sampleCount == 0) {
-      ImGui::TextDisabled("No readable upstream signal.");
+      ImGui::TextDisabled("Waiting for a readable upstream signal.");
     } else {
-      ImGui::Text("Mean RGB     %+.4f   %+.4f   %+.4f", measurement->meanChannels.r,
-        measurement->meanChannels.g, measurement->meanChannels.b);
-      ImGui::Text("Mean magnitude                 %.5f", measurement->meanMagnitude);
-      ImGui::Text("RMS energy                     %.5f", measurement->rmsMagnitude);
-      ImGui::Text("Peak magnitude                 %.5f", measurement->peakMagnitude);
-      ImGui::Text("Coverage >= threshold          %.2f%%", measurement->coverage * 100.0f);
-      ImGui::ProgressBar(measurement->coverage, ImVec2(-1.0f, 0.0f));
-      ImGui::TextDisabled("%d spatial samples (64 x 64)", measurement->sampleCount);
+      const RenderPass& controller = stack.selected();
+      const float rawControl = measurementMetricValue(*measurement, controller.measurementMetric);
+      ImGui::TextUnformatted(measurementMetricLabel(controller.measurementMetric));
+      ImGui::SameLine();
+      ImGui::Text("%.5f", rawControl);
+      const float inputSpan = controller.measurementInputMaximum - controller.measurementInputMinimum;
+      const float inputPosition = std::abs(inputSpan) <= 0.000001f ? 0.0f : std::clamp(
+        (rawControl - controller.measurementInputMinimum) / inputSpan, 0.0f, 1.0f);
+      ImGui::ProgressBar(inputPosition, ImVec2(-1.0f, 0.0f));
+      if (controller.measurementModulationEnabled) {
+        const RenderPass* target = nullptr;
+        for (const RenderPass& candidate : stack.passes())
+          if (candidate.id == controller.measurementTargetPassId) target = &candidate;
+        if (modulationApplied && target != nullptr) {
+          ImGui::TextDisabled("smoothed input %.5f", smoothedControl);
+          ImGui::Text("%s  ->  %s", target->name.c_str(),
+            animationPropertyInfo(controller.measurementTargetProperty).label.data());
+          ImGui::SameLine();
+          ImGui::TextColored(ImVec4(0.58f, 0.84f, 0.88f, 1.0f), "%.5f", mappedOutput);
+        } else {
+          ImGui::TextColored(ImVec4(0.95f, 0.58f, 0.34f, 1.0f),
+            "Modulation is enabled but has no valid sampled destination yet.");
+        }
+      } else {
+        ImGui::TextDisabled("Enable Drive a property above to use this value.");
+      }
+      if (ImGui::TreeNode("Diagnostic statistics")) {
+        ImGui::Text("Mean RGB       %+.4f   %+.4f   %+.4f", measurement->meanChannels.r,
+          measurement->meanChannels.g, measurement->meanChannels.b);
+        ImGui::Text("Mean magnitude %.5f", measurement->meanMagnitude);
+        ImGui::Text("RMS energy     %.5f", measurement->rmsMagnitude);
+        ImGui::Text("Peak magnitude %.5f", measurement->peakMagnitude);
+        ImGui::Text("Coverage       %.2f%%", measurement->coverage * 100.0f);
+        ImGui::TextDisabled("%d spatial samples (64 x 64)", measurement->sampleCount);
+        ImGui::TreePop();
+      }
     }
-    ImGui::TextWrapped("This operation consumes data but does not replace the image flowing through the stack. Use it after a Composite to quantify disagreement, or after any other operation to measure its signal.");
+    ImGui::TextWrapped("Measure leaves the image unchanged. Its selected scalar can drive one continuous property on another operation.");
     ImGui::End();
     return;
   }

@@ -272,7 +272,7 @@ SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStac
       : pass.kind == StackOperationKind::Interpret ? "Spectrum16  ->  Color"
       : pass.kind == StackOperationKind::Composite ? "A + B  ->  Color"
       : pass.kind == StackOperationKind::StereoAnalysis ? "Left depth + Right depth  ->  analysis"
-      : pass.kind == StackOperationKind::Measure ? "Named signal  ->  statistics"
+      : pass.kind == StackOperationKind::Measure ? "Named signal  ->  property control"
       : "Color  ->  accumulator";
     ImGui::TextDisabled("%s", stackOperationKindLabel(pass.kind));
     if (pass.kind == StackOperationKind::Render || pass.kind == StackOperationKind::LegacyRenderComposite) {

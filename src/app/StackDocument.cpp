@@ -304,9 +304,34 @@ StackDocumentLoadResult loadStackDocumentFile(const std::string& path) {
       }
       if (sourcePass.contains("measurement") && sourcePass.at("measurement").is_object()) {
         const Json& measurement = sourcePass.at("measurement");
+        constexpr std::array metricIds = {"mean_magnitude", "rms_magnitude", "peak_magnitude",
+          "coverage_above_threshold", "mean_red", "mean_green", "mean_blue"};
         pass.measurementThreshold = std::max(measurement.value("threshold",
           pass.measurementThreshold), 0.0f);
         pass.measurementAbsolute = measurement.value("absolute_magnitude", pass.measurementAbsolute);
+        pass.measurementMetric = enumFromId(measurement.value("metric", "coverage_above_threshold"),
+          metricIds, MeasurementMetric::Coverage);
+        if (measurement.contains("modulation") && measurement.at("modulation").is_object()) {
+          const Json& modulation = measurement.at("modulation");
+          pass.measurementModulationEnabled = modulation.value("enabled", false);
+          pass.measurementTargetPassId = modulation.value("target_pass_id", pass.measurementTargetPassId);
+          const std::optional<AnimationProperty> targetProperty = propertyFromId(
+            modulation.value("target_property", "ambient"));
+          if (targetProperty.has_value()) pass.measurementTargetProperty = *targetProperty;
+          if (modulation.contains("input_range")) {
+            const glm::vec4 range = vectorValue(modulation.at("input_range"), 2);
+            pass.measurementInputMinimum = range.x;
+            pass.measurementInputMaximum = range.y;
+          }
+          if (modulation.contains("output_range")) {
+            const glm::vec4 range = vectorValue(modulation.at("output_range"), 2);
+            pass.measurementOutputMinimum = range.x;
+            pass.measurementOutputMaximum = range.y;
+          }
+          pass.measurementClamp = modulation.value("clamp", pass.measurementClamp);
+          pass.measurementSmoothingSeconds = std::max(modulation.value("smoothing_seconds",
+            pass.measurementSmoothingSeconds), 0.0f);
+        }
       }
       if (sourcePass.contains("animation") && sourcePass.at("animation").is_object()) {
         const Json& animation = sourcePass.at("animation");
@@ -346,6 +371,18 @@ StackDocumentLoadResult loadStackDocumentFile(const std::string& path) {
     for (const RenderPass& pass : passes) {
       validateNamedOperand(pass.composite.sourceA, pass.composite.sourceAPassId, pass.name, "source A");
       validateNamedOperand(pass.composite.sourceB, pass.composite.sourceBPassId, pass.name, "source B");
+      if (pass.kind == StackOperationKind::Measure && pass.measurementModulationEnabled &&
+          !passIds.contains(pass.measurementTargetPassId))
+        throw std::runtime_error(pass.name + " modulation references missing target pass ID " +
+          std::to_string(pass.measurementTargetPassId));
+      if (pass.kind == StackOperationKind::Measure && pass.measurementModulationEnabled) {
+        const auto target = std::find_if(passes.begin(), passes.end(), [&](const RenderPass& candidate) {
+          return candidate.id == pass.measurementTargetPassId;
+        });
+        if (target != passes.end() &&
+            !measurementTargetPropertyCompatible(target->kind, pass.measurementTargetProperty))
+          throw std::runtime_error(pass.name + " modulation targets an incompatible property");
+      }
     }
     document.renderStack.replacePasses(std::move(passes));
     return {std::move(document), {}};

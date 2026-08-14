@@ -1,5 +1,7 @@
 #include "renderer/TextureReadback.hpp"
 
+#include "app/RenderStack.hpp"
+
 #include <GL/glew.h>
 
 #include <algorithm>
@@ -38,6 +40,15 @@ SignalMeasurement measureTextureSignal(const unsigned int texture, const float t
     const bool absoluteMagnitude) {
   const TextureDimensions source = textureDimensions(texture);
   if (source.width <= 0 || source.height <= 0) return {};
+
+  GLint sourceInternalFormat = 0;
+  GLint previousSourceTexture = 0;
+  glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousSourceTexture);
+  glBindTexture(GL_TEXTURE_2D, texture);
+  glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &sourceInternalFormat);
+  glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousSourceTexture));
+  const bool scalarTexture = sourceInternalFormat == GL_R8 || sourceInternalFormat == GL_R16 ||
+    sourceInternalFormat == GL_R16F || sourceInternalFormat == GL_R32F;
 
   constexpr int sampleWidth = 64;
   constexpr int sampleHeight = 64;
@@ -80,7 +91,8 @@ SignalMeasurement measureTextureSignal(const unsigned int texture, const float t
       const glm::vec3 channels(sample);
       result.meanChannels += channels;
       const glm::vec3 measured = absoluteMagnitude ? glm::abs(channels) : glm::max(channels, glm::vec3(0.0f));
-      const float magnitude = std::sqrt(glm::dot(measured, measured) / 3.0f);
+      const float magnitude = scalarTexture ? measured.r :
+        std::sqrt(glm::dot(measured, measured) / 3.0f);
       result.meanMagnitude += magnitude;
       squaredMagnitudeSum += magnitude * magnitude;
       result.peakMagnitude = std::max(result.peakMagnitude, magnitude);
@@ -101,6 +113,19 @@ SignalMeasurement measureTextureSignal(const unsigned int texture, const float t
   glDeleteFramebuffers(1, &sampleFramebuffer);
   glDeleteFramebuffers(1, &sourceFramebuffer);
   return result;
+}
+
+float measurementMetricValue(const SignalMeasurement& measurement, const MeasurementMetric metric) {
+  switch (metric) {
+    case MeasurementMetric::MeanMagnitude: return measurement.meanMagnitude;
+    case MeasurementMetric::RmsMagnitude: return measurement.rmsMagnitude;
+    case MeasurementMetric::PeakMagnitude: return measurement.peakMagnitude;
+    case MeasurementMetric::Coverage: return measurement.coverage;
+    case MeasurementMetric::MeanRed: return measurement.meanChannels.r;
+    case MeasurementMetric::MeanGreen: return measurement.meanChannels.g;
+    case MeasurementMetric::MeanBlue: return measurement.meanChannels.b;
+  }
+  return 0.0f;
 }
 
 } // namespace gfxlab

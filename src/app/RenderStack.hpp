@@ -22,6 +22,7 @@ enum class CompositeRange { Clamp, Preserve, Wrap };
 // "render this row, then composite it" evaluation semantics.
 enum class StackOperationKind { Render, Interpret, Composite, StereoAnalysis, Measure, LegacyRenderComposite };
 enum class StereoAnalysisMode { Anaglyph, SignedDisparity, AbsoluteDisparity, Correspondence, MonocularOcclusion };
+enum class MeasurementMetric { MeanMagnitude, RmsMagnitude, PeakMagnitude, Coverage, MeanRed, MeanGreen, MeanBlue };
 enum class CompositeInterpretation {
   RawRgb, LResponse, MResponse, SResponse, ConeLuminance, RodResponse,
   RedGreenOpponent, BlueYellowOpponent, SpectralHuman, SpectralAlternate, SpectralRod
@@ -127,6 +128,16 @@ struct RenderPass {
   float stereoOcclusionTolerance = 0.0025f;
   float measurementThreshold = 0.05f;
   bool measurementAbsolute = true;
+  MeasurementMetric measurementMetric = MeasurementMetric::Coverage;
+  bool measurementModulationEnabled = false;
+  int measurementTargetPassId = 1;
+  AnimationProperty measurementTargetProperty = AnimationProperty::Ambient;
+  float measurementInputMinimum = 0.0f;
+  float measurementInputMaximum = 1.0f;
+  float measurementOutputMinimum = 0.0f;
+  float measurementOutputMaximum = 1.0f;
+  bool measurementClamp = true;
+  float measurementSmoothingSeconds = 0.15f;
   PassAnimation animation;
   std::vector<PropertyOverride> overrides;
   bool importedTextureOverride = false;
@@ -179,6 +190,10 @@ void replaceRenderPassOverrides(RenderPass& pass, const RenderPass& global, cons
 [[nodiscard]] const char* relationOperatorId(RelationOperator operation);
 [[nodiscard]] const char* relationOperatorEquation(RelationOperator operation);
 [[nodiscard]] const char* relationOperatorMeaning(RelationOperator operation);
+[[nodiscard]] const char* measurementMetricLabel(MeasurementMetric metric);
+[[nodiscard]] const char* measurementMetricId(MeasurementMetric metric);
+[[nodiscard]] bool measurementTargetPropertyCompatible(StackOperationKind targetKind,
+  AnimationProperty property);
 void resetCompositeTransform(CompositeStep& step);
 [[nodiscard]] std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& camera,
   TestScene scene, HardwareProfile profile, const AnimationTimeline* timeline = nullptr,
