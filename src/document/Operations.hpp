@@ -75,14 +75,50 @@ struct CompositeOperation {
   CompositeInterpretation interpretationB = CompositeInterpretation::RawRgb;
   ObserverParameters observer;
   CompositeArithmetic arithmetic;
-  CompositeMask mask = CompositeMask::None;
+  SignalRef mask;
   bool invertMask = false;
   std::optional<FeedbackSettings> feedback;
 };
 
+struct LuminanceOperation { SignalRef input; };
+
+struct RemapOperation {
+  SignalRef input;
+  float inputLow = 0.0f;
+  float inputHigh = 1.0f;
+  float outputLow = 0.0f;
+  float outputHigh = 1.0f;
+  bool clamp = true;
+};
+
+struct EdgeOperation {
+  SignalRef input;
+  float strength = 1.0f;
+};
+
+struct BlurOperation {
+  SignalRef input;
+  SignalShape outputShape = SignalShape::Vector4;
+  SignalSemantic outputSemantic = SignalSemantic::Color;
+  float radiusPixels = 2.0f;
+};
+
+struct ThresholdOperation {
+  SignalRef input;
+  float threshold = 0.5f;
+  float softness = 0.05f;
+};
+
+struct GradientMapOperation {
+  SignalRef input;
+  glm::vec4 lowColor{0.02f, 0.0f, 0.08f, 1.0f};
+  glm::vec4 highColor{1.0f, 0.55f, 0.08f, 1.0f};
+};
+
 struct ConstantOperation {
   glm::vec4 value{1.0f};
-  SignalKind kind = SignalKind::Color;
+  SignalShape shape = SignalShape::Vector4;
+  SignalSemantic semantic = SignalSemantic::Color;
 };
 
 struct StereoOperation {
@@ -101,7 +137,8 @@ struct MeasureOperation {
 };
 
 using OperationData = std::variant<RenderOperation, InterpretOperation, CompositeOperation,
-  ConstantOperation, StereoOperation, MeasureOperation>;
+  ConstantOperation, StereoOperation, MeasureOperation, LuminanceOperation, RemapOperation,
+  EdgeOperation, BlurOperation, ThresholdOperation, GradientMapOperation>;
 
 struct Operation {
   OperationId id;
@@ -121,6 +158,14 @@ struct Operation {
   SignalRef left, SignalRef right);
 [[nodiscard]] Operation makeMeasureOperation(OperationId id, std::string name, SignalRef input);
 [[nodiscard]] Operation makeConstantOperation(OperationId id, std::string name,
-  glm::vec4 value, SignalKind kind = SignalKind::Color);
+  glm::vec4 value, SignalShape shape = SignalShape::Vector4,
+  SignalSemantic semantic = SignalSemantic::Color);
+[[nodiscard]] Operation makeLuminanceOperation(OperationId id, std::string name, SignalRef input);
+[[nodiscard]] Operation makeRemapOperation(OperationId id, std::string name, SignalRef input);
+[[nodiscard]] Operation makeEdgeOperation(OperationId id, std::string name, SignalRef input);
+[[nodiscard]] Operation makeBlurOperation(OperationId id, std::string name, SignalRef input,
+  SignalShape outputShape, SignalSemantic outputSemantic);
+[[nodiscard]] Operation makeThresholdOperation(OperationId id, std::string name, SignalRef input);
+[[nodiscard]] Operation makeGradientMapOperation(OperationId id, std::string name, SignalRef input);
 
 } // namespace gfxlab::document

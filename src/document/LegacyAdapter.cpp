@@ -6,6 +6,32 @@
 namespace gfxlab::document {
 namespace {
 
+// This vocabulary exists only while translating the removed stack format.
+enum class SignalKind { Color, Depth, Normal, Field, Spectrum16, Scalar, Vector2, ScalarImage };
+
+SignalShape shapeOf(const SignalKind kind) {
+  if (kind == SignalKind::Scalar || kind == SignalKind::Depth || kind == SignalKind::Field ||
+      kind == SignalKind::ScalarImage) return SignalShape::Scalar;
+  if (kind == SignalKind::Vector2) return SignalShape::Vector2;
+  if (kind == SignalKind::Normal) return SignalShape::Vector3;
+  if (kind == SignalKind::Spectrum16) return SignalShape::Spectrum16;
+  return SignalShape::Vector4;
+}
+
+SignalSemantic semanticOf(const SignalKind kind) {
+  switch (kind) {
+    case SignalKind::Color: return SignalSemantic::Color;
+    case SignalKind::Depth: return SignalSemantic::DeviceDepth;
+    case SignalKind::Normal: return SignalSemantic::Normal;
+    case SignalKind::Field: return SignalSemantic::FieldStrength;
+    case SignalKind::Spectrum16: return SignalSemantic::Spectrum;
+    case SignalKind::Scalar: return SignalSemantic::Measurement;
+    case SignalKind::Vector2:
+    case SignalKind::ScalarImage: return SignalSemantic::Generic;
+  }
+  return SignalSemantic::Generic;
+}
+
 SignalKind signalKind(const PassOutput output) {
   switch (output) {
     case PassOutput::Color: return SignalKind::Color;
@@ -26,6 +52,7 @@ const char* signalKey(const SignalKind kind) {
     case SignalKind::Spectrum16: return "spectrum16";
     case SignalKind::Scalar: return "value";
     case SignalKind::Vector2: return "value";
+    case SignalKind::ScalarImage: return "image";
   }
   return "value";
 }
@@ -33,17 +60,20 @@ const char* signalKey(const SignalKind kind) {
 SignalDescriptor makeSignal(const OperationId producer, const SignalKind kind, std::string name) {
   SignalMetadata metadata;
   metadata.domain = kind == SignalKind::Scalar ? SignalDomain::Document : SignalDomain::Screen2D;
+  metadata.semantic = semanticOf(kind);
   metadata.encoding = kind == SignalKind::Color ? SignalEncoding::Linear
     : kind == SignalKind::Field ? SignalEncoding::Signed : SignalEncoding::Unspecified;
   const std::string key = signalKey(kind);
-  return {operationSignal(producer, key), producer, key, kind, std::move(name), std::move(metadata)};
+  return {operationSignal(producer, key), producer, key, shapeOf(kind), std::move(name), std::move(metadata)};
 }
 
 SignalRef signalFromOperation(const Document& document, const OperationId producer, const SignalKind kind) {
   const Operation* operation = findOperation(document, producer);
   if (operation == nullptr) return {};
   const auto found = std::find_if(operation->outputs.begin(), operation->outputs.end(),
-    [kind](const SignalDescriptor& descriptor) { return descriptor.kind == kind; });
+    [kind](const SignalDescriptor& descriptor) {
+      return descriptor.shape == shapeOf(kind) && descriptor.metadata.semantic == semanticOf(kind);
+    });
   return found == operation->outputs.end() ? primaryOutput(*operation) : SignalRef{found->id, 0};
 }
 
@@ -54,11 +84,12 @@ TextureBinding textureBinding(const RenderPass& pass) {
 void addRenderSignals(Operation& operation, const PassOutput primary) {
   const SignalKind primaryKind = signalKind(primary);
   operation.outputs.push_back(makeSignal(operation.id, primaryKind,
-    std::string(signalKindLabel(primaryKind))));
+    std::string(signalSemanticLabel(semanticOf(primaryKind)))));
   constexpr SignalKind additional[] = {SignalKind::Color, SignalKind::Depth, SignalKind::Normal,
     SignalKind::Field, SignalKind::Spectrum16};
   for (const SignalKind kind : additional)
-    if (kind != primaryKind) operation.outputs.push_back(makeSignal(operation.id, kind, signalKindLabel(kind)));
+    if (kind != primaryKind) operation.outputs.push_back(makeSignal(operation.id, kind,
+      signalSemanticLabel(semanticOf(kind))));
 }
 
 } // namespace
@@ -132,7 +163,7 @@ Document migrateLegacyDocument(const StackDocument& legacy) {
       constant.id = {nextSyntheticId++};
       constant.name = pass.name + " / constant";
       constant.enabled = pass.enabled;
-      constant.data = ConstantOperation{value, SignalKind::Color};
+      constant.data = ConstantOperation{value, SignalShape::Vector4, SignalSemantic::Color};
       constant.outputs.push_back(makeSignal(constant.id, SignalKind::Color, "Color"));
       const SignalRef output = primaryOutput(constant);
       result.operations.push_back(std::move(constant));
@@ -152,7 +183,25 @@ Document migrateLegacyDocument(const StackDocument& legacy) {
         pass.composite.opponentGain};
       composite.arithmetic = {pass.composite.operation, pass.composite.gain, pass.composite.bias,
         pass.composite.opacity, pass.composite.bitDepth, pass.composite.colorSpace, pass.composite.range};
-      composite.mask = pass.composite.mask;
+      if (pass.composite.mask != CompositeMask::None) {
+        Operation conversion;
+        const OperationId conversionId{nextSyntheticId++};
+        if (pass.composite.mask == CompositeMask::PassLuminance)
+          conversion = makeLuminanceOperation(conversionId, pass.name + " / luminance mask", b);
+        else if (pass.composite.mask == CompositeMask::PassEdges)
+          conversion = makeEdgeOperation(conversionId, pass.name + " / edge mask", b);
+        else {
+          const char* port = pass.composite.mask == CompositeMask::PassDepth ? "depth" : "field";
+          conversion = makeRemapOperation(conversionId, pass.name + " / mask",
+            {operationSignal(b.id.producer, port), 0});
+          if (pass.composite.mask == CompositeMask::PassField) {
+            auto& remap = std::get<RemapOperation>(conversion.data);
+            remap.inputLow = -1.0f; remap.inputHigh = 1.0f;
+          }
+        }
+        composite.mask = primaryOutput(conversion);
+        result.operations.push_back(std::move(conversion));
+      }
       composite.invertMask = pass.composite.invertMask;
       if (pass.composite.sourceA == CompositeSource::PreviousFrame ||
           pass.composite.sourceB == CompositeSource::PreviousFrame)

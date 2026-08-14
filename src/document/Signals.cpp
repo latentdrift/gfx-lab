@@ -2,15 +2,32 @@
 
 namespace gfxlab::document {
 
-const char* signalKindLabel(const SignalKind kind) {
-  switch (kind) {
-    case SignalKind::Color: return "Color";
-    case SignalKind::Depth: return "Depth";
-    case SignalKind::Normal: return "Normal";
-    case SignalKind::Field: return "Field";
-    case SignalKind::Spectrum16: return "Spectrum16";
-    case SignalKind::Scalar: return "Scalar";
-    case SignalKind::Vector2: return "Vector2";
+const char* signalShapeLabel(const SignalShape shape) {
+  switch (shape) {
+    case SignalShape::Scalar: return "Scalar";
+    case SignalShape::Vector2: return "Vector2";
+    case SignalShape::Vector3: return "Vector3";
+    case SignalShape::Vector4: return "Vector4";
+    case SignalShape::Spectrum16: return "Spectrum16";
+  }
+  return "Unknown";
+}
+
+const char* signalSemanticLabel(const SignalSemantic semantic) {
+  switch (semantic) {
+    case SignalSemantic::Generic: return "Generic";
+    case SignalSemantic::Color: return "Color";
+    case SignalSemantic::Luminance: return "Luminance";
+    case SignalSemantic::DeviceDepth: return "Device depth";
+    case SignalSemantic::LinearDepth: return "Linear depth";
+    case SignalSemantic::Normal: return "Normal";
+    case SignalSemantic::FieldStrength: return "Field strength";
+    case SignalSemantic::SignedDistance: return "Signed distance";
+    case SignalSemantic::MaskCoverage: return "Mask coverage";
+    case SignalSemantic::EdgeStrength: return "Edge strength";
+    case SignalSemantic::EdgeDirection: return "Edge direction";
+    case SignalSemantic::Measurement: return "Measurement";
+    case SignalSemantic::Spectrum: return "Spectrum";
   }
   return "Unknown";
 }

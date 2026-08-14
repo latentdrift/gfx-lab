@@ -249,7 +249,8 @@ uniform int uFieldProducerKind;
 uniform sampler2D uSimulationMatter;
 uniform sampler2D uSimulationDynamics;
 uniform int uSimulationChannel;
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
+layout(location = 1) out vec4 normalData;
 
 float sampleSimulationField(vec3 worldPosition) {
   vec2 simulationUv = worldPosition.xz / vec2(12.0, 8.0) + 0.5;
@@ -471,6 +472,7 @@ void main() {
   }
   color = mix(color, uFarColor, vDepthCue);
   fragColor = vec4(uPremultiplyAlpha ? color * alpha : color, alpha);
+  normalData = vec4(normal * 0.5 + 0.5, 1.0);
 }
 )GLSL";
 
@@ -615,6 +617,8 @@ inline constexpr const char* relationFragmentShader = R"GLSL(
 in vec2 vUv;
 uniform sampler2D uImageA;
 uniform sampler2D uImageB;
+uniform sampler2D uMaskImage;
+uniform bool uUseExplicitMask;
 uniform sampler2D uSpectrumA0;
 uniform sampler2D uSpectrumA1;
 uniform sampler2D uSpectrumA2;
@@ -769,7 +773,9 @@ void main() {
   if (uRangeMode == 0) relation = clamp(relation, 0.0, 1.0);
   else if (uRangeMode == 2) relation = fract(relation);
   float mask = 1.0;
-  if (uMaskMode == 1) {
+  if (uUseExplicitMask) {
+    mask = clamp(texture(uMaskImage, vUv).r, 0.0, 1.0);
+  } else if (uMaskMode == 1) {
     mask = dot(clamp(storedB, 0.0, 1.0), vec3(0.2126, 0.7152, 0.0722));
   } else if (uMaskMode == 2) {
     float rawDepth = texture(uMaskDepth, vUv).r;
@@ -791,10 +797,76 @@ void main() {
       : clamp(fieldValue, 0.0, 1.0);
     if (texture(uMaskDepth, vUv).r >= 0.999999) mask = 0.0;
   }
-  if (uInvertMask) mask = 1.0 - mask;
+  if (uInvertMask && (uUseExplicitMask || uMaskMode != 0)) mask = 1.0 - mask;
   vec3 composed = finiteColor(mix(a, relation, uOpacity * mask));
   if (uColorSpace == 1) composed = signedPow(composed, 1.0 / 2.2);
   fragColor = vec4(composed, 1.0);
+}
+)GLSL";
+
+inline constexpr const char* imageOperationFragmentShader = R"GLSL(
+#version 410 core
+in vec2 vUv;
+uniform sampler2D uInput;
+uniform int uMode;
+uniform bool uScalarInput;
+uniform vec4 uParameters;
+uniform vec4 uLowColor;
+uniform vec4 uHighColor;
+out vec4 fragColor;
+
+float scalarAt(vec2 uv) {
+  vec3 value = texture(uInput, uv).rgb;
+  return uScalarInput ? value.r : dot(value, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+  vec2 texel = 1.0 / vec2(textureSize(uInput, 0));
+  if (uMode == 0) {
+    float value = scalarAt(vUv);
+    fragColor = vec4(value, value, value, 1.0);
+  } else if (uMode == 1) {
+    float denominator = uParameters.y - uParameters.x;
+    float value = abs(denominator) < 0.000001 ? 0.0 :
+      (scalarAt(vUv) - uParameters.x) / denominator;
+    if (uParameters.w > 0.5) value = clamp(value, 0.0, 1.0);
+    value = mix(uLowColor.r, uHighColor.r, value);
+    fragColor = vec4(value, value, value, 1.0);
+  } else if (uMode == 2) {
+    vec3 tl = texture(uInput, vUv + texel * vec2(-1, 1)).rgb;
+    vec3 tc = texture(uInput, vUv + texel * vec2(0, 1)).rgb;
+    vec3 tr = texture(uInput, vUv + texel * vec2(1, 1)).rgb;
+    vec3 ml = texture(uInput, vUv + texel * vec2(-1, 0)).rgb;
+    vec3 mr = texture(uInput, vUv + texel * vec2(1, 0)).rgb;
+    vec3 bl = texture(uInput, vUv + texel * vec2(-1, -1)).rgb;
+    vec3 bc = texture(uInput, vUv + texel * vec2(0, -1)).rgb;
+    vec3 br = texture(uInput, vUv + texel * vec2(1, -1)).rgb;
+    vec3 gx = -tl - 2.0 * ml - bl + tr + 2.0 * mr + br;
+    vec3 gy = -bl - 2.0 * bc - br + tl + 2.0 * tc + tr;
+    float edge = uScalarInput ? length(vec2(gx.r, gy.r)) :
+      sqrt(dot(gx, gx) + dot(gy, gy));
+    edge = clamp(edge * uParameters.x, 0.0, 1.0);
+    fragColor = vec4(edge, edge, edge, 1.0);
+  } else if (uMode == 3) {
+    int radius = int(clamp(round(uParameters.x), 0.0, 4.0));
+    vec3 sum = vec3(0.0);
+    float weight = 0.0;
+    for (int y = -4; y <= 4; ++y) for (int x = -4; x <= 4; ++x) {
+      if (abs(x) > radius || abs(y) > radius) continue;
+      vec3 sampleValue = texture(uInput, vUv + texel * vec2(x, y)).rgb;
+      sum += uScalarInput ? sampleValue.rrr : sampleValue;
+      weight += 1.0;
+    }
+    fragColor = vec4(sum / max(weight, 1.0), 1.0);
+  } else if (uMode == 4) {
+    float value = scalarAt(vUv);
+    float mask = smoothstep(uParameters.x - uParameters.y,
+      uParameters.x + uParameters.y, value);
+    fragColor = vec4(mask, mask, mask, 1.0);
+  } else {
+    float value = clamp(scalarAt(vUv), 0.0, 1.0);
+    fragColor = mix(uLowColor, uHighColor, value);
+  }
 }
 )GLSL";
 
@@ -1013,7 +1085,8 @@ uniform float uMaximumDistance;
 uniform vec3 uSurfaceColor;
 uniform vec3 uLightDirection;
 uniform float uAmbient;
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
+layout(location = 1) out vec4 normalData;
 
 float sdfPrimitive(vec3 p, int type, vec3 parameters) {
   if (type == 0) return length(p) - parameters.x;
@@ -1083,6 +1156,7 @@ void main() {
   float lighting = uAmbient + (1.0 - uAmbient) * diffuse;
   float rim = pow(1.0 - max(dot(normal, -direction), 0.0), 3.0);
   fragColor = vec4(uSurfaceColor * lighting + uSurfaceColor * rim * 0.35, 1.0);
+  normalData = vec4(normal * 0.5 + 0.5, 1.0);
 }
 )GLSL";
 

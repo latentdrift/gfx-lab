@@ -48,7 +48,7 @@ src/
     Document.cpp              authoritative scene, operation, automation, and presentation state
     Operations.cpp            typed operation factories and stable signal outputs
     Identifiers.hpp           typed owners and operation/port signal addresses
-    Persistence.cpp           native typed-v10 JSON save/load
+    Persistence.cpp           native typed-v11 JSON save/load and v10 migration
   evaluation/
     Compiler.cpp              dependency validation and typed evaluation planning
     SignalRegistry.cpp        named GPU/scalar resources produced by evaluation
@@ -79,7 +79,7 @@ src/
 - Redo: Ctrl+Shift+Z or Ctrl+Y
 - Play/pause animation: Space
 
-Use **File → Save Document…** (`Ctrl+S`) to save the complete `graphics-lab.document.v10` document, and
+Use **File → Save Document…** (`Ctrl+S`) to save the complete `graphics-lab.document.v11` document, and
 **File → Open Document…** (`Ctrl+O`) to restore it. Stable operations and signal references, sparse overrides,
 animation and modulation, camera, scene, hardware target, presentation, and asset references are preserved.
 
@@ -116,6 +116,15 @@ always-visible canvas in the center, and contextual **Properties** on the right.
 change the viewed output. Drag typed ports to make unusual connections; contextual add commands connect routine
 operations automatically. Render properties use **Essentials**, **Changes**, and **All Properties**;
 Interpret, Composite, Stereo, Measure, and Final Output expose only the state they own.
+
+Render operations expose literal Color, Device depth, World normal, Field, and Spectrum16 outputs. Every signal
+separates where it lives (for example Screen2D), its storage shape (Scalar, Vector3, Spectrum16), and its semantic
+meaning (depth, normal, luminance, coverage, signed distance, and so on), with encoding, coordinate space, units,
+and known range carried as metadata. Luminance, Remap, Edge, Blur, Threshold, and Gradient Map transform those
+signals explicitly. A Composite mask is a screen-scalar socket role—not a nominal Mask type or hidden mask-mode
+preset. The graph shows each meaningful GPU allocation and execution boundary while the Add menu automatically
+connects a new operation to the selected output. Numerically legal operations may strip a semantic they cannot
+preserve; the compiler reports that as a warning rather than banning experimental math.
 
 The renderer implementation catalog remains available under **All Properties** without dictating workspace
 navigation. **Changes** stays beside a variant so inherited state and local deviations do not require touring
@@ -170,7 +179,7 @@ The Nintendo 64 target exposes the standard RSP/RDP/VI model: one- or two-cycle 
 
 The unrestricted **Field** tool can produce either wave interference or a genuine signed-distance field. SDF producers include sphere, box, torus, a rotating 4D hypersphere slice, and a pulsating sphere, with union, intersection, A-minus-B, and smooth-union operations. Every Render owns a procedural time transform: `local = timeline × scale + offset`; negative scale reverses time and zero freezes it. Both values are keyable and drivable. The pass field attachment stores signed world-unit distance in `R16F`; preview colors are only a display mapping, while named pass-field operands retain negative and positive values for composite arithmetic. A proximity mapping lets the same field drive mesh-vertex displacement, fragment discard, surface color, emission, and pass masks. **Ray-march iso-surface** renders the selected level as implicit geometry and writes fragment depth, so it participates in ordinary occlusion with rasterized meshes.
 
-Use **File > Copy Stack JSON** to place the human-readable `graphics-lab.document.v10` document on the clipboard.
+Use **File > Copy Stack JSON** to place the human-readable `graphics-lab.document.v11` document on the clipboard.
 It records typed operations and signal references directly, together with sparse overrides, property tracks,
 modulation routes, texture mapping, perturbations, masks, scene, camera, and presentation state.
 

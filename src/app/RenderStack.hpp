@@ -148,7 +148,7 @@ struct RenderPass {
 
 class RenderStack {
 public:
-  static constexpr std::size_t maximumPasses = 8;
+  static constexpr std::size_t maximumPasses = 16;
 
   RenderStack();
 

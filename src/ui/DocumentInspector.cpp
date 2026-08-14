@@ -146,14 +146,18 @@ const document::SignalDescriptor* descriptor(const document::Document& document,
 
 bool signalPicker(const char* label, document::Document& document,
     const document::OperationId consumer, document::SignalRef& selected,
-    const std::optional<document::SignalKind> required = std::nullopt) {
+    const std::optional<document::SignalShape> requiredShape = std::nullopt,
+    const std::optional<document::SignalSemantic> requiredSemantic = std::nullopt) {
   bool changed = false;
   const document::SignalDescriptor* current = descriptor(document, selected);
   if (ImGui::BeginCombo(label, current != nullptr ? current->name.c_str() : "Select signal")) {
     for (const document::Operation& operation : document.operations) {
-      if (operation.id == consumer) break;
+      if (operation.id == consumer) continue;
       for (const document::SignalDescriptor& output : operation.outputs) {
-        if (required.has_value() && output.kind != *required) continue;
+        if (requiredShape.has_value() && output.shape != *requiredShape) continue;
+        if (requiredSemantic.has_value() && output.metadata.semantic != *requiredSemantic) continue;
+        if (requiredShape == document::SignalShape::Scalar &&
+            output.metadata.domain != document::SignalDomain::Screen2D) continue;
         const std::string name = operation.name + " / " + output.name;
         if (ImGui::Selectable(name.c_str(), selected.id == output.id)) {
           selected = {output.id, 0};
@@ -194,23 +198,25 @@ bool drawOperation(document::Document& document, document::Operation& operation,
     changed |= ImGui::SliderFloat("Opacity", &composite->arithmetic.opacity, 0.0f, 1.0f);
     changed |= ImGui::DragFloat("Gain", &composite->arithmetic.gain, 0.01f, 0.0f, 16.0f);
     changed |= ImGui::DragFloat("Bias", &composite->arithmetic.bias, 0.01f, -1.0f, 1.0f);
-    int mask = static_cast<int>(composite->mask);
-    constexpr const char* masks[] = {"None", "Luminance", "Depth", "Edges", "Field"};
-    if (ImGui::Combo("Mask", &mask, masks, 5)) {
-      composite->mask = static_cast<CompositeMask>(mask);
-      changed = true;
-    }
-    if (composite->mask != CompositeMask::None)
+    ImGui::SeparatorText("MASK");
+    changed |= signalPicker("Mask input", document, operation.id, composite->mask,
+      document::SignalShape::Scalar);
+    if (composite->mask) {
+      ImGui::SameLine();
+      if (ImGui::Button("Clear")) { composite->mask = {}; changed = true; }
       changed |= ImGui::Checkbox("Invert mask", &composite->invertMask);
+    }
   } else if (auto* interpret = std::get_if<document::InterpretOperation>(&operation.data)) {
     changed |= signalPicker("Spectrum", document, operation.id, interpret->spectrum,
-      document::SignalKind::Spectrum16);
+      document::SignalShape::Spectrum16);
     changed |= ImGui::DragFloat("Exposure", &interpret->exposureStops, 0.05f, -12.0f, 12.0f);
     changed |= ImGui::DragFloat("Gain", &interpret->gain, 0.01f, 0.0f, 16.0f);
     changed |= ImGui::DragFloat("Bias", &interpret->bias, 0.01f, -1.0f, 1.0f);
   } else if (auto* stereo = std::get_if<document::StereoOperation>(&operation.data)) {
-    changed |= signalPicker("Left", document, operation.id, stereo->left, document::SignalKind::Color);
-    changed |= signalPicker("Right", document, operation.id, stereo->right, document::SignalKind::Color);
+    changed |= signalPicker("Left", document, operation.id, stereo->left,
+      document::SignalShape::Vector4, document::SignalSemantic::Color);
+    changed |= signalPicker("Right", document, operation.id, stereo->right,
+      document::SignalShape::Vector4, document::SignalSemantic::Color);
     int mode = static_cast<int>(stereo->mode);
     constexpr const char* modes[] = {"Anaglyph", "Signed disparity", "Absolute disparity",
       "Correspondence", "Monocular occlusion"};
@@ -300,6 +306,33 @@ bool drawOperation(document::Document& document, document::Operation& operation,
     }
   } else if (auto* constant = std::get_if<document::ConstantOperation>(&operation.data)) {
     changed |= ImGui::ColorEdit4("Value", &constant->value.x, ImGuiColorEditFlags_Float);
+  } else if (auto* luminance = std::get_if<document::LuminanceOperation>(&operation.data)) {
+    changed |= signalPicker("Input", document, operation.id, luminance->input,
+      std::nullopt, document::SignalSemantic::Color);
+    ImGui::TextWrapped("Converts linear RGB to one brightness value per pixel.");
+  } else if (auto* remap = std::get_if<document::RemapOperation>(&operation.data)) {
+    changed |= signalPicker("Input", document, operation.id, remap->input);
+    changed |= ImGui::DragFloat2("Input range", &remap->inputLow, 0.005f, -100.0f, 100.0f);
+    changed |= ImGui::DragFloat2("Output range", &remap->outputLow, 0.005f, -16.0f, 16.0f);
+    changed |= ImGui::Checkbox("Clamp before output range", &remap->clamp);
+  } else if (auto* edge = std::get_if<document::EdgeOperation>(&operation.data)) {
+    changed |= signalPicker("Input", document, operation.id, edge->input);
+    changed |= ImGui::DragFloat("Strength", &edge->strength, 0.01f, 0.0f, 32.0f);
+    ImGui::TextWrapped("Sobel magnitude from scalar change or multi-channel disagreement.");
+  } else if (auto* blur = std::get_if<document::BlurOperation>(&operation.data)) {
+    changed |= signalPicker("Input", document, operation.id, blur->input,
+      blur->outputShape);
+    changed |= ImGui::SliderFloat("Radius", &blur->radiusPixels, 0.0f, 4.0f, "%.0f px");
+  } else if (auto* threshold = std::get_if<document::ThresholdOperation>(&operation.data)) {
+    changed |= signalPicker("Input", document, operation.id, threshold->input,
+      document::SignalShape::Scalar);
+    changed |= ImGui::SliderFloat("Threshold", &threshold->threshold, 0.0f, 1.0f);
+    changed |= ImGui::SliderFloat("Softness", &threshold->softness, 0.0f, 0.5f);
+  } else if (auto* gradient = std::get_if<document::GradientMapOperation>(&operation.data)) {
+    changed |= signalPicker("Input", document, operation.id, gradient->input,
+      document::SignalShape::Scalar);
+    changed |= ImGui::ColorEdit4("Low color", &gradient->lowColor.x, ImGuiColorEditFlags_Float);
+    changed |= ImGui::ColorEdit4("High color", &gradient->highColor.x, ImGuiColorEditFlags_Float);
   }
   return changed;
 }

@@ -42,10 +42,18 @@ std::string duplicateOperation(document::Document& document,
     else if constexpr (std::is_same_v<OperationType, document::CompositeOperation>) {
       remapSelf(operationData.a);
       remapSelf(operationData.b);
+      remapSelf(operationData.mask);
     } else if constexpr (std::is_same_v<OperationType, document::StereoOperation>) {
       remapSelf(operationData.left);
       remapSelf(operationData.right);
     } else if constexpr (std::is_same_v<OperationType, document::MeasureOperation>)
+      remapSelf(operationData.input);
+    else if constexpr (std::is_same_v<OperationType, document::LuminanceOperation> ||
+        std::is_same_v<OperationType, document::RemapOperation> ||
+        std::is_same_v<OperationType, document::EdgeOperation> ||
+        std::is_same_v<OperationType, document::BlurOperation> ||
+        std::is_same_v<OperationType, document::ThresholdOperation> ||
+        std::is_same_v<OperationType, document::GradientMapOperation>)
       remapSelf(operationData.input);
   }, duplicate.data);
   const std::size_t index = std::min(requestedIndex, document.operations.size());
@@ -108,7 +116,7 @@ std::string mutate(document::Document& document, const Command& command) {
       if (source == nullptr) return "The source operation no longer exists.";
       const document::SignalRef sourceOutput = document::primaryOutput(*source);
       const document::SignalDescriptor* descriptor = document::findSignal(document, sourceOutput.id);
-      if (descriptor == nullptr || descriptor->kind != document::SignalKind::Color)
+      if (descriptor == nullptr || !document::isColor(*descriptor))
         return "Duplicate + Blend requires a Color output.";
       const std::string outputKey = descriptor->key;
       if (!data.composite || data.composite == data.duplicate ||
@@ -157,10 +165,18 @@ std::string mutate(document::Document& document, const Command& command) {
         } else if constexpr (std::is_same_v<OperationType, document::CompositeOperation>) {
           if (data.socket == InputSocket::A) { operationData.a = data.signal; connected = true; }
           if (data.socket == InputSocket::B) { operationData.b = data.signal; connected = true; }
+          if (data.socket == InputSocket::Mask) { operationData.mask = data.signal; connected = true; }
         } else if constexpr (std::is_same_v<OperationType, document::StereoOperation>) {
           if (data.socket == InputSocket::Left) { operationData.left = data.signal; connected = true; }
           if (data.socket == InputSocket::Right) { operationData.right = data.signal; connected = true; }
         } else if constexpr (std::is_same_v<OperationType, document::MeasureOperation>) {
+          if (data.socket == InputSocket::Primary) { operationData.input = data.signal; connected = true; }
+        } else if constexpr (std::is_same_v<OperationType, document::LuminanceOperation> ||
+            std::is_same_v<OperationType, document::RemapOperation> ||
+            std::is_same_v<OperationType, document::EdgeOperation> ||
+            std::is_same_v<OperationType, document::BlurOperation> ||
+            std::is_same_v<OperationType, document::ThresholdOperation> ||
+            std::is_same_v<OperationType, document::GradientMapOperation>) {
           if (data.socket == InputSocket::Primary) { operationData.input = data.signal; connected = true; }
         }
       }, operation->data);

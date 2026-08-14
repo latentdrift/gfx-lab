@@ -17,6 +17,21 @@ namespace {
 
 using Json = nlohmann::json;
 
+SignalShape legacyShape(const int kind) {
+  if (kind == 1 || kind == 3 || kind == 5 || kind == 7) return SignalShape::Scalar;
+  if (kind == 6) return SignalShape::Vector2;
+  if (kind == 2) return SignalShape::Vector3;
+  if (kind == 4) return SignalShape::Spectrum16;
+  return SignalShape::Vector4;
+}
+
+SignalSemantic legacySemantic(const int kind) {
+  constexpr SignalSemantic semantics[] = {SignalSemantic::Color, SignalSemantic::DeviceDepth,
+    SignalSemantic::Normal, SignalSemantic::FieldStrength, SignalSemantic::Spectrum,
+    SignalSemantic::Measurement, SignalSemantic::Generic, SignalSemantic::Generic};
+  return semantics[static_cast<std::size_t>(std::clamp(kind, 0, 7))];
+}
+
 Json vector(const glm::vec4 value, const int components) {
   Json result = Json::array();
   for (int component = 0; component < components; ++component) result.push_back(value[component]);
@@ -207,6 +222,7 @@ Json operation(const Operation& value) {
       result["gain"] = data.gain; result["bias"] = data.bias;
     } else if constexpr (std::is_same_v<Type, CompositeOperation>) {
       result["type"] = "composite"; result["a"] = signal(data.a); result["b"] = signal(data.b);
+      if (data.mask) result["mask_input"] = signal(data.mask);
       result["interpretation_a"] = static_cast<int>(data.interpretationA);
       result["interpretation_b"] = static_cast<int>(data.interpretationB);
       result["observer"] = {{"exposure", data.observer.exposureStops},
@@ -216,13 +232,14 @@ Json operation(const Operation& value) {
         {"opacity", data.arithmetic.opacity}, {"bit_depth", data.arithmetic.bitDepth},
         {"color_space", static_cast<int>(data.arithmetic.colorSpace)},
         {"range", static_cast<int>(data.arithmetic.range)}};
-      result["mask"] = static_cast<int>(data.mask); result["invert_mask"] = data.invertMask;
+      result["invert_mask"] = data.invertMask;
       if (data.feedback.has_value()) result["feedback"] = {{"decay", data.feedback->decay},
         {"offset", {data.feedback->uvOffset.x, data.feedback->uvOffset.y}},
         {"scale", {data.feedback->uvScale.x, data.feedback->uvScale.y}}};
     } else if constexpr (std::is_same_v<Type, ConstantOperation>) {
       result["type"] = "constant"; result["value"] = vector(data.value, 4);
-      result["kind"] = static_cast<int>(data.kind);
+      result["shape"] = static_cast<int>(data.shape);
+      result["semantic"] = static_cast<int>(data.semantic);
     } else if constexpr (std::is_same_v<Type, StereoOperation>) {
       result["type"] = "stereo"; result["left"] = signal(data.left); result["right"] = signal(data.right);
       result["mode"] = static_cast<int>(data.mode); result["maximum_disparity"] = data.maximumDisparityPixels;
@@ -231,15 +248,38 @@ Json operation(const Operation& value) {
       result["type"] = "measure"; result["input"] = signal(data.input);
       result["metric"] = static_cast<int>(data.metric); result["threshold"] = data.threshold;
       result["absolute"] = data.absoluteMagnitude;
+    } else if constexpr (std::is_same_v<Type, LuminanceOperation>) {
+      result["type"] = "luminance"; result["input"] = signal(data.input);
+    } else if constexpr (std::is_same_v<Type, RemapOperation>) {
+      result["type"] = "remap"; result["input"] = signal(data.input);
+      result["input_range"] = {data.inputLow, data.inputHigh};
+      result["output_range"] = {data.outputLow, data.outputHigh};
+      result["clamp"] = data.clamp;
+    } else if constexpr (std::is_same_v<Type, EdgeOperation>) {
+      result["type"] = "edge"; result["input"] = signal(data.input); result["strength"] = data.strength;
+    } else if constexpr (std::is_same_v<Type, BlurOperation>) {
+      result["type"] = "blur"; result["input"] = signal(data.input);
+      result["output_shape"] = static_cast<int>(data.outputShape);
+      result["output_semantic"] = static_cast<int>(data.outputSemantic);
+      result["radius"] = data.radiusPixels;
+    } else if constexpr (std::is_same_v<Type, ThresholdOperation>) {
+      result["type"] = "threshold"; result["input"] = signal(data.input);
+      result["threshold"] = data.threshold; result["softness"] = data.softness;
+    } else if constexpr (std::is_same_v<Type, GradientMapOperation>) {
+      result["type"] = "gradient_map"; result["input"] = signal(data.input);
+      result["low_color"] = vector(data.lowColor, 4); result["high_color"] = vector(data.highColor, 4);
     }
   }, value.data);
   result["outputs"] = Json::array();
   for (const SignalDescriptor& output : value.outputs)
-    result["outputs"].push_back({{"port", output.key}, {"kind", static_cast<int>(output.kind)},
+    result["outputs"].push_back({{"port", output.key}, {"shape", static_cast<int>(output.shape)},
       {"name", output.name}, {"domain", static_cast<int>(output.metadata.domain)},
+      {"semantic", static_cast<int>(output.metadata.semantic)},
+      {"space", static_cast<int>(output.metadata.space)},
       {"encoding", static_cast<int>(output.metadata.encoding)},
       {"extent", {output.metadata.extent.x, output.metadata.extent.y, output.metadata.extent.z}},
-      {"units", output.metadata.units}});
+      {"units", output.metadata.units}, {"has_known_range", output.metadata.hasKnownRange},
+      {"known_range", {output.metadata.knownRange.x, output.metadata.knownRange.y}}});
   return result;
 }
 
@@ -282,7 +322,7 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
     data.arithmetic.bitDepth = arithmetic.value("bit_depth", data.arithmetic.bitDepth);
     data.arithmetic.colorSpace = static_cast<CompositeColorSpace>(arithmetic.value("color_space", 0));
     data.arithmetic.range = static_cast<CompositeRange>(arithmetic.value("range", 0));
-    data.mask = static_cast<CompositeMask>(source.value("mask", 0));
+    if (source.contains("mask_input")) data.mask = signal(source.at("mask_input"));
     data.invertMask = source.value("invert_mask", false);
     if (source.contains("feedback")) {
       const Json& feedback = source.at("feedback");
@@ -293,8 +333,11 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
       data.feedback = settings;
     }
   } else if (type == "constant") {
+    const int legacyKind = source.value("kind", 0);
     result = makeConstantOperation(id, name, vector(source.at("value"), 4),
-      static_cast<SignalKind>(source.value("kind", 0)));
+      source.contains("shape") ? static_cast<SignalShape>(source.value("shape", 3)) : legacyShape(legacyKind),
+      source.contains("semantic") ? static_cast<SignalSemantic>(source.value("semantic", 1))
+        : legacySemantic(legacyKind));
   } else if (type == "stereo") {
     result = makeStereoOperation(id, name, signal(source.at("left")), signal(source.at("right")));
     auto& data = std::get<StereoOperation>(result.data);
@@ -307,6 +350,41 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
     data.metric = static_cast<MeasurementMetric>(source.value("metric", 0));
     data.threshold = source.value("threshold", data.threshold);
     data.absoluteMagnitude = source.value("absolute", data.absoluteMagnitude);
+  } else if (type == "luminance") {
+    result = makeLuminanceOperation(id, name, signal(source.at("input")));
+  } else if (type == "remap") {
+    result = makeRemapOperation(id, name, signal(source.at("input")));
+    auto& data = std::get<RemapOperation>(result.data);
+    if (source.contains("input_range")) {
+      const glm::vec4 range = vector(source.at("input_range"), 2);
+      data.inputLow = range.x; data.inputHigh = range.y;
+    }
+    if (source.contains("output_range")) {
+      const glm::vec4 range = vector(source.at("output_range"), 2);
+      data.outputLow = range.x; data.outputHigh = range.y;
+    }
+    data.clamp = source.value("clamp", data.clamp);
+  } else if (type == "edge") {
+    result = makeEdgeOperation(id, name, signal(source.at("input")));
+    std::get<EdgeOperation>(result.data).strength = source.value("strength", 1.0f);
+  } else if (type == "blur") {
+    const int legacyKind = source.value("output_kind", 0);
+    const SignalShape outputShape = source.contains("output_shape")
+      ? static_cast<SignalShape>(source.value("output_shape", 3)) : legacyShape(legacyKind);
+    const SignalSemantic outputSemantic = source.contains("output_semantic")
+      ? static_cast<SignalSemantic>(source.value("output_semantic", 1)) : legacySemantic(legacyKind);
+    result = makeBlurOperation(id, name, signal(source.at("input")), outputShape, outputSemantic);
+    std::get<BlurOperation>(result.data).radiusPixels = source.value("radius", 2.0f);
+  } else if (type == "threshold") {
+    result = makeThresholdOperation(id, name, signal(source.at("input")));
+    auto& data = std::get<ThresholdOperation>(result.data);
+    data.threshold = source.value("threshold", data.threshold);
+    data.softness = source.value("softness", data.softness);
+  } else if (type == "gradient_map") {
+    result = makeGradientMapOperation(id, name, signal(source.at("input")));
+    auto& data = std::get<GradientMapOperation>(result.data);
+    if (source.contains("low_color")) data.lowColor = vector(source.at("low_color"), 4);
+    if (source.contains("high_color")) data.highColor = vector(source.at("high_color"), 4);
   } else throw std::runtime_error("Unknown typed operation: " + type);
   result.enabled = source.value("enabled", true);
   if (source.contains("outputs")) {
@@ -316,13 +394,21 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
       descriptor.producer = id;
       descriptor.key = output.at("port").get<std::string>();
       descriptor.id = operationSignal(id, descriptor.key);
-      descriptor.kind = static_cast<SignalKind>(output.value("kind", 0));
+      const int legacyKind = output.value("kind", 0);
+      descriptor.shape = output.contains("shape")
+        ? static_cast<SignalShape>(output.value("shape", 3)) : legacyShape(legacyKind);
       descriptor.name = output.value("name", descriptor.key);
       descriptor.metadata.domain = static_cast<SignalDomain>(output.value("domain", 1));
+      descriptor.metadata.semantic = output.contains("semantic")
+        ? static_cast<SignalSemantic>(output.value("semantic", 0)) : legacySemantic(legacyKind);
+      descriptor.metadata.space = static_cast<SignalSpace>(output.value("space", 0));
       descriptor.metadata.encoding = static_cast<SignalEncoding>(output.value("encoding", 0));
       if (output.contains("extent"))
         descriptor.metadata.extent = glm::ivec3(vector(output.at("extent"), 3));
       descriptor.metadata.units = output.value("units", "");
+      descriptor.metadata.hasKnownRange = output.value("has_known_range", false);
+      if (output.contains("known_range"))
+        descriptor.metadata.knownRange = glm::vec2(vector(output.at("known_range"), 2));
       result.outputs.push_back(std::move(descriptor));
     }
   }
@@ -333,7 +419,7 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
 
 std::string documentJson(const Document& document) {
   Json root;
-  root["schema"] = "graphics-lab.document.v10";
+  root["schema"] = "graphics-lab.document.v11";
   root["next_operation_id"] = document.nextOperationIdentity;
   root["scene"] = {{"type", static_cast<int>(document.scene.testScene)},
     {"model", document.scene.importedModel != nullptr ? document.scene.importedModel->sourcePath : ""},
@@ -392,7 +478,8 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
     std::ifstream input(path);
     if (!input) return {std::nullopt, "Could not open document: " + path};
     Json root; input >> root;
-    if (root.value("schema", "") != "graphics-lab.document.v10")
+    const std::string schema = root.value("schema", "");
+    if (schema != "graphics-lab.document.v10" && schema != "graphics-lab.document.v11")
       return {std::nullopt, "Unsupported typed document schema."};
     Document result;
     result.nextOperationIdentity = root.value("next_operation_id", std::uint64_t{1});
@@ -417,6 +504,38 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
     parseRendererProperties(defaults.at("properties"), result.renderDefaults);
     result.renderDefaults.texture = texture(defaults.value("texture", Json::object()), documentPath);
     for (const Json& source : root.at("operations")) result.operations.push_back(operation(source, documentPath));
+    for (const Operation& authored : result.operations)
+      result.nextOperationIdentity = std::max(result.nextOperationIdentity, authored.id.value + 1);
+    if (schema == "graphics-lab.document.v10") {
+      const Json& sources = root.at("operations");
+      const std::size_t originalCount = result.operations.size();
+      for (std::size_t index = 0; index < originalCount; ++index) {
+        if (sources[index].value("type", "") != "composite") continue;
+        const CompositeMask legacyMask = static_cast<CompositeMask>(sources[index].value("mask", 0));
+        if (legacyMask == CompositeMask::None) continue;
+        auto* composite = std::get_if<CompositeOperation>(&result.operations[index].data);
+        if (composite == nullptr) continue;
+        const OperationId migrationId{result.nextOperationIdentity++};
+        Operation conversion;
+        if (legacyMask == CompositeMask::PassLuminance) {
+          conversion = makeLuminanceOperation(migrationId, "Luminance mask", composite->b);
+        } else if (legacyMask == CompositeMask::PassEdges) {
+          conversion = makeEdgeOperation(migrationId, "Edge mask", composite->b);
+        } else {
+          const char* port = legacyMask == CompositeMask::PassDepth ? "depth" : "field";
+          const SignalRef sourceSignal{operationSignal(composite->b.id.producer, port), 0};
+          conversion = makeRemapOperation(migrationId,
+            legacyMask == CompositeMask::PassDepth ? "Depth mask" : "Field mask", sourceSignal);
+          if (legacyMask == CompositeMask::PassField) {
+            auto& remap = std::get<RemapOperation>(conversion.data);
+            remap.inputLow = -1.0f; remap.inputHigh = 1.0f;
+          }
+        }
+        composite = std::get_if<CompositeOperation>(&result.operations[index].data);
+        composite->mask = primaryOutput(conversion);
+        result.operations.push_back(std::move(conversion));
+      }
+    }
     const Json timeline = root.value("timeline", Json::object());
     result.automation.timeline.currentTimeSeconds = timeline.value("current", 0.0f);
     result.automation.timeline.durationSeconds = timeline.value("duration", 4.0f);

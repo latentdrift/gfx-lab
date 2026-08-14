@@ -31,7 +31,7 @@ struct InputPort {
 
 struct OutputPort {
   document::SignalRef signal;
-  document::SignalKind kind = document::SignalKind::Color;
+  document::SignalDescriptor descriptor;
   int pin = 0;
 };
 
@@ -51,17 +51,20 @@ int outputPin(const document::OperationId operation, const int index) {
   return 2'000'000 + nodeId(operation) * 16 + index;
 }
 
-ImU32 signalColor(const document::SignalKind kind) {
-  switch (kind) {
-    case document::SignalKind::Color: return IM_COL32(78, 190, 214, 255);
-    case document::SignalKind::Depth: return IM_COL32(120, 154, 220, 255);
-    case document::SignalKind::Normal: return IM_COL32(184, 127, 224, 255);
-    case document::SignalKind::Field: return IM_COL32(98, 202, 138, 255);
-    case document::SignalKind::Spectrum16: return IM_COL32(232, 146, 72, 255);
-    case document::SignalKind::Scalar: return IM_COL32(232, 202, 91, 255);
-    case document::SignalKind::Vector2: return IM_COL32(220, 117, 149, 255);
+ImU32 signalColor(const document::SignalDescriptor& signal) {
+  switch (signal.metadata.semantic) {
+    case document::SignalSemantic::Color: return IM_COL32(78, 190, 214, 255);
+    case document::SignalSemantic::DeviceDepth:
+    case document::SignalSemantic::LinearDepth: return IM_COL32(120, 154, 220, 255);
+    case document::SignalSemantic::Normal: return IM_COL32(184, 127, 224, 255);
+    case document::SignalSemantic::FieldStrength:
+    case document::SignalSemantic::SignedDistance: return IM_COL32(98, 202, 138, 255);
+    case document::SignalSemantic::Spectrum: return IM_COL32(232, 146, 72, 255);
+    case document::SignalSemantic::Measurement: return IM_COL32(232, 202, 91, 255);
+    case document::SignalSemantic::EdgeDirection: return IM_COL32(220, 117, 149, 255);
+    default: return signal.shape == document::SignalShape::Scalar
+      ? IM_COL32(225, 225, 225, 255) : IM_COL32(190, 190, 190, 255);
   }
-  return IM_COL32(190, 190, 190, 255);
 }
 
 const char* executionClass(const document::Operation& operation) {
@@ -88,10 +91,18 @@ std::vector<InputPort> inputsFor(const document::Operation& operation) {
     else if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
       add(editor::InputSocket::A, "Input A", data.a);
       add(editor::InputSocket::B, "Input B", data.b);
+      add(editor::InputSocket::Mask, "Mask", data.mask);
     } else if constexpr (std::is_same_v<Type, document::StereoOperation>) {
       add(editor::InputSocket::Left, "Left", data.left);
       add(editor::InputSocket::Right, "Right", data.right);
     } else if constexpr (std::is_same_v<Type, document::MeasureOperation>)
+      add(editor::InputSocket::Primary, "Input", data.input);
+    else if constexpr (std::is_same_v<Type, document::LuminanceOperation> ||
+        std::is_same_v<Type, document::RemapOperation> ||
+        std::is_same_v<Type, document::EdgeOperation> ||
+        std::is_same_v<Type, document::BlurOperation> ||
+        std::is_same_v<Type, document::ThresholdOperation> ||
+        std::is_same_v<Type, document::GradientMapOperation>)
       add(editor::InputSocket::Primary, "Input", data.input);
   }, operation.data);
   return result;
@@ -102,15 +113,30 @@ bool accepts(const document::Document& document, const InputPort& input,
   const document::Operation* target = document::findOperation(document, input.operation);
   const document::Operation* producer = document::findOperation(document, output.signal.id.producer);
   if (target == nullptr || producer == nullptr) return false;
+  const document::SignalDescriptor& descriptor = output.descriptor;
   if (std::holds_alternative<document::InterpretOperation>(target->data))
-    return output.kind == document::SignalKind::Spectrum16;
+    return descriptor.shape == document::SignalShape::Spectrum16;
+  if (std::holds_alternative<document::CompositeOperation>(target->data) &&
+      input.socket == editor::InputSocket::Mask)
+    return document::isScreenScalar(descriptor);
   if (std::holds_alternative<document::CompositeOperation>(target->data))
-    return output.kind != document::SignalKind::Scalar && output.kind != document::SignalKind::Vector2;
+    return document::isScreenImage(descriptor) && descriptor.shape != document::SignalShape::Vector2;
   if (std::holds_alternative<document::StereoOperation>(target->data))
-    return output.kind == document::SignalKind::Color &&
+    return document::isColor(descriptor) &&
       std::holds_alternative<document::RenderOperation>(producer->data);
   if (std::holds_alternative<document::MeasureOperation>(target->data))
-    return output.kind != document::SignalKind::Scalar;
+    return document::isScreenImage(descriptor);
+  if (std::holds_alternative<document::LuminanceOperation>(target->data))
+    return document::isColor(descriptor);
+  if (std::holds_alternative<document::RemapOperation>(target->data))
+    return document::isScreenScalar(descriptor);
+  if (std::holds_alternative<document::EdgeOperation>(target->data))
+    return document::isScreenImage(descriptor) && descriptor.shape != document::SignalShape::Spectrum16;
+  if (const auto* blur = std::get_if<document::BlurOperation>(&target->data))
+    return document::isScreenImage(descriptor) && descriptor.shape == blur->outputShape;
+  if (std::holds_alternative<document::ThresholdOperation>(target->data) ||
+      std::holds_alternative<document::GradientMapOperation>(target->data))
+    return document::isScreenScalar(descriptor);
   return false;
 }
 
@@ -118,7 +144,10 @@ document::SignalRef selectedSignal(const document::Document& document,
     const editor::EditorState& state) {
   if (state.selection.kind == editor::SelectionKind::Operation) {
     if (const document::Operation* operation = document::findOperation(
-        document, state.selection.operation)) return document::primaryOutput(*operation);
+        document, state.selection.operation)) {
+      if (state.viewer.viewed.id.producer == operation->id) return state.viewer.viewed;
+      return document::primaryOutput(*operation);
+    }
   }
   return document.presentation.input;
 }
@@ -129,11 +158,11 @@ document::SignalRef spectrumFromSelection(const document::Document& document,
     ? document::findOperation(document, state.selection.operation) : nullptr;
   if (operation != nullptr) {
     for (const document::SignalDescriptor& output : operation->outputs)
-      if (output.kind == document::SignalKind::Spectrum16) return {output.id, 0};
+      if (output.shape == document::SignalShape::Spectrum16) return {output.id, 0};
   }
   for (const document::Operation& candidate : document.operations)
     for (const document::SignalDescriptor& output : candidate.outputs)
-      if (output.kind == document::SignalKind::Spectrum16) return {output.id, 0};
+      if (output.shape == document::SignalShape::Spectrum16) return {output.id, 0};
   return {};
 }
 
@@ -187,8 +216,11 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
     const document::SignalRef selected = selectedSignal(document, editorState);
     const auto add = [&](document::Operation operation, const bool final) {
       const document::OperationId id = operation.id;
-      if (execute(editor::AddOperation{std::move(operation), static_cast<std::size_t>(-1), final}))
+      const bool followingFinal = editorState.viewer.viewed == document.presentation.input;
+      if (execute(editor::AddOperation{std::move(operation), static_cast<std::size_t>(-1), final})) {
         editorState.selection = {editor::SelectionKind::Operation, id};
+        if (final && followingFinal) editorState.viewer.viewed = document.presentation.input;
+      }
     };
     if (ImGui::MenuItem("Render")) {
       const document::OperationId id = document::nextOperationId(document);
@@ -206,6 +238,54 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
       const document::OperationId id = document::nextOperationId(document);
       add(document::makeMeasureOperation(id, "Measure", selected), false);
     }
+    const document::SignalDescriptor* selectedDescriptor = document::findSignal(document, selected.id);
+    const bool selectedColor = selectedDescriptor != nullptr && document::isColor(*selectedDescriptor);
+    const bool selectedScalar = selectedDescriptor != nullptr && document::isScreenScalar(*selectedDescriptor);
+    const bool selectedImage = selectedDescriptor != nullptr && document::isScreenImage(*selectedDescriptor);
+    ImGui::Separator();
+    ImGui::TextDisabled("WORKING SIGNALS");
+    ImGui::BeginDisabled(!selectedColor);
+    if (ImGui::MenuItem("Luminance")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeLuminanceOperation(id, "Luminance", selected), true);
+    }
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(!selectedScalar);
+    if (ImGui::MenuItem("Remap")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeRemapOperation(id, "Remap", selected), true);
+    }
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(!selectedImage || selectedDescriptor->shape == document::SignalShape::Spectrum16);
+    if (ImGui::MenuItem("Edge")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeEdgeOperation(id, "Edge", selected), true);
+    }
+    ImGui::EndDisabled();
+    const bool blurCompatible = selectedImage && selectedDescriptor->shape != document::SignalShape::Spectrum16;
+    ImGui::BeginDisabled(!blurCompatible);
+    if (ImGui::MenuItem("Blur")) {
+      const document::OperationId id = document::nextOperationId(document);
+      const document::SignalSemantic safeSemantic = selectedDescriptor->metadata.semantic ==
+          document::SignalSemantic::Color || selectedDescriptor->metadata.semantic ==
+          document::SignalSemantic::Luminance || selectedDescriptor->metadata.semantic ==
+          document::SignalSemantic::MaskCoverage || selectedDescriptor->metadata.semantic ==
+          document::SignalSemantic::EdgeStrength
+        ? selectedDescriptor->metadata.semantic : document::SignalSemantic::Generic;
+      add(document::makeBlurOperation(id, "Blur", selected, selectedDescriptor->shape,
+        safeSemantic), true);
+    }
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(!selectedScalar);
+    if (ImGui::MenuItem("Threshold")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeThresholdOperation(id, "Threshold", selected), true);
+    }
+    if (ImGui::MenuItem("Gradient Map")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeGradientMapOperation(id, "Gradient Map", selected), true);
+    }
+    ImGui::EndDisabled();
     ImGui::EndPopup();
   }
 
@@ -295,8 +375,8 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
     for (const InputPort& input : inputsFor(operation)) {
       inputPins[input.pin] = input;
       const document::SignalDescriptor* descriptor = document::findSignal(document, input.signal.id);
-      const document::SignalKind kind = descriptor == nullptr ? document::SignalKind::Color : descriptor->kind;
-      ImNodes::PushColorStyle(ImNodesCol_Pin, signalColor(kind));
+      const document::SignalDescriptor fallback;
+      ImNodes::PushColorStyle(ImNodesCol_Pin, signalColor(descriptor == nullptr ? fallback : *descriptor));
       ImNodes::BeginInputAttribute(input.pin);
       ImGui::TextUnformatted(input.label.c_str());
       ImNodes::EndInputAttribute();
@@ -305,8 +385,8 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
     for (std::size_t index = 0; index < operation.outputs.size(); ++index) {
       const document::SignalDescriptor& output = operation.outputs[index];
       const int pin = outputPin(operation.id, static_cast<int>(index));
-      outputPins[pin] = {{output.id, 0}, output.kind, pin};
-      ImNodes::PushColorStyle(ImNodesCol_Pin, signalColor(output.kind));
+      outputPins[pin] = {{output.id, 0}, output, pin};
+      ImNodes::PushColorStyle(ImNodesCol_Pin, signalColor(output));
       ImNodes::BeginOutputAttribute(pin);
       const bool viewed = editorState.viewer.viewed.id == output.id;
       if (viewed) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.9f, 1.0f, 1.0f));
@@ -344,7 +424,7 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
       [&](const document::SignalDescriptor& descriptor) { return descriptor.id == input.signal.id; });
     if (output == producer->outputs.end()) continue;
     const int index = static_cast<int>(std::distance(producer->outputs.begin(), output));
-    ImNodes::PushColorStyle(ImNodesCol_Link, signalColor(output->kind));
+    ImNodes::PushColorStyle(ImNodesCol_Link, signalColor(*output));
     ImNodes::Link(link++, outputPin(producer->id, index), pin);
     ImNodes::PopColorStyle();
   }
@@ -355,7 +435,7 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
         [&](const document::SignalDescriptor& descriptor) { return descriptor.id == finalDescriptor->id; });
       if (output != producer->outputs.end()) {
         const int index = static_cast<int>(std::distance(producer->outputs.begin(), output));
-        ImNodes::PushColorStyle(ImNodesCol_Link, signalColor(output->kind));
+        ImNodes::PushColorStyle(ImNodesCol_Link, signalColor(*output));
         ImNodes::Link(link++, outputPin(producer->id, index), outputInputPinId);
         ImNodes::PopColorStyle();
       }
@@ -371,7 +451,7 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
     const int destinationPin = outputPins.contains(firstPin) ? secondPin : firstPin;
     if (output == outputPins.end()) message = "Connections must run from an output to an input.";
     else if (destinationPin == outputInputPinId) {
-      if (output->second.kind == document::SignalKind::Scalar)
+      if (output->second.descriptor.metadata.domain == document::SignalDomain::Document)
         message = "Output requires an image or field, not a Scalar.";
       else if (execute(editor::SetFinalSignal{output->second.signal}))
         editorState.viewer.viewed = document.presentation.input;

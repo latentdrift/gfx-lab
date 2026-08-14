@@ -87,6 +87,57 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         typedRoundTrip.document->automation.animation.front().target.property != document::timeOffsetProperty() ||
         !evaluation::compileDocument(*typedRoundTrip.document).valid())
       fail("typed document round-trip validation failed");
+    document::Document workingSignals = document::makeDefaultDocument();
+    const document::SignalRef color = document::primaryOutput(workingSignals.operations.front());
+    const document::SignalRef depth{document::operationSignal(workingSignals.operations.front().id, "depth"), 0};
+    document::Operation remap = document::makeRemapOperation({2}, "Depth Remap", depth);
+    document::Operation edge = document::makeEdgeOperation({3}, "Depth Edge", document::primaryOutput(remap));
+    document::Operation blur = document::makeBlurOperation({4}, "Edge Blur",
+      document::primaryOutput(edge), document::SignalShape::Scalar,
+      document::SignalSemantic::EdgeStrength);
+    document::Operation threshold = document::makeThresholdOperation({5}, "Edge Mask",
+      document::primaryOutput(blur));
+    document::Operation gradient = document::makeGradientMapOperation({6}, "Edge Color",
+      document::primaryOutput(threshold));
+    document::Operation luminance = document::makeLuminanceOperation({7}, "Luminance", color);
+    document::Operation composite = document::makeCompositeOperation({8}, "Masked Composite",
+      color, document::primaryOutput(gradient));
+    auto& compositeData = std::get<document::CompositeOperation>(composite.data);
+    compositeData.mask = document::primaryOutput(threshold);
+    workingSignals.operations.push_back(std::move(remap));
+    workingSignals.operations.push_back(std::move(edge));
+    workingSignals.operations.push_back(std::move(blur));
+    workingSignals.operations.push_back(std::move(threshold));
+    workingSignals.operations.push_back(std::move(gradient));
+    workingSignals.operations.push_back(std::move(luminance));
+    workingSignals.operations.push_back(std::move(composite));
+    workingSignals.presentation.input = document::primaryOutput(workingSignals.operations.back());
+    workingSignals.nextOperationIdentity = 9;
+    const evaluation::EvaluationPlan workingPlan = evaluation::compileDocument(workingSignals);
+    evaluation::SignalRegistry workingResources;
+    if (!workingPlan.valid() || renderer.evaluate(workingSignals, workingPlan,
+        workingResources, 99, 0.0f) == 0 ||
+        workingResources.displayTexture(document::primaryOutput(workingSignals.operations[4]).id) == 0 ||
+        workingResources.displayTexture(document::primaryOutput(workingSignals.operations[5]).id) == 0)
+      fail("working-signal operation graph failed GPU evaluation");
+    const std::filesystem::path workingSignalsPath =
+      "graphics-lab-working-signals-validation.json";
+    std::string workingSignalsIoError;
+    if (!document::saveDocumentFile(workingSignalsPath.string(), workingSignals,
+        workingSignalsIoError))
+      fail("working-signal document save failed: " + workingSignalsIoError);
+    const document::DocumentLoadResult restoredWorkingSignals =
+      document::loadDocumentFile(workingSignalsPath.string());
+    std::error_code workingSignalsRemoveError;
+    std::filesystem::remove(workingSignalsPath, workingSignalsRemoveError);
+    if (!restoredWorkingSignals)
+      fail("working-signal document reload failed: " + restoredWorkingSignals.error);
+    const evaluation::EvaluationPlan restoredWorkingPlan =
+      evaluation::compileDocument(*restoredWorkingSignals.document);
+    if (!restoredWorkingPlan.valid() || restoredWorkingSignals.document->operations.size() != 8 ||
+        restoredWorkingSignals.document->nextOperationIdentity != 9 ||
+        restoredWorkingSignals.document->presentation.input != workingSignals.presentation.input)
+      fail("working-signal document did not preserve stable operation and port identities");
     const auto referenceA = spectral::humanResponse(spectral::reflectanceA, spectral::daylight);
     const auto referenceB = spectral::humanResponse(spectral::reflectanceB, spectral::daylight);
     float referenceDelta = 0.0f;
@@ -114,7 +165,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         !std::holds_alternative<document::CompositeOperation>(typedSpectral.operations[1].data) ||
         document::findSignal(typedSpectral, typedSpectral.presentation.input.id) == nullptr ||
         typedSpectral.operations[0].outputs.size() != 5 ||
-        typedSpectral.operations[0].outputs[4].kind != document::SignalKind::Spectrum16)
+        typedSpectral.operations[0].outputs[4].shape != document::SignalShape::Spectrum16)
       fail("spectral example is not a native typed operation graph");
     const evaluation::EvaluationPlan typedSpectralPlan = evaluation::compileDocument(typedSpectral);
     if (!typedSpectralPlan.valid() || typedSpectralPlan.nodes.size() != typedSpectral.operations.size() ||

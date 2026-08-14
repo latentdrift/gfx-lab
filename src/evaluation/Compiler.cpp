@@ -21,12 +21,19 @@ std::vector<document::SignalRef> operationInputs(const document::Operation& oper
     if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
       addInput(result, data.a);
       addInput(result, data.b);
+      addInput(result, data.mask);
     }
     if constexpr (std::is_same_v<Type, document::StereoOperation>) {
       addInput(result, data.left);
       addInput(result, data.right);
     }
     if constexpr (std::is_same_v<Type, document::MeasureOperation>) addInput(result, data.input);
+    if constexpr (std::is_same_v<Type, document::LuminanceOperation> ||
+        std::is_same_v<Type, document::RemapOperation> ||
+        std::is_same_v<Type, document::EdgeOperation> ||
+        std::is_same_v<Type, document::BlurOperation> ||
+        std::is_same_v<Type, document::ThresholdOperation> ||
+        std::is_same_v<Type, document::GradientMapOperation>) addInput(result, data.input);
   }, operation.data);
   return result;
 }
@@ -100,13 +107,81 @@ EvaluationPlan compileDocument(const document::Document& document) {
 
     if (const auto* interpret = std::get_if<document::InterpretOperation>(&operation.data)) {
       const auto descriptor = descriptors.find(interpret->spectrum.id);
-      if (descriptor != descriptors.end() && descriptor->second->kind != document::SignalKind::Spectrum16)
+      if (descriptor != descriptors.end() && descriptor->second->shape != document::SignalShape::Spectrum16)
         result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
           "Interpret requires a Spectrum16 input."});
     }
+    const auto descriptorOf = [&](const document::SignalRef signal)
+        -> const document::SignalDescriptor* {
+      const auto found = descriptors.find(signal.id);
+      return found == descriptors.end() ? nullptr : found->second;
+    };
+    const auto requireInput = [&](const document::SignalRef signal, const char* label) {
+      if (!signal) result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+        std::string(label) + " is not connected."});
+    };
+    if (const auto* composite = std::get_if<document::CompositeOperation>(&operation.data)) {
+      requireInput(composite->a, "Composite Input A");
+      requireInput(composite->b, "Composite Input B");
+      if (composite->mask) {
+        const auto* mask = descriptorOf(composite->mask);
+        if (mask != nullptr && !document::isScreenScalar(*mask))
+          result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+            "Composite Mask requires a screen-space Scalar."});
+        else if (mask != nullptr && mask->metadata.semantic != document::SignalSemantic::MaskCoverage)
+          result.diagnostics.push_back({operation.id, DiagnosticSeverity::Warning,
+            "Composite interprets this Scalar as 0..1 mask coverage."});
+      }
+    }
+    if (const auto* luminance = std::get_if<document::LuminanceOperation>(&operation.data)) {
+      requireInput(luminance->input, "Luminance input");
+      if (const auto* input = descriptorOf(luminance->input); input != nullptr && !document::isColor(*input))
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+          "Luminance requires a Color input."});
+    }
+    if (const auto* remap = std::get_if<document::RemapOperation>(&operation.data)) {
+      requireInput(remap->input, "Remap input");
+      const auto* input = descriptorOf(remap->input);
+      if (input != nullptr && !document::isScreenScalar(*input))
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+          "Remap requires a Scalar image, Depth, or Field input."});
+    }
+    if (const auto* edge = std::get_if<document::EdgeOperation>(&operation.data)) {
+      requireInput(edge->input, "Edge input");
+      const auto* input = descriptorOf(edge->input);
+      if (input != nullptr && (!document::isScreenImage(*input) ||
+          input->shape == document::SignalShape::Spectrum16))
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+          "Edge requires a screen-space image input."});
+    }
+    if (const auto* blur = std::get_if<document::BlurOperation>(&operation.data)) {
+      requireInput(blur->input, "Blur input");
+      const auto* input = descriptorOf(blur->input);
+      if (input != nullptr && (!document::isScreenImage(*input) || input->shape != blur->outputShape))
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+          "Blur requires matching screen-image storage shape."});
+      else if (input != nullptr && input->metadata.semantic != blur->outputSemantic)
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Warning,
+          "Blur performs numeric filtering and strips the input semantic."});
+    }
+    if (const auto* threshold = std::get_if<document::ThresholdOperation>(&operation.data)) {
+      requireInput(threshold->input, "Threshold input");
+      if (const auto* input = descriptorOf(threshold->input);
+          input != nullptr && !document::isScreenScalar(*input))
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+          "Threshold requires a Scalar image input."});
+    }
+    if (const auto* gradient = std::get_if<document::GradientMapOperation>(&operation.data)) {
+      requireInput(gradient->input, "Gradient Map input");
+      if (const auto* input = descriptorOf(gradient->input);
+          input != nullptr && !document::isScreenScalar(*input))
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+          "Gradient Map requires a Scalar image input."});
+    }
     if (const auto* measure = std::get_if<document::MeasureOperation>(&operation.data)) {
       const auto descriptor = descriptors.find(measure->input.id);
-      if (descriptor != descriptors.end() && descriptor->second->kind == document::SignalKind::Scalar)
+      if (descriptor != descriptors.end() &&
+          descriptor->second->metadata.domain == document::SignalDomain::Document)
         result.diagnostics.push_back({operation.id, DiagnosticSeverity::Warning,
           "Measuring an existing scalar is redundant."});
     }
@@ -168,7 +243,8 @@ EvaluationPlan compileDocument(const document::Document& document) {
     if (!route.source || descriptors.find(route.source.id) == descriptors.end())
       result.diagnostics.push_back({{}, DiagnosticSeverity::Error,
         "Modulation references a signal that is not declared by the document."});
-    else if (descriptors.at(route.source.id)->kind != document::SignalKind::Scalar)
+    else if (descriptors.at(route.source.id)->metadata.domain != document::SignalDomain::Document ||
+        descriptors.at(route.source.id)->shape != document::SignalShape::Scalar)
       result.diagnostics.push_back({route.source.id.producer, DiagnosticSeverity::Error,
         "Modulation requires a Scalar source signal."});
     else if (route.source.frameOffset > 0)

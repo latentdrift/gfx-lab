@@ -83,7 +83,9 @@ void drawScopePanel(bool& open, const document::Document& document,
           ImGui::TableNextRow();
           ImGui::TableNextColumn(); ImGui::TextUnformatted(operation.name.c_str());
           ImGui::TableNextColumn(); ImGui::TextUnformatted(descriptor.name.c_str());
-          ImGui::TableNextColumn(); ImGui::TextUnformatted(document::signalKindLabel(descriptor.kind));
+          ImGui::TableNextColumn();
+          ImGui::Text("%s · %s", document::signalShapeLabel(descriptor.shape),
+            document::signalSemanticLabel(descriptor.metadata.semantic));
           ImGui::TableNextColumn(); ImGui::TextUnformatted(document::signalDomainLabel(descriptor.metadata.domain));
           ImGui::TableNextColumn(); ImGui::TextUnformatted(encodingLabel(descriptor.metadata.encoding));
           ImGui::TableNextColumn();
@@ -107,7 +109,8 @@ void drawScopePanel(bool& open, const document::Document& document,
     ImGui::TextDisabled("SCALAR OUTPUTS");
     bool any = false;
     for (const auto& [id, resource] : signals.resources()) {
-      if (resource.descriptor.kind != document::SignalKind::Scalar) continue;
+      if (resource.descriptor.shape != document::SignalShape::Scalar ||
+          resource.descriptor.metadata.domain != document::SignalDomain::Document) continue;
       any = true;
       ImGui::PushID(static_cast<int>(std::hash<document::SignalId>{}(id)));
       ImGui::Text("%s", resource.descriptor.name.c_str());

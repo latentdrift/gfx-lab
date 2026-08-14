@@ -73,9 +73,11 @@ GLuint makeProgram(const char* vertexSource, const char* fragmentSource) {
 struct RenderTarget {
   GLuint sceneFbo = 0;
   GLuint sceneTexture = 0;
+  GLuint normalTexture = 0;
   GLuint depthTexture = 0;
   GLuint multisampleFbo = 0;
   GLuint multisampleColor = 0;
+  GLuint multisampleNormal = 0;
   GLuint multisampleDepth = 0;
   GLuint outputFbo = 0;
   GLuint outputTexture = 0;
@@ -103,9 +105,11 @@ struct RenderTarget {
     if (!sceneFbo) {
       glGenFramebuffers(1, &sceneFbo);
       glGenTextures(1, &sceneTexture);
+      glGenTextures(1, &normalTexture);
       glGenTextures(1, &depthTexture);
       glGenFramebuffers(1, &multisampleFbo);
       glGenRenderbuffers(1, &multisampleColor);
+      glGenRenderbuffers(1, &multisampleNormal);
       glGenRenderbuffers(1, &multisampleDepth);
       glGenFramebuffers(1, &outputFbo);
       glGenTextures(1, &outputTexture);
@@ -121,6 +125,12 @@ struct RenderTarget {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindTexture(GL_TEXTURE_2D, normalTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindTexture(GL_TEXTURE_2D, depthTexture);
     const GLint depthFormat = packedStencil ? GL_DEPTH24_STENCIL8 : depthPrecision == 16 ? GL_DEPTH_COMPONENT16 : GL_DEPTH_COMPONENT24;
     const GLenum depthType = packedStencil ? GL_UNSIGNED_INT_24_8 : depthPrecision == 16 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
@@ -132,6 +142,9 @@ struct RenderTarget {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindFramebuffer(GL_FRAMEBUFFER, sceneFbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTexture, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, normalTexture, 0);
+    constexpr std::array<GLenum, 2> sceneDrawBuffers = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    glDrawBuffers(static_cast<GLsizei>(sceneDrawBuffers.size()), sceneDrawBuffers.data());
     // GL_DEPTH_STENCIL_ATTACHMENT aliases both attachment points. Detach each
     // point explicitly before switching between depth-only and packed formats;
     // otherwise the previous stencil half survives and makes the FBO incomplete.
@@ -168,10 +181,14 @@ struct RenderTarget {
     if (samples > 1) {
       glBindRenderbuffer(GL_RENDERBUFFER, multisampleColor);
       glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA8, width, height);
+      glBindRenderbuffer(GL_RENDERBUFFER, multisampleNormal);
+      glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA16F, width, height);
       glBindRenderbuffer(GL_RENDERBUFFER, multisampleDepth);
       glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, depthFormat, width, height);
       glBindFramebuffer(GL_FRAMEBUFFER, multisampleFbo);
       glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, multisampleColor);
+      glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_RENDERBUFFER, multisampleNormal);
+      glDrawBuffers(static_cast<GLsizei>(sceneDrawBuffers.size()), sceneDrawBuffers.data());
       glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
       glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0);
       glFramebufferRenderbuffer(GL_FRAMEBUFFER, packedStencil ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT,
@@ -215,9 +232,11 @@ struct RenderTarget {
   void destroy() {
     glDeleteFramebuffers(1, &sceneFbo);
     glDeleteTextures(1, &sceneTexture);
+    glDeleteTextures(1, &normalTexture);
     glDeleteTextures(1, &depthTexture);
     glDeleteFramebuffers(1, &multisampleFbo);
     glDeleteRenderbuffers(1, &multisampleColor);
+    glDeleteRenderbuffers(1, &multisampleNormal);
     glDeleteRenderbuffers(1, &multisampleDepth);
     glDeleteFramebuffers(1, &outputFbo);
     glDeleteTextures(1, &outputTexture);
@@ -236,6 +255,7 @@ public:
     sceneProgram_ = makeProgram(sceneVertexShader, sceneFragmentShader);
     outputProgram_ = makeProgram(outputVertexShader, outputFragmentShader);
     relationProgram_ = makeProgram(outputVertexShader, relationFragmentShader);
+    imageOperationProgram_ = makeProgram(outputVertexShader, imageOperationFragmentShader);
     stereoAnalysisProgram_ = makeProgram(outputVertexShader, stereoAnalysisFragmentShader);
     fieldProgram_ = makeProgram(outputVertexShader, fieldFragmentShader);
     sdfIsoProgram_ = makeProgram(outputVertexShader, sdfIsoSurfaceFragmentShader);
@@ -383,6 +403,7 @@ public:
     glDeleteProgram(sceneProgram_);
     glDeleteProgram(outputProgram_);
     glDeleteProgram(relationProgram_);
+    glDeleteProgram(imageOperationProgram_);
     glDeleteProgram(stereoAnalysisProgram_);
     glDeleteProgram(fieldProgram_);
     glDeleteProgram(sdfIsoProgram_);
@@ -576,8 +597,11 @@ public:
     const float backgroundR = state.color.linearLight ? std::pow(0.105f, 2.2f) : 0.105f;
     const float backgroundG = state.color.linearLight ? std::pow(0.112f, 2.2f) : 0.112f;
     const float backgroundB = state.color.linearLight ? std::pow(0.120f, 2.2f) : 0.120f;
-    glClearColor(backgroundR, backgroundG, backgroundB, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    const std::array<float, 4> background = {backgroundR, backgroundG, backgroundB, 1.0f};
+    constexpr std::array<float, 4> emptyNormal = {0.5f, 0.5f, 1.0f, 0.0f};
+    glClearBufferfv(GL_COLOR, 0, background.data());
+    glClearBufferfv(GL_COLOR, 1, emptyNormal.data());
+    glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
     glDepthMask(state.depth.writing && !orderingTableActive ? GL_TRUE : GL_FALSE);
 
     glUseProgram(sceneProgram_);
@@ -878,10 +902,20 @@ public:
     if (samples > 1) {
       glBindFramebuffer(GL_READ_FRAMEBUFFER, target.multisampleFbo);
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target.sceneFbo);
-      const GLbitfield resolveBuffers = GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT |
-        (needsStencil ? GL_STENCIL_BUFFER_BIT : 0);
+      glReadBuffer(GL_COLOR_ATTACHMENT0);
+      glDrawBuffer(GL_COLOR_ATTACHMENT0);
       glBlitFramebuffer(0, 0, target.width, target.height, 0, 0, target.width, target.height,
-        resolveBuffers, GL_NEAREST);
+        GL_COLOR_BUFFER_BIT, GL_NEAREST);
+      glReadBuffer(GL_COLOR_ATTACHMENT1);
+      glDrawBuffer(GL_COLOR_ATTACHMENT1);
+      glBlitFramebuffer(0, 0, target.width, target.height, 0, 0, target.width, target.height,
+        GL_COLOR_BUFFER_BIT, GL_NEAREST);
+      const GLbitfield resolveDepth = GL_DEPTH_BUFFER_BIT | (needsStencil ? GL_STENCIL_BUFFER_BIT : 0);
+      glBlitFramebuffer(0, 0, target.width, target.height, 0, 0, target.width, target.height,
+        resolveDepth, GL_NEAREST);
+      constexpr std::array<GLenum, 2> sceneDrawBuffers = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target.sceneFbo);
+      glDrawBuffers(static_cast<GLsizei>(sceneDrawBuffers.size()), sceneDrawBuffers.data());
     }
 
     if (scene == TestScene::SpectralMetamers) {
@@ -1180,7 +1214,8 @@ public:
     return target.outputTexture;
   }
 
-  GLuint compositeTextures(const GLuint imageA, const GLuint imageB, const GLuint maskDepth,
+  GLuint compositeTextures(const GLuint imageA, const GLuint imageB, const GLuint explicitMask,
+      const GLuint maskDepth,
       const GLuint maskField, const std::array<GLuint, 4>& spectrumA,
       const std::array<GLuint, 4>& spectrumB,
       const RendererState& maskState, const CompositeStep& step,
@@ -1198,6 +1233,10 @@ public:
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, imageB);
     glUniform1i(glGetUniformLocation(relationProgram_, "uImageB"), 1);
+    glActiveTexture(GL_TEXTURE12);
+    glBindTexture(GL_TEXTURE_2D, explicitMask);
+    glUniform1i(glGetUniformLocation(relationProgram_, "uMaskImage"), 12);
+    glUniform1i(glGetUniformLocation(relationProgram_, "uUseExplicitMask"), explicitMask != 0);
     for (int group = 0; group < 4; ++group) {
       glActiveTexture(GL_TEXTURE4 + group);
       glBindTexture(GL_TEXTURE_2D, spectrumA[static_cast<std::size_t>(group)]);
@@ -1256,7 +1295,7 @@ public:
     step.operation = operation;
     step.gain = gain;
     step.bias = bias;
-    return compositeTextures(passTargets_[0].outputTexture, passTargets_[1].outputTexture,
+    return compositeTextures(passTargets_[0].outputTexture, passTargets_[1].outputTexture, 0,
       passTargets_[1].depthTexture, passTargets_[1].fieldTexture, {}, {}, RendererState{}, step,
       0);
   }
@@ -1271,7 +1310,35 @@ public:
     step.gain = gain;
     step.bias = bias;
     step.colorSpace = CompositeColorSpace::LinearLight;
-    return compositeTextures(a, b, 0, 0, {}, {}, RendererState{}, step, RenderStack::maximumPasses);
+    return compositeTextures(a, b, 0, 0, 0, {}, {}, RendererState{}, step, RenderStack::maximumPasses);
+  }
+
+  GLuint processImage(const GLuint input, const int mode, const bool scalarInput,
+      const glm::vec4 parameters, const glm::vec4 lowColor, const glm::vec4 highColor,
+      const std::size_t outputIndex) {
+    if (input == 0) return 0;
+    const std::size_t target = outputIndex % relationFbos_.size();
+    glBindFramebuffer(GL_FRAMEBUFFER, relationFbos_[target]);
+    glViewport(0, 0, relationWidth_, relationHeight_);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glUseProgram(imageOperationProgram_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, input);
+    glUniform1i(glGetUniformLocation(imageOperationProgram_, "uInput"), 0);
+    glUniform1i(glGetUniformLocation(imageOperationProgram_, "uMode"), mode);
+    glUniform1i(glGetUniformLocation(imageOperationProgram_, "uScalarInput"), scalarInput);
+    glUniform4fv(glGetUniformLocation(imageOperationProgram_, "uParameters"), 1,
+      glm::value_ptr(parameters));
+    glUniform4fv(glGetUniformLocation(imageOperationProgram_, "uLowColor"), 1,
+      glm::value_ptr(lowColor));
+    glUniform4fv(glGetUniformLocation(imageOperationProgram_, "uHighColor"), 1,
+      glm::value_ptr(highColor));
+    glBindVertexArray(fullscreenVao_);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return relationTextures_[target];
   }
 
   GLuint analyzeStereo(const RenderTarget& left, const RenderTarget& right, const RenderPass& operation,
@@ -1362,6 +1429,13 @@ public:
       return resource == nullptr || resource->textureCount != 4
         ? std::array<GLuint, 4>{} : resource->textures;
     };
+    const auto signalDescriptor = [&](const document::SignalRef signal) {
+      return document::findSignal(document, signal.id);
+    };
+    const auto isScalarImage = [&](const document::SignalRef signal) {
+      const document::SignalDescriptor* descriptor = signalDescriptor(signal);
+      return descriptor != nullptr && document::isScreenScalar(*descriptor);
+    };
     const auto signalTarget = [&](const document::SignalRef signal) -> const RenderTarget* {
       const auto found = targetBySignal.find(signal.id);
       return found == targetBySignal.end() ? nullptr : &passTargets_[found->second];
@@ -1380,31 +1454,23 @@ public:
         evaluation::SignalResource resource;
         resource.descriptor = descriptor;
         resource.revision = revision;
-        switch (descriptor.kind) {
-          case document::SignalKind::Color:
-          case document::SignalKind::Normal:
-            resource.textures[0] = primaryTexture;
-            resource.textureCount = primaryTexture == 0 ? 0 : 1;
-            break;
-          case document::SignalKind::Depth:
+        if (descriptor.metadata.semantic == document::SignalSemantic::Normal) {
+            resource.textures[0] = passTargets_[targetIndex].normalTexture;
+            resource.textureCount = resource.textures[0] == 0 ? 0 : 1;
+        } else if (descriptor.metadata.semantic == document::SignalSemantic::DeviceDepth) {
             resource.textures[0] = passTargets_[targetIndex].depthTexture;
             resource.textureCount = resource.textures[0] == 0 ? 0 : 1;
-            break;
-          case document::SignalKind::Field:
+        } else if (std::holds_alternative<document::RenderOperation>(operation.data) &&
+            (descriptor.metadata.semantic == document::SignalSemantic::FieldStrength ||
+             descriptor.metadata.semantic == document::SignalSemantic::SignedDistance)) {
             resource.textures[0] = passTargets_[targetIndex].fieldTexture;
             resource.textureCount = resource.textures[0] == 0 ? 0 : 1;
-            break;
-          case document::SignalKind::Spectrum16:
+        } else if (descriptor.shape == document::SignalShape::Spectrum16) {
             resource.textures = passTargets_[targetIndex].spectralTextures;
             resource.textureCount = resource.textures[0] == 0 ? 0 : 4;
-            break;
-          case document::SignalKind::Scalar:
-            // Scalar operations retain their sampled image as a readback carrier. The scalar
-            // value itself is published after reduction by the measurement runtime.
+        } else {
             resource.textures[0] = primaryTexture;
             resource.textureCount = primaryTexture == 0 ? 0 : 1;
-            break;
-          case document::SignalKind::Vector2: break;
         }
         signals.publish(std::move(resource));
         targetBySignal[descriptor.id] = targetIndex;
@@ -1427,7 +1493,6 @@ public:
         carrier.composite.bitDepth = data->arithmetic.bitDepth;
         carrier.composite.colorSpace = data->arithmetic.colorSpace;
         carrier.composite.range = data->arithmetic.range;
-        carrier.composite.mask = data->mask;
         carrier.composite.invertMask = data->invertMask;
         if (data->feedback.has_value()) {
           carrier.composite.historyDecay = data->feedback->decay;
@@ -1453,7 +1518,6 @@ public:
         data->arithmetic = {carrier.composite.operation, carrier.composite.gain,
           carrier.composite.bias, carrier.composite.opacity, carrier.composite.bitDepth,
           carrier.composite.colorSpace, carrier.composite.range};
-        data->mask = carrier.composite.mask;
         data->invertMask = carrier.composite.invertMask;
         if (data->feedback.has_value()) data->feedback = document::FeedbackSettings{
           carrier.composite.historyDecay, carrier.composite.historyUvOffset,
@@ -1517,11 +1581,19 @@ public:
         step.opacity = 1.0f;
         const auto spectrum = signalSpectrum(data->spectrum);
         output = compositeTextures(signalTexture(data->spectrum), signalTexture(data->spectrum),
-          0, 0, spectrum, spectrum, RendererState{}, step, nodeIndex);
+          0, 0, 0, spectrum, spectrum, RendererState{}, step, nodeIndex);
       } else if (const auto* data = std::get_if<document::CompositeOperation>(&operation->data)) {
         CompositeStep step;
         step.sourceA = data->a.frameOffset < 0 ? CompositeSource::PreviousFrame : CompositeSource::RenderPass;
         step.sourceB = data->b.frameOffset < 0 ? CompositeSource::PreviousFrame : CompositeSource::RenderPass;
+        if (data->a.frameOffset >= 0 && isScalarImage(data->a)) step.sourceA = CompositeSource::RenderPassField;
+        if (data->b.frameOffset >= 0 && isScalarImage(data->b)) step.sourceB = CompositeSource::RenderPassField;
+        if (signalDescriptor(data->a) != nullptr &&
+            signalDescriptor(data->a)->shape == document::SignalShape::Spectrum16)
+          step.sourceA = CompositeSource::RenderPassSpectrum;
+        if (signalDescriptor(data->b) != nullptr &&
+            signalDescriptor(data->b)->shape == document::SignalShape::Spectrum16)
+          step.sourceB = CompositeSource::RenderPassSpectrum;
         const std::optional<glm::vec4> constantA = constantValue(data->a);
         const std::optional<glm::vec4> constantB = constantValue(data->b);
         if (constantA.has_value()) { step.sourceA = CompositeSource::FixedColor; step.fixedColor = *constantA; }
@@ -1538,16 +1610,15 @@ public:
         step.bitDepth = data->arithmetic.bitDepth;
         step.colorSpace = data->arithmetic.colorSpace;
         step.range = data->arithmetic.range;
-        step.mask = data->mask;
+        step.mask = CompositeMask::None;
         step.invertMask = data->invertMask;
         if (data->feedback.has_value()) {
           step.historyDecay = data->feedback->decay;
           step.historyUvOffset = data->feedback->uvOffset;
           step.historyUvScale = data->feedback->uvScale;
         }
-        const RenderTarget* mask = signalTarget(data->b);
         output = compositeTextures(signalTexture(data->a), signalTexture(data->b),
-          mask == nullptr ? 0 : mask->depthTexture, mask == nullptr ? 0 : mask->fieldTexture,
+          signalTexture(data->mask), 0, 0,
           signalSpectrum(data->a), signalSpectrum(data->b), document.renderDefaults.renderer,
           step, nodeIndex);
       } else if (const auto* data = std::get_if<document::StereoOperation>(&operation->data)) {
@@ -1562,6 +1633,25 @@ public:
         }
       } else if (const auto* data = std::get_if<document::MeasureOperation>(&operation->data)) {
         output = signalTexture(data->input);
+      } else if (const auto* data = std::get_if<document::LuminanceOperation>(&operation->data)) {
+        output = processImage(signalTexture(data->input), 0, false, {}, {}, {}, nodeIndex);
+      } else if (const auto* data = std::get_if<document::RemapOperation>(&operation->data)) {
+        output = processImage(signalTexture(data->input), 1, true,
+          {data->inputLow, data->inputHigh, 0.0f, data->clamp ? 1.0f : 0.0f},
+          glm::vec4(data->outputLow), glm::vec4(data->outputHigh), nodeIndex);
+      } else if (const auto* data = std::get_if<document::EdgeOperation>(&operation->data)) {
+        output = processImage(signalTexture(data->input), 2, isScalarImage(data->input),
+          glm::vec4(data->strength, 0.0f, 0.0f, 0.0f), {}, {}, nodeIndex);
+      } else if (const auto* data = std::get_if<document::BlurOperation>(&operation->data)) {
+        output = processImage(signalTexture(data->input), 3,
+          data->outputShape == document::SignalShape::Scalar,
+          glm::vec4(data->radiusPixels, 0.0f, 0.0f, 0.0f), {}, {}, nodeIndex);
+      } else if (const auto* data = std::get_if<document::ThresholdOperation>(&operation->data)) {
+        output = processImage(signalTexture(data->input), 4, true,
+          {data->threshold, data->softness, 0.0f, 0.0f}, {}, {}, nodeIndex);
+      } else if (const auto* data = std::get_if<document::GradientMapOperation>(&operation->data)) {
+        output = processImage(signalTexture(data->input), 5, true, {},
+          data->lowColor, data->highColor, nodeIndex);
       }
       operationTextures_[nodeIndex] = output;
       publish(*operation, nodeIndex, output);
@@ -1681,7 +1771,8 @@ private:
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 
-  GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0, stereoAnalysisProgram_ = 0, fieldProgram_ = 0,
+  GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0,
+    imageOperationProgram_ = 0, stereoAnalysisProgram_ = 0, fieldProgram_ = 0,
     sdfIsoProgram_ = 0, spectralProgram_ = 0,
     copyProgram_ = 0, displayProgram_ = 0,
     shadowProgram_ = 0, overdrawProgram_ = 0;
