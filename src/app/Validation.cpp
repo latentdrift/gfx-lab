@@ -3,11 +3,9 @@
 #include "app/Animation.hpp"
 #include "app/FileDialog.hpp"
 #include "app/HardwareProfile.hpp"
-#include "app/RenderStack.hpp"
-#include "app/StackDocument.hpp"
+#include "app/RenderOperationState.hpp"
 #include "app/Spectral.hpp"
 #include "assets/ModelAsset.hpp"
-#include "document/LegacyAdapter.hpp"
 #include "document/Persistence.hpp"
 #include "editor/Commands.hpp"
 #include "evaluation/Compiler.hpp"
@@ -32,21 +30,6 @@ namespace {
 [[noreturn]] void fail(const std::string& message) {
   std::fprintf(stderr, "graphics-lab: %s\n", message.c_str());
   std::exit(EXIT_FAILURE);
-}
-
-unsigned int evaluateFixture(Renderer& renderer, const RenderStack& stack,
-    const CameraOrbit& camera, const TestScene scene,
-    evaluation::SignalRegistry* published = nullptr) {
-  StackDocument fixture;
-  fixture.renderStack = stack;
-  fixture.camera = camera;
-  fixture.scene = scene;
-  document::Document document = document::migrateLegacyDocument(fixture);
-  const evaluation::EvaluationPlan plan = evaluation::compileDocument(document);
-  if (!plan.valid()) fail("legacy validation fixture did not migrate to a valid typed graph");
-  evaluation::SignalRegistry local;
-  evaluation::SignalRegistry& signals = published == nullptr ? local : *published;
-  return renderer.evaluate(document, plan, signals, 1, 0.0f);
 }
 
 } // namespace
@@ -311,109 +294,53 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     while (glGetError() != GL_NO_ERROR) {}
     renderer.setImportedModel(*importedFixture.asset);
     renderer.render(RendererState{}, CameraOrbit{}, TestScene::ImportedModel, false);
-    RenderStack textureRenderValidation;
-    textureRenderValidation.selected().textureSource = TextureSource::ImportedOverride;
-    textureRenderValidation.selected().importedTexture = importedTexture.asset;
-    renderer.renderPass(textureRenderValidation.selected(), CameraOrbit{}, TestScene::ImportedModel, 0);
-    textureRenderValidation.selected().textureSource = TextureSource::White;
-    renderer.renderPass(textureRenderValidation.selected(), CameraOrbit{}, TestScene::ImportedModel, 0);
+    RenderPass textureRenderValidation;
+    textureRenderValidation.textureSource = TextureSource::ImportedOverride;
+    textureRenderValidation.importedTexture = importedTexture.asset;
+    renderer.renderPass(textureRenderValidation, CameraOrbit{}, TestScene::ImportedModel, 0);
+    textureRenderValidation.textureSource = TextureSource::White;
+    renderer.renderPass(textureRenderValidation, CameraOrbit{}, TestScene::ImportedModel, 0);
     if (glGetError() != GL_NO_ERROR) fail("scene-material or override texture rendering failed validation");
     renderer.clearImportedModel();
-    RenderStack validationStack;
-    if (validationStack.passes().size() != 3 || !validationStack.duplicateSelected() ||
-        validationStack.passes().size() != 4 || !validationStack.moveSelected(-1) ||
-        !validationStack.removeSelected() || validationStack.passes().size() != 3)
-      fail("render-pass stack operations failed validation");
-    if (!validationStack.addOperation(StackOperationKind::Interpret) ||
-        validationStack.selected().kind != StackOperationKind::Interpret ||
-        validationStack.selected().composite.sourceA != CompositeSource::RenderPassSpectrum)
-      fail("typed signal operation creation failed validation");
-    RenderStack identityValidation;
-    identityValidation.select(0);
-    if (!identityValidation.duplicateSelected()) fail("render-pass identity setup failed validation");
-    const int referencedId = identityValidation.passes().back().id;
-    identityValidation.selected().composite.sourceA = CompositeSource::RenderPass;
-    identityValidation.selected().composite.sourceAPassId = referencedId;
-    if (!identityValidation.moveSelected(1) ||
-        identityValidation.selected().composite.sourceAPassId != referencedId)
-      fail("render-pass operand identity changed during reorder");
-    validationStack.global().renderer.lighting.ambient = 0.31f;
-    validationStack.global().perturbation.modelTranslation = {0.2f, 0.0f, 0.0f};
-    setRenderPassOverride(validationStack.selected(), AnimationProperty::Ambient, glm::vec4(0.77f));
-    setRenderPassOverride(validationStack.selected(), AnimationProperty::UvOffset,
-      glm::vec4(0.125f, 0.0f, 0.0f, 0.0f));
-    setRenderPassOverride(validationStack.selected(), AnimationProperty::UvMapping,
-      glm::vec4(static_cast<float>(UvMapping::PlanarXz)));
-    setRenderPassOverride(validationStack.selected(), AnimationProperty::UvRotation,
-      glm::vec4(0.25f));
-    validationStack.global().renderer.post.fogStart = 2.0f;
-    setPropertyKeyframe(validationStack.global(), AnimationProperty::FogStart, 0.0f);
-    validationStack.global().renderer.post.fogStart = 6.0f;
-    setPropertyKeyframe(validationStack.global(), AnimationProperty::FogStart, 2.0f);
-    validationStack.global().renderer.lighting.ambient = 0.0f;
-    setPropertyKeyframe(validationStack.global(), AnimationProperty::Ambient, 0.0f);
-    validationStack.global().renderer.lighting.ambient = 1.0f;
-    setPropertyKeyframe(validationStack.global(), AnimationProperty::Ambient, 2.0f);
-    validationStack.selected().renderer.lighting.ambient = 0.6f;
-    setPropertyKeyframe(validationStack.selected(), AnimationProperty::Ambient, 0.0f);
-    validationStack.selected().renderer.lighting.ambient = 0.8f;
-    setPropertyKeyframe(validationStack.selected(), AnimationProperty::Ambient, 2.0f);
-    const RenderPass hierarchicalPass = materializeRenderPass(validationStack,
-      validationStack.selectedIndex(), 1.0f);
-    const RenderPass staticallyResolvedPass = resolveRenderPass(validationStack, validationStack.selectedIndex());
-    if (std::abs(hierarchicalPass.renderer.lighting.ambient - 0.7f) > 0.0001f ||
-        std::abs(hierarchicalPass.perturbation.modelTranslation.x - 0.2f) > 0.0001f ||
-        std::abs(hierarchicalPass.perturbation.uvOffset.x - 0.125f) > 0.0001f ||
-        hierarchicalPass.perturbation.uvMapping != UvMapping::PlanarXz ||
-        std::abs(hierarchicalPass.perturbation.uvRotation - 0.25f) > 0.0001f ||
-        std::abs(hierarchicalPass.renderer.post.fogStart - 4.0f) > 0.0001f ||
-        std::abs(staticallyResolvedPass.renderer.post.fogStart - 6.0f) > 0.0001f ||
-        validationStack.selected().overrides.size() != 4)
-      fail("global base, sparse override, or hierarchical animation precedence failed validation");
-    validationStack.duplicateSelected();
-    if (validationStack.selected().overrides.size() != 4 ||
-        findPropertyTrack(validationStack.selected(), AnimationProperty::Ambient) == nullptr)
-      fail("pass duplication did not preserve only its authored local deviations");
-    RenderStack animationValidation;
-    animationValidation.select(1);
-    animationValidation.selected().perturbation.modelTranslation.x = 0.0f;
-    animationValidation.selected().composite.gain = 1.0f;
-    setPropertyKeyframe(animationValidation.selected(), AnimationProperty::ModelTranslation, 0.0f);
-    setPropertyKeyframe(animationValidation.selected(), AnimationProperty::CompositeGain, 0.0f);
-    animationValidation.selected().perturbation.modelTranslation.x = 2.0f;
-    animationValidation.selected().composite.gain = 5.0f;
-    setPropertyKeyframe(animationValidation.selected(), AnimationProperty::ModelTranslation, 2.0f);
-    setPropertyKeyframe(animationValidation.selected(), AnimationProperty::CompositeGain, 2.0f);
-    const RenderStack evaluatedAnimation = evaluateRenderStack(animationValidation, 1.0f);
-    if (std::abs(evaluatedAnimation.selected().perturbation.modelTranslation.x - 1.0f) > 0.0001f ||
-        std::abs(evaluatedAnimation.selected().composite.gain - 3.0f) > 0.0001f ||
-        !removePropertyKeyframe(animationValidation.selected(), AnimationProperty::ModelTranslation, 2.0f) ||
-        findPropertyTrack(animationValidation.selected(), AnimationProperty::CompositeGain) == nullptr ||
-        animationValidation.selected().animation.tracks.size() != 2)
+    RenderPass animationValidation;
+    animationValidation.perturbation.modelTranslation.x = 0.0f;
+    animationValidation.composite.gain = 1.0f;
+    setPropertyKeyframe(animationValidation, AnimationProperty::ModelTranslation, 0.0f);
+    setPropertyKeyframe(animationValidation, AnimationProperty::CompositeGain, 0.0f);
+    animationValidation.perturbation.modelTranslation.x = 2.0f;
+    animationValidation.composite.gain = 5.0f;
+    setPropertyKeyframe(animationValidation, AnimationProperty::ModelTranslation, 2.0f);
+    setPropertyKeyframe(animationValidation, AnimationProperty::CompositeGain, 2.0f);
+    const RenderPass evaluatedAnimation = evaluateRenderPass(animationValidation, 1.0f);
+    if (std::abs(evaluatedAnimation.perturbation.modelTranslation.x - 1.0f) > 0.0001f ||
+        std::abs(evaluatedAnimation.composite.gain - 3.0f) > 0.0001f ||
+        !removePropertyKeyframe(animationValidation, AnimationProperty::ModelTranslation, 2.0f) ||
+        findPropertyTrack(animationValidation, AnimationProperty::CompositeGain) == nullptr ||
+        animationValidation.animation.tracks.size() != 2)
       fail("render-pass keyframe interpolation failed validation");
-    PropertyAnimationTrack* gainTrack = findPropertyTrack(animationValidation.selected(),
+    PropertyAnimationTrack* gainTrack = findPropertyTrack(animationValidation,
       AnimationProperty::CompositeGain);
     gainTrack->interpolation = KeyframeInterpolation::Step;
-    if (std::abs(evaluateRenderStack(animationValidation, 1.0f).selected().composite.gain - 1.0f) > 0.0001f ||
-        !propertyHasKeyAt(animationValidation.selected(), AnimationProperty::CompositeGain, 2.0f))
+    if (std::abs(evaluateRenderPass(animationValidation, 1.0f).composite.gain - 1.0f) > 0.0001f ||
+        !propertyHasKeyAt(animationValidation, AnimationProperty::CompositeGain, 2.0f))
       fail("independent property tracks or step interpolation failed validation");
     AnimationTimeline autoKeyValidation;
     autoKeyValidation.autoKey = true;
     autoKeyValidation.timeSeconds = 1.25f;
-    animationValidation.selected().perturbation.modelScale = 1.2f;
-    recordPropertyAnimationEdit(animationValidation.selected(), AnimationProperty::ModelScale,
+    animationValidation.perturbation.modelScale = 1.2f;
+    recordPropertyAnimationEdit(animationValidation, AnimationProperty::ModelScale,
       autoKeyValidation, true);
-    if (!propertyHasKeyAt(animationValidation.selected(), AnimationProperty::ModelScale, 1.25f))
+    if (!propertyHasKeyAt(animationValidation, AnimationProperty::ModelScale, 1.25f))
       fail("viewport-style Auto Key edit failed validation");
-    animationValidation.selected().renderer.surface.wireframe = false;
-    setPropertyKeyframe(animationValidation.selected(), AnimationProperty::WireframeOverlay, 0.0f);
-    animationValidation.selected().renderer.surface.wireframe = true;
-    setPropertyKeyframe(animationValidation.selected(), AnimationProperty::WireframeOverlay, 2.0f);
-    const PropertyAnimationTrack* wireframeTrack = findPropertyTrack(animationValidation.selected(),
+    animationValidation.renderer.surface.wireframe = false;
+    setPropertyKeyframe(animationValidation, AnimationProperty::WireframeOverlay, 0.0f);
+    animationValidation.renderer.surface.wireframe = true;
+    setPropertyKeyframe(animationValidation, AnimationProperty::WireframeOverlay, 2.0f);
+    const PropertyAnimationTrack* wireframeTrack = findPropertyTrack(animationValidation,
       AnimationProperty::WireframeOverlay);
     if (wireframeTrack == nullptr || wireframeTrack->interpolation != KeyframeInterpolation::Step ||
-        evaluateRenderStack(animationValidation, 1.0f).selected().renderer.surface.wireframe ||
-        !evaluateRenderStack(animationValidation, 2.0f).selected().renderer.surface.wireframe ||
+        evaluateRenderPass(animationValidation, 1.0f).renderer.surface.wireframe ||
+        !evaluateRenderPass(animationValidation, 2.0f).renderer.surface.wireframe ||
         animationPropertyInfo(AnimationProperty::MultisampleCount).behavior != AnimationBehavior::NotAnimatable ||
         animationPropertyInfo(AnimationProperty::WireframeOverlay).kind != AnimationValueKind::Boolean)
       fail("typed stepped animation property validation failed");
@@ -443,174 +370,6 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     timelineValidation.advance(1.0f);
     if (std::abs(timelineValidation.timeSeconds - 0.5f) > 0.0001f)
       fail("animation timeline looping failed validation");
-    RenderStack compositeValidation;
-    compositeValidation.select(1);
-    compositeValidation.duplicateSelected();
-    setRenderPassOverride(compositeValidation.passes()[1], AnimationProperty::CameraYaw, glm::vec4(0.01f));
-    setRenderPassOverride(compositeValidation.passes()[2], AnimationProperty::UvOffset,
-      glm::vec4(1.0f / 256.0f, 0.0f, 0, 0));
-    setRenderPassOverride(compositeValidation.passes()[2], AnimationProperty::TextureSource,
-      glm::vec4(static_cast<float>(TextureSource::ImportedOverride)));
-    compositeValidation.passes()[2].importedTexture = importedTexture.asset;
-    compositeValidation.passes()[2].importedTextureOverride = true;
-    setPropertyKeyframe(compositeValidation.passes()[2], AnimationProperty::WireframeOverlay, 0.0f);
-    compositeValidation.passes()[2].composite.operation = RelationOperator::Exclusion;
-    const RenderStack materializedCompositeValidation = evaluateRenderStack(compositeValidation, 0.0f);
-    for (std::size_t passIndex = 0; passIndex < materializedCompositeValidation.passes().size(); ++passIndex)
-      renderer.renderPass(materializedCompositeValidation.passes()[passIndex], camera, scene, passIndex);
-    if (evaluateFixture(renderer, compositeValidation, camera, scene) == 0)
-      fail("sequential render-pass compositing failed validation");
-    for (int mask = static_cast<int>(CompositeMask::None); mask <= static_cast<int>(CompositeMask::PassField); ++mask) {
-      compositeValidation.passes()[2].composite.mask = static_cast<CompositeMask>(mask);
-      compositeValidation.passes()[2].composite.invertMask = mask != static_cast<int>(CompositeMask::None);
-      if (evaluateFixture(renderer, compositeValidation, camera, scene) == 0)
-        fail("render-pass composite mask failed validation");
-    }
-    for (int source = static_cast<int>(CompositeSource::Accumulator);
-         source <= static_cast<int>(CompositeSource::RenderPassSpectrum); ++source) {
-      compositeValidation.passes()[2].composite.sourceA = static_cast<CompositeSource>(source);
-      compositeValidation.passes()[2].composite.sourceB = static_cast<CompositeSource>(source);
-      compositeValidation.passes()[2].composite.sourceAPassId = compositeValidation.passes()[0].id;
-      compositeValidation.passes()[2].composite.sourceBPassId = compositeValidation.passes()[1].id;
-      compositeValidation.passes()[2].composite.fixedColor = glm::vec4(0.8f, 0.2f, 0.6f, 1.0f);
-      if (evaluateFixture(renderer, compositeValidation, camera, scene) == 0)
-        fail("render-pass composite source failed validation");
-    }
-    renderer.resetFrameHistory();
-    compositeValidation.passes()[2].composite.operation = RelationOperator::BitwiseXor;
-    compositeValidation.passes()[2].composite.bitDepth = 5;
-    if (evaluateFixture(renderer, compositeValidation, camera, scene) == 0 ||
-        evaluateFixture(renderer, compositeValidation, camera, scene) == 0)
-      fail("quantized temporal compositing failed validation");
-    compositeValidation.passes()[2].composite.sourceA = CompositeSource::PreviousFrame;
-    compositeValidation.passes()[2].composite.sourceB = CompositeSource::PreviousFrame;
-    compositeValidation.passes()[2].composite.operation = RelationOperator::Add;
-    compositeValidation.passes()[2].composite.range = CompositeRange::Preserve;
-    compositeValidation.passes()[2].composite.historyDecay = 1.0f;
-    compositeValidation.passes()[2].composite.gain = 16.0f;
-    for (int feedbackFrame = 0; feedbackFrame < 32; ++feedbackFrame)
-      if (evaluateFixture(renderer, compositeValidation, camera, scene) == 0)
-        fail("extreme temporal composite feedback failed validation");
-    glFinish();
-    if (glGetError() != GL_NO_ERROR)
-      fail("extreme temporal composite feedback produced an OpenGL error");
-    compositeValidation.display().enabled = true;
-    for (int signal = static_cast<int>(DisplaySignal::DirectRgb);
-         signal <= static_cast<int>(DisplaySignal::RodConeXor); ++signal) {
-      compositeValidation.display().signal = static_cast<DisplaySignal>(signal);
-      const unsigned int composite = evaluateFixture(renderer, compositeValidation, camera, scene);
-      if (renderer.reconstructDisplay(composite, compositeValidation.display(),
-          static_cast<std::size_t>(signal)) == 0)
-        fail("display reconstruction failed validation");
-    }
-    if (glGetError() != GL_NO_ERROR) fail("display reconstruction produced an OpenGL error");
-    compositeValidation.passes()[2].composite.sourceA = CompositeSource::RenderPassField;
-    compositeValidation.passes()[2].composite.sourceAPassId = compositeValidation.passes()[0].id;
-    compositeValidation.passes()[2].output = PassOutput::FieldSignal;
-    compositeValidation.select(2);
-    if (!compositeValidation.addOperation(StackOperationKind::Measure) ||
-        compositeValidation.selected().composite.sourceAPassId != compositeValidation.passes()[2].id)
-      fail("signal measurement consumer setup failed validation");
-    const int measurementOperationId = compositeValidation.selected().id;
-    compositeValidation.selected().measurementThreshold = 0.01f;
-    compositeValidation.selected().measurementMetric = MeasurementMetric::RmsMagnitude;
-    compositeValidation.selected().measurementModulationEnabled = true;
-    compositeValidation.selected().measurementTargetPassId = compositeValidation.passes()[0].id;
-    compositeValidation.selected().measurementTargetProperty = AnimationProperty::Ambient;
-    compositeValidation.selected().measurementInputMinimum = 0.1f;
-    compositeValidation.selected().measurementInputMaximum = 0.7f;
-    compositeValidation.selected().measurementOutputMinimum = 0.2f;
-    compositeValidation.selected().measurementOutputMaximum = 0.9f;
-    compositeValidation.selected().measurementSmoothingSeconds = 0.25f;
-    evaluation::SignalRegistry measuredSignals;
-    const unsigned int measuredStackOutput = evaluateFixture(renderer, compositeValidation,
-      camera, scene, &measuredSignals);
-    StackDocument measuredFixture;
-    measuredFixture.renderStack = compositeValidation;
-    measuredFixture.camera = camera;
-    measuredFixture.scene = scene;
-    const document::Document measuredDocument = document::migrateLegacyDocument(measuredFixture);
-    const document::Operation* measuredOperation = document::findOperation(measuredDocument,
-      document::OperationId{static_cast<std::uint64_t>(measurementOperationId)});
-    const unsigned int measuredSignal = measuredOperation == nullptr ? 0
-      : measuredSignals.displayTexture(document::primaryOutput(*measuredOperation).id);
-    const SignalMeasurement measurement = measureTextureSignal(measuredSignal, 0.01f, true);
-    if (measuredStackOutput == 0 || measuredSignal == 0 || measurement.sampleCount != 4096 ||
-        measurement.peakMagnitude < measurement.meanMagnitude || measurement.coverage < 0.0f ||
-        measurement.coverage > 1.0f)
-      fail("signal measurement consumer failed validation");
-    const std::string stackConfig = renderStackConfigJson(compositeValidation, camera, scene,
-      HardwareProfile::Unrestricted, &timelineValidation, importedFixture.asset.get());
-    if (stackConfig.find("graphics-lab.render-stack.v8") == std::string::npos ||
-        stackConfig.find("typed_operations_v1") == std::string::npos ||
-        stackConfig.find("\"operation_kind\"") == std::string::npos ||
-        stackConfig.find("\"operation_kind\": \"measure\"") == std::string::npos ||
-        stackConfig.find("\"measurement\"") == std::string::npos ||
-        stackConfig.find("\"metric\": \"rms_magnitude\"") == std::string::npos ||
-        stackConfig.find("\"target_property\": \"ambient\"") == std::string::npos ||
-        stackConfig.find("\"field_resources\"") == std::string::npos ||
-        stackConfig.find("render_pass_field") == std::string::npos ||
-        stackConfig.find("pass_field") == std::string::npos ||
-        stackConfig.find("global base, global track, local override, local track") == std::string::npos ||
-        stackConfig.find("\"passes\"") == std::string::npos ||
-        stackConfig.find("\"global_base\"") == std::string::npos ||
-        stackConfig.find("\"overrides\"") == std::string::npos ||
-        stackConfig.find("\"perturbation\"") == std::string::npos ||
-        stackConfig.find("\"coordinate_source\"") == std::string::npos ||
-        stackConfig.find("\"uv_rotation_radians\"") == std::string::npos ||
-        stackConfig.find("\"camera_lateral_offset_units\"") == std::string::npos ||
-        stackConfig.find("\"stereo_convergence_distance_units\"") == std::string::npos ||
-        stackConfig.find("\"composite_into_previous\"") == std::string::npos ||
-        stackConfig.find("\"source_a\"") == std::string::npos ||
-        stackConfig.find("\"pass_id\"") == std::string::npos ||
-        stackConfig.find("\"interpretation_a\"") == std::string::npos ||
-        stackConfig.find("\"interpretation_b\"") == std::string::npos ||
-        stackConfig.find("\"fixed_color_rgba\"") == std::string::npos ||
-        stackConfig.find("\"previous_frame\"") == std::string::npos ||
-        stackConfig.find("\"display_reconstruction\"") == std::string::npos ||
-        stackConfig.find("rod_cone_quantized_xor") == std::string::npos ||
-        stackConfig.find("\"spectral_rendering\": false") == std::string::npos ||
-        stackConfig.find("\"animation\"") == std::string::npos ||
-        stackConfig.find("\"property_tracks\"") == std::string::npos ||
-        stackConfig.find("\"value_kind\"") == std::string::npos ||
-        stackConfig.find("\"animation_behavior\"") == std::string::npos ||
-        stackConfig.find("\"snap_to_frames\"") == std::string::npos ||
-        stackConfig.find("\"frames_per_second\"") == std::string::npos ||
-        stackConfig.find("\"texture_source\": \"imported_override\"") == std::string::npos ||
-        stackConfig.find("\"imported_texture\"") == std::string::npos ||
-        stackConfig.find("\"imported_model\"") == std::string::npos ||
-        stackConfig.find("\"effective_renderer_at_time_zero\"") == std::string::npos)
-      fail("render-pass stack missing from config export");
-    const std::filesystem::path measurementRoundTripPath =
-      "graphics-lab-measurement-consumer-validation.json";
-    std::string measurementIoError;
-    const std::string measurementRoundTripJson = renderStackConfigJson(compositeValidation, camera, scene,
-      HardwareProfile::Unrestricted, &timelineValidation);
-    if (!saveStackDocumentFile(measurementRoundTripPath.string(), measurementRoundTripJson,
-        measurementIoError))
-      fail("measurement consumer save validation failed: " + measurementIoError);
-    const StackDocumentLoadResult measurementRoundTrip =
-      loadStackDocumentFile(measurementRoundTripPath.string());
-    std::error_code measurementRemoveError;
-    std::filesystem::remove(measurementRoundTripPath, measurementRemoveError);
-    if (!measurementRoundTrip)
-      fail("measurement consumer save/load round trip could not load: " + measurementRoundTrip.error);
-    const auto restoredMeasurement = std::find_if(
-      measurementRoundTrip.document->renderStack.passes().begin(),
-      measurementRoundTrip.document->renderStack.passes().end(),
-      [measurementOperationId](const RenderPass& pass) { return pass.id == measurementOperationId; });
-    if (restoredMeasurement == measurementRoundTrip.document->renderStack.passes().end() ||
-        restoredMeasurement->kind != StackOperationKind::Measure ||
-        std::abs(restoredMeasurement->measurementThreshold - 0.01f) > 0.0001f ||
-        restoredMeasurement->composite.sourceAPassId != compositeValidation.passes()[2].id ||
-        restoredMeasurement->measurementMetric != MeasurementMetric::RmsMagnitude ||
-        !restoredMeasurement->measurementModulationEnabled ||
-        restoredMeasurement->measurementTargetPassId != compositeValidation.passes()[0].id ||
-        restoredMeasurement->measurementTargetProperty != AnimationProperty::Ambient ||
-        std::abs(restoredMeasurement->measurementInputMinimum - 0.1f) > 0.0001f ||
-        std::abs(restoredMeasurement->measurementOutputMaximum - 0.9f) > 0.0001f ||
-        std::abs(restoredMeasurement->measurementSmoothingSeconds - 0.25f) > 0.0001f)
-      fail("measurement consumer save/load round trip failed validation");
     constexpr std::array<const char*, 7> typedExamplePaths = {
       "examples/binocular-disparity-difference.json",
       "examples/elemental-combustion-chamber.json",

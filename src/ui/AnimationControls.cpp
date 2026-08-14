@@ -1,6 +1,6 @@
 #include "ui/AnimationControls.hpp"
 
-#include "app/RenderStack.hpp"
+#include "app/RenderOperationState.hpp"
 
 #include <imgui.h>
 

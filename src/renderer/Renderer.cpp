@@ -1,4 +1,5 @@
 #include "renderer/Renderer.hpp"
+#include "app/RenderOperationState.hpp"
 #include "renderer/Shaders.hpp"
 #include "renderer/TestGeometry.hpp"
 #include "simulation/ElementalSimulation.hpp"

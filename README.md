@@ -39,7 +39,7 @@ src/
     Application.cpp           GLFW/ImGui lifecycle and workspace orchestration
     Animation.cpp             renderer-property keyframe capture and interpolation
     HardwareProfile.cpp       target capabilities and state normalization
-    RenderStack.cpp           renderer-property and composite parameter vocabulary
+    RenderOperationState.cpp  transient renderer-property materialization vocabulary
     State.cpp                 explicit renderer state, scene setups, JSON export
     Validation.cpp            opt-in renderer, document, import, and UI validation suite
   assets/

@@ -5,22 +5,16 @@
 
 #include <glm/glm.hpp>
 
-#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
 
 namespace gfxlab {
 
-struct ModelAsset;
 struct TextureAsset;
 
 enum class CompositeColorSpace { EncodedRgb, LinearLight };
 enum class CompositeRange { Clamp, Preserve, Wrap };
-// A stack operation describes what a row does, independently of its position.
-// LegacyRenderComposite exists solely so v8 documents retain their original
-// "render this row, then composite it" evaluation semantics.
-enum class StackOperationKind { Render, Interpret, Composite, StereoAnalysis, Measure, LegacyRenderComposite };
 enum class StereoAnalysisMode { Anaglyph, SignedDisparity, AbsoluteDisparity, Correspondence, MonocularOcclusion };
 enum class MeasurementMetric { MeanMagnitude, RmsMagnitude, PeakMagnitude, Coverage, MeanRed, MeanGreen, MeanBlue };
 enum class CompositeInterpretation {
@@ -81,8 +75,8 @@ struct PassCameraMatrices {
   glm::mat4 projection{1.0f};
 };
 
-[[nodiscard]] PassCameraMatrices buildPassCamera(const CameraOrbit& camera, const RendererState& state,
-  const PassPerturbation& perturbation, float aspect);
+[[nodiscard]] PassCameraMatrices buildPassCamera(const CameraOrbit& camera,
+  const RendererState& state, const PassPerturbation& perturbation, float aspect);
 
 struct CompositeStep {
   RelationOperator operation = RelationOperator::AbsoluteDifference;
@@ -114,11 +108,13 @@ struct PropertyOverride {
   glm::vec4 value{0.0f};
 };
 
+// Temporary materialization carrier shared by renderer-property editing,
+// animation sampling, persistence, and GPU evaluation. It is not a graph node
+// or an authored stack abstraction.
 struct RenderPass {
   int id = 0;
   std::string name;
   bool enabled = true;
-  StackOperationKind kind = StackOperationKind::Render;
   RendererState renderer;
   PassPerturbation perturbation;
   PassOutput output = PassOutput::Color;
@@ -129,77 +125,15 @@ struct RenderPass {
   StereoAnalysisMode stereoAnalysis = StereoAnalysisMode::AbsoluteDisparity;
   float stereoMaximumDisparityPixels = 64.0f;
   float stereoOcclusionTolerance = 0.0025f;
-  float measurementThreshold = 0.05f;
-  bool measurementAbsolute = true;
-  MeasurementMetric measurementMetric = MeasurementMetric::Coverage;
-  bool measurementModulationEnabled = false;
-  int measurementTargetPassId = 1;
-  AnimationProperty measurementTargetProperty = AnimationProperty::Ambient;
-  float measurementInputMinimum = 0.0f;
-  float measurementInputMaximum = 1.0f;
-  float measurementOutputMinimum = 0.0f;
-  float measurementOutputMaximum = 1.0f;
-  bool measurementClamp = true;
-  float measurementSmoothingSeconds = 0.15f;
   PassAnimation animation;
   std::vector<PropertyOverride> overrides;
   bool importedTextureOverride = false;
 };
 
-class RenderStack {
-public:
-  static constexpr std::size_t maximumPasses = 16;
-
-  RenderStack();
-
-  [[nodiscard]] std::vector<RenderPass>& passes() { return passes_; }
-  [[nodiscard]] const std::vector<RenderPass>& passes() const { return passes_; }
-  [[nodiscard]] std::size_t selectedIndex() const { return selected_; }
-  [[nodiscard]] RenderPass& selected();
-  [[nodiscard]] const RenderPass& selected() const;
-  [[nodiscard]] RenderPass& global() { return global_; }
-  [[nodiscard]] const RenderPass& global() const { return global_; }
-  [[nodiscard]] DisplayReconstructionState& display() { return display_; }
-  [[nodiscard]] const DisplayReconstructionState& display() const { return display_; }
-
-  void select(std::size_t index);
-  bool duplicateSelected();
-  bool addOperation(StackOperationKind kind);
-  bool removeSelected();
-  bool moveSelected(int direction);
-  void replacePasses(std::vector<RenderPass> passes);
-
-private:
-  RenderPass global_;
-  DisplayReconstructionState display_;
-  std::vector<RenderPass> passes_;
-  std::size_t selected_ = 0;
-  unsigned int nextPassNumber_ = 3;
-  int nextPassId_ = 3;
-};
-
 [[nodiscard]] bool animationPropertyIsPassLocal(AnimationProperty property);
-[[nodiscard]] const PropertyOverride* findRenderPassOverride(const RenderPass& pass, AnimationProperty property);
-void setRenderPassOverride(RenderPass& pass, AnimationProperty property, const glm::vec4& value);
-[[nodiscard]] bool clearRenderPassOverride(RenderPass& pass, AnimationProperty property);
-void replaceRenderPassOverrides(RenderPass& pass, const RenderPass& global, const RenderPass& materialized);
-[[nodiscard]] RenderPass resolveRenderPass(const RenderStack& stack, std::size_t passIndex);
-[[nodiscard]] RenderPass materializeRenderPass(const RenderStack& stack, std::size_t passIndex,
-  float timeSeconds = 0.0f);
-
-[[nodiscard]] const char* relationOperatorLabel(RelationOperator operation);
-[[nodiscard]] const char* stackOperationKindLabel(StackOperationKind kind);
-[[nodiscard]] const char* stackOperationKindId(StackOperationKind kind);
-[[nodiscard]] const char* relationOperatorId(RelationOperator operation);
-[[nodiscard]] const char* relationOperatorEquation(RelationOperator operation);
-[[nodiscard]] const char* relationOperatorMeaning(RelationOperator operation);
-[[nodiscard]] const char* measurementMetricLabel(MeasurementMetric metric);
-[[nodiscard]] const char* measurementMetricId(MeasurementMetric metric);
-[[nodiscard]] bool measurementTargetPropertyCompatible(StackOperationKind targetKind,
+[[nodiscard]] const PropertyOverride* findRenderPassOverride(const RenderPass& pass,
   AnimationProperty property);
-void resetCompositeTransform(CompositeStep& step);
-[[nodiscard]] std::string renderStackConfigJson(const RenderStack& stack, const CameraOrbit& camera,
-  TestScene scene, HardwareProfile profile, const AnimationTimeline* timeline = nullptr,
-  const ModelAsset* importedModel = nullptr);
+[[nodiscard]] bool clearRenderPassOverride(RenderPass& pass, AnimationProperty property);
+[[nodiscard]] const char* relationOperatorLabel(RelationOperator operation);
 
 } // namespace gfxlab

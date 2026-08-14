@@ -1,7 +1,7 @@
 #pragma once
 
 #include "app/State.hpp"
-#include "app/RenderStack.hpp"
+#include "app/RenderOperationState.hpp"
 #include "document/Document.hpp"
 #include "evaluation/EvaluationPlan.hpp"
 #include "evaluation/SignalRegistry.hpp"

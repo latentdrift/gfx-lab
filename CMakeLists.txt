@@ -24,14 +24,12 @@ add_executable(graphics-lab
   src/app/Application.cpp
   src/app/FileDialog.cpp
   src/app/HardwareProfile.cpp
-  src/app/RenderStack.cpp
+  src/app/RenderOperationState.cpp
   src/app/Spectral.cpp
   src/app/State.cpp
-  src/app/StackDocument.cpp
   src/app/Validation.cpp
   src/app/ViewportRecorder.cpp
   src/document/Document.cpp
-  src/document/LegacyAdapter.cpp
   src/document/Operations.cpp
   src/document/Persistence.cpp
   src/document/Properties.cpp

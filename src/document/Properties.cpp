@@ -1,6 +1,6 @@
 #include "document/Properties.hpp"
 
-#include "app/RenderStack.hpp"
+#include "app/RenderOperationState.hpp"
 
 #include <array>
 #include <cstdint>

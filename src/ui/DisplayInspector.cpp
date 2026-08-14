@@ -1,6 +1,6 @@
 #include "ui/DisplayInspector.hpp"
 
-#include "app/RenderStack.hpp"
+#include "app/RenderOperationState.hpp"
 #include <imgui.h>
 
 namespace gfxlab::ui {
@@ -16,7 +16,7 @@ void description(const char* text) {
 
 void drawDisplayInspectorContents(DisplayReconstructionState& state) {
     ImGui::Checkbox("Enable display reconstruction", &state.enabled);
-    description("Runs after the complete render-pass stack. It never changes pass textures or composite operands.");
+    description("Adapts the viewed graph output for display. It never changes the signal consumed downstream.");
     if (state.enabled) {
       ImGui::Separator();
       ImGui::TextDisabled("SIGNAL RECONSTRUCTION");

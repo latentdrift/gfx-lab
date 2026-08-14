@@ -1,6 +1,6 @@
 #include "app/Animation.hpp"
 
-#include "app/RenderStack.hpp"
+#include "app/RenderOperationState.hpp"
 
 #include <algorithm>
 #include <array>
@@ -741,13 +741,6 @@ RenderPass evaluateRenderPass(const RenderPass& source, const float timeSeconds)
   for (const PropertyAnimationTrack& track : source.animation.tracks) {
     if (!track.keyframes.empty()) setAnimationPropertyValue(evaluated, track.property, samplePropertyTrack(track, timeSeconds));
   }
-  return evaluated;
-}
-
-RenderStack evaluateRenderStack(const RenderStack& source, const float timeSeconds) {
-  RenderStack evaluated = source;
-  for (std::size_t index = 0; index < source.passes().size(); ++index)
-    evaluated.passes()[index] = materializeRenderPass(source, index, timeSeconds);
   return evaluated;
 }
 

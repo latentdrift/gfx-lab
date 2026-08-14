@@ -417,7 +417,7 @@ int runApplication() {
     if (workspaceActions.loadJson || openDocumentShortcut) {
       documentMessage.clear();
       documentOperationFailed = false;
-      const FileDialogResult dialog = openStackDocumentDialog();
+      const FileDialogResult dialog = openDocumentDialog();
       if (!dialog.error.empty()) {
         documentMessage = dialog.error;
         documentOperationFailed = true;
@@ -450,12 +450,12 @@ int runApplication() {
           documentMessage = "Loaded document:\n" + *dialog.path;
         }
       }
-      if (!documentMessage.empty()) ImGui::OpenPopup("Stack document");
+      if (!documentMessage.empty()) ImGui::OpenPopup("Document");
     }
     if (workspaceActions.saveJson || saveDocumentShortcut) {
       documentMessage.clear();
       documentOperationFailed = false;
-      const FileDialogResult dialog = saveStackDocumentDialog();
+      const FileDialogResult dialog = saveDocumentDialog();
       if (!dialog.error.empty()) {
         documentMessage = dialog.error;
         documentOperationFailed = true;
@@ -470,10 +470,10 @@ int runApplication() {
         timeline.snapToFrames = animationTimeline.snapToFrames;
         timeline.framesPerSecond = animationTimeline.framesPerSecond;
         if (document::saveDocumentFile(*dialog.path, authoredDocument, documentMessage))
-          documentMessage = "Saved typed document:\n" + *dialog.path;
+          documentMessage = "Saved document:\n" + *dialog.path;
         else documentOperationFailed = true;
       }
-      if (!documentMessage.empty()) ImGui::OpenPopup("Stack document");
+      if (!documentMessage.empty()) ImGui::OpenPopup("Document");
     }
     if (workspaceActions.copyJson) {
       ImGui::SetClipboardText(document::documentJson(authoredDocument).c_str());
@@ -552,9 +552,9 @@ int runApplication() {
       if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
       ImGui::EndPopup();
     }
-    if (ImGui::BeginPopupModal("Stack document", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal("Document", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
       if (documentOperationFailed)
-        ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f), "Stack document operation failed");
+        ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f), "Document operation failed");
       ImGui::TextWrapped("%s", documentMessage.c_str());
       if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
       ImGui::EndPopup();

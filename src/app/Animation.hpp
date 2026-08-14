@@ -9,7 +9,6 @@
 namespace gfxlab {
 
 struct RenderPass;
-class RenderStack;
 
 enum class KeyframeInterpolation { Step, Linear, SmoothStep };
 enum class AnimationValueKind { Float, Vec2, Vec3, Color3, Color4, Angle, Boolean, Integer, Enumeration };
@@ -251,6 +250,5 @@ void setPropertyKeyframe(RenderPass& pass, AnimationProperty property, float tim
 [[nodiscard]] bool propertyHasKeyAt(const RenderPass& pass, AnimationProperty property, float timeSeconds,
   float toleranceSeconds = 1.0f / 120.0f);
 [[nodiscard]] RenderPass evaluateRenderPass(const RenderPass& source, float timeSeconds);
-[[nodiscard]] RenderStack evaluateRenderStack(const RenderStack& source, float timeSeconds);
 
 } // namespace gfxlab

@@ -38,17 +38,17 @@ FileDialogResult openTextureFileDialog() {
   return openFileDialog(filters, 5);
 }
 
-FileDialogResult openStackDocumentDialog() {
-  const nfdu8filteritem_t filters[] = {{"Graphics Lab stack", "json"}};
+FileDialogResult openDocumentDialog() {
+  const nfdu8filteritem_t filters[] = {{"Graphics Lab document", "json"}};
   return openFileDialog(filters, 1);
 }
 
-FileDialogResult saveStackDocumentDialog() {
+FileDialogResult saveDocumentDialog() {
   if (NFD_Init() != NFD_OKAY) return {std::nullopt, NFD_GetError()};
-  const nfdu8filteritem_t filters[] = {{"Graphics Lab stack", "json"}};
+  const nfdu8filteritem_t filters[] = {{"Graphics Lab document", "json"}};
   nfdu8char_t* selectedPath = nullptr;
   const nfdresult_t result = NFD_SaveDialogU8(&selectedPath, filters, 1, nullptr,
-    "graphics-lab-stack.json");
+    "graphics-lab-document.json");
   FileDialogResult dialog;
   if (result == NFD_OKAY) {
     dialog.path = std::string(selectedPath);

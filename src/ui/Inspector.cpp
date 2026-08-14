@@ -2,7 +2,7 @@
 
 #include "app/Spectral.hpp"
 #include "app/FileDialog.hpp"
-#include "app/RenderStack.hpp"
+#include "app/RenderOperationState.hpp"
 #include "assets/ModelAsset.hpp"
 #include "ui/AnimationControls.hpp"
 #include "ui/InstrumentWidgets.hpp"

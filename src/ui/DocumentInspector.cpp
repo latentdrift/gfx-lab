@@ -1,7 +1,7 @@
 #include "ui/DocumentInspector.hpp"
 
 #include "app/HardwareProfile.hpp"
-#include "app/RenderStack.hpp"
+#include "app/RenderOperationState.hpp"
 #include "ui/DisplayInspector.hpp"
 #include "ui/Inspector.hpp"
 #include "ui/TextureMappingEditor.hpp"

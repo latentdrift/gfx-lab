@@ -1,6 +1,6 @@
 #pragma once
 
-#include "app/RenderStack.hpp"
+#include "app/RenderOperationState.hpp"
 #include "document/Signals.hpp"
 
 #include <memory>

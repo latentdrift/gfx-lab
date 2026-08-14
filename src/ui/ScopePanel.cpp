@@ -116,7 +116,7 @@ void drawScopePanel(bool& open, const document::Document& document,
       ImGui::Text("%s", resource.descriptor.name.c_str());
       ImGui::SameLine(220.0f);
       if (resource.scalar.has_value()) ImGui::Text("%.6f", *resource.scalar);
-      else ImGui::TextDisabled("pending legacy readback");
+      else ImGui::TextDisabled("pending readback");
       ImGui::SameLine();
       if (ImGui::SmallButton("Use for modulation")) {
         const document::SignalRef signal{id, 0};

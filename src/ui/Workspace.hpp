@@ -2,7 +2,7 @@
 
 #include "app/Animation.hpp"
 #include "app/HardwareProfile.hpp"
-#include "app/RenderStack.hpp"
+#include "app/RenderOperationState.hpp"
 #include "app/State.hpp"
 #include "document/Document.hpp"
 #include "editor/EditorState.hpp"
