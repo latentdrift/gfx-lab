@@ -3,6 +3,7 @@
 #include "app/State.hpp"
 #include "app/RenderStack.hpp"
 
+#include <array>
 #include <memory>
 
 namespace gfxlab {
@@ -25,6 +26,9 @@ public:
     std::size_t targetIndex);
   unsigned int composite(const RenderStack& stack);
   [[nodiscard]] unsigned int stackOperationResult(std::size_t operationIndex) const;
+  [[nodiscard]] unsigned int stackOperationDepthResult(std::size_t operationIndex) const;
+  [[nodiscard]] unsigned int stackOperationFieldResult(std::size_t operationIndex) const;
+  [[nodiscard]] std::array<unsigned int, 4> stackOperationSpectrumResult(std::size_t operationIndex) const;
   unsigned int reconstructDisplay(unsigned int sourceTexture, const DisplayReconstructionState& state,
     std::size_t targetIndex);
   void updateElementalSimulation(float deltaSeconds, const RendererState& state, TestScene scene);

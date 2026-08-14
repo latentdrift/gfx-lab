@@ -1382,6 +1382,19 @@ public:
     return operationIndex < operationTextures_.size() ? operationTextures_[operationIndex] : 0;
   }
 
+  [[nodiscard]] GLuint stackOperationDepthResult(const std::size_t operationIndex) const {
+    return operationIndex < passTargets_.size() ? passTargets_[operationIndex].depthTexture : 0;
+  }
+
+  [[nodiscard]] GLuint stackOperationFieldResult(const std::size_t operationIndex) const {
+    return operationIndex < passTargets_.size() ? passTargets_[operationIndex].fieldTexture : 0;
+  }
+
+  [[nodiscard]] std::array<GLuint, 4> stackOperationSpectrumResult(const std::size_t operationIndex) const {
+    return operationIndex < passTargets_.size() ? passTargets_[operationIndex].spectralTextures
+      : std::array<GLuint, 4>{};
+  }
+
   void resetFrameHistory() {
     glBindFramebuffer(GL_FRAMEBUFFER, historyFbo_);
     glViewport(0, 0, relationWidth_, relationHeight_);
@@ -1671,6 +1684,15 @@ unsigned int Renderer::renderPass(const RenderPass& pass, const CameraOrbit& cam
 unsigned int Renderer::composite(const RenderStack& stack) { return impl_->composite(stack); }
 unsigned int Renderer::stackOperationResult(const std::size_t operationIndex) const {
   return impl_->stackOperationResult(operationIndex);
+}
+unsigned int Renderer::stackOperationDepthResult(const std::size_t operationIndex) const {
+  return impl_->stackOperationDepthResult(operationIndex);
+}
+unsigned int Renderer::stackOperationFieldResult(const std::size_t operationIndex) const {
+  return impl_->stackOperationFieldResult(operationIndex);
+}
+std::array<unsigned int, 4> Renderer::stackOperationSpectrumResult(const std::size_t operationIndex) const {
+  return impl_->stackOperationSpectrumResult(operationIndex);
 }
 unsigned int Renderer::texturePreview(const TextureAsset* texture) { return impl_->texturePreview(texture); }
 unsigned int Renderer::reconstructDisplay(const unsigned int sourceTexture,

@@ -35,6 +35,9 @@ add_executable(graphics-lab
   src/document/LegacyAdapter.cpp
   src/document/Operations.cpp
   src/document/Signals.cpp
+  src/evaluation/Compiler.cpp
+  src/evaluation/LegacyBridge.cpp
+  src/evaluation/SignalRegistry.cpp
   src/handbook/Handbook.cpp
   src/renderer/Renderer.cpp
   src/renderer/TestGeometry.cpp

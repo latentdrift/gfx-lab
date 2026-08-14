@@ -10,6 +10,7 @@
 #include "app/Spectral.hpp"
 #include "assets/ModelAsset.hpp"
 #include "document/LegacyAdapter.hpp"
+#include "evaluation/Compiler.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
 #include "renderer/TextureReadback.hpp"
@@ -72,6 +73,10 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         typedSpectral.operations[0].outputs.size() != 5 ||
         typedSpectral.operations[0].outputs[4].kind != document::SignalKind::Spectrum16)
       fail("legacy document did not migrate to typed operations and signals");
+    const evaluation::EvaluationPlan typedSpectralPlan = evaluation::compileDocument(typedSpectral);
+    if (!typedSpectralPlan.valid() || typedSpectralPlan.nodes.size() != typedSpectral.operations.size() ||
+        typedSpectralPlan.finalSignal != typedSpectral.presentation.input)
+      fail("typed document did not compile into a valid evaluation plan");
     const ModelImportResult importedFixture = importModelAsset("tests/fixtures/import_triangle.obj");
     if (!importedFixture || importedFixture.asset->triangleCount != 1 ||
         importedFixture.asset->vertices.size() != 3 || !importedFixture.asset->hasTextureCoordinates ||
