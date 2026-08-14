@@ -40,10 +40,18 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     const std::filesystem::path typedPath = std::filesystem::temp_directory_path() /
       "graphics-lab-typed-validation.json";
     document::Document typedFixture = document::makeDefaultDocument();
+    typedFixture.graphLayout.operations.push_back({typedFixture.operations.front().id,
+      glm::vec2(40.0f, 60.0f)});
     const editor::CommandResult constructed = editor::applyCommand(typedFixture,
-      editor::DuplicateAndBlend{{1}, {2}, {3}, RelationOperator::Screen});
-    if (!constructed.applied || typedFixture.operations.size() != 3)
-      fail("Duplicate + Blend did not construct a valid operation graph");
+      editor::DuplicateAndCompare{{1}, {2}, {3}});
+    const auto* comparison = typedFixture.operations.size() == 3
+      ? std::get_if<document::CompositeOperation>(&typedFixture.operations.back().data) : nullptr;
+    if (!constructed.applied || typedFixture.operations.size() != 3 || comparison == nullptr ||
+        comparison->arithmetic.operation != RelationOperator::AbsoluteDifference ||
+        typedFixture.operations.back().name != "Compare" ||
+        typedFixture.graphLayout.operations.size() != 3 ||
+        !typedFixture.graphLayout.outputPositionAuthored)
+      fail("Duplicate + Compare did not construct and lay out a valid comparison graph");
     const document::OperationId compositeId = typedFixture.operations.back().id;
     const document::SignalRef compositeOutput = document::primaryOutput(typedFixture.operations.back());
     const editor::CommandResult cycle = editor::applyCommand(typedFixture,
@@ -52,8 +60,13 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         !evaluation::compileDocument(typedFixture).valid())
       fail("typed graph accepted a same-frame dependency cycle");
     typedFixture.operations[1].name = "Round-trip variant";
-    typedFixture.graphLayout.operations.push_back({typedFixture.operations[1].id,
-      glm::vec2(320.0f, 180.0f)});
+    const auto variantLayout = std::find_if(typedFixture.graphLayout.operations.begin(),
+      typedFixture.graphLayout.operations.end(), [](const document::GraphNodePosition& position) {
+        return position.operation == document::OperationId{2};
+      });
+    if (variantLayout == typedFixture.graphLayout.operations.end())
+      fail("Duplicate + Compare did not author the variant graph position");
+    variantLayout->position = glm::vec2(320.0f, 180.0f);
     typedFixture.graphLayout.outputPosition = glm::vec2(740.0f, 210.0f);
     typedFixture.graphLayout.outputPositionAuthored = true;
     auto* typedVariant = std::get_if<document::RenderOperation>(&typedFixture.operations[1].data);
@@ -72,8 +85,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         std::abs(std::get<document::RenderOperation>(typedRoundTrip.document->operations[1].data).time.scale +
           0.75f) > 0.0001f || typedRoundTrip.document->automation.animation.size() != 1 ||
         typedRoundTrip.document->automation.animation.front().target.property != document::timeOffsetProperty() ||
-        typedRoundTrip.document->graphLayout.operations.size() != 1 ||
-        typedRoundTrip.document->graphLayout.operations.front().operation != typedFixture.operations[1].id ||
+        typedRoundTrip.document->graphLayout.operations.size() != 3 ||
         glm::distance(typedRoundTrip.document->graphLayout.outputPosition,
           typedFixture.graphLayout.outputPosition) > 0.0001f ||
         !evaluation::compileDocument(*typedRoundTrip.document).valid())
@@ -83,7 +95,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     workingSignals.renderDefaults.renderer.output.height = 216;
     const document::SignalRef color = document::primaryOutput(workingSignals.operations.front());
     const document::SignalRef depth{document::operationSignal(workingSignals.operations.front().id, "depth"), 0};
-    document::Operation remap = document::makeRemapOperation({2}, "Depth Remap", depth);
+    document::Operation remap = document::makeRemapOperation({2}, "Depth Mask Remap", depth,
+      document::SignalSemantic::MaskCoverage);
     document::Operation edge = document::makeEdgeOperation({3}, "Depth Edge", document::primaryOutput(remap));
     document::Operation blur = document::makeBlurOperation({4}, "Edge Blur",
       document::primaryOutput(edge), document::SignalShape::Scalar,
@@ -122,6 +135,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         edgeDirectionDescriptor->metadata.encoding != document::SignalEncoding::SignedUnitVectorPacked ||
         !edgeDirectionDescriptor->metadata.hasKnownRange ||
         edgeDirectionDescriptor->metadata.knownRange != glm::vec2(-1.0f, 1.0f) ||
+        remapDescriptor->metadata.semantic != document::SignalSemantic::MaskCoverage ||
         !remapDescriptor->metadata.hasKnownRange ||
         remapDescriptor->metadata.knownRange != glm::vec2(0.0f, 1.0f))
       fail("working-signal descriptors did not preserve shape, meaning, encoding, or range");
@@ -178,7 +192,9 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       evaluation::compileDocument(*restoredWorkingSignals.document);
     if (!restoredWorkingPlan.valid() || restoredWorkingSignals.document->operations.size() != 9 ||
         restoredWorkingSignals.document->nextOperationIdentity != 10 ||
-        restoredWorkingSignals.document->presentation.input != workingSignals.presentation.input)
+        restoredWorkingSignals.document->presentation.input != workingSignals.presentation.input ||
+        std::get<document::RemapOperation>(restoredWorkingSignals.document->operations[1].data)
+          .outputSemantic != document::SignalSemantic::MaskCoverage)
       fail("working-signal document did not preserve stable operation and port identities");
     document::Document longGraph = document::makeDefaultDocument();
     document::SignalRef longGraphSignal{document::operationSignal(

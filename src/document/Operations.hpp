@@ -89,6 +89,7 @@ struct RemapOperation {
   float outputLow = 0.0f;
   float outputHigh = 1.0f;
   bool clamp = true;
+  SignalSemantic outputSemantic = SignalSemantic::Generic;
 };
 
 struct EdgeOperation {
@@ -168,7 +169,8 @@ void synchronizeOperationSignalMetadata(Operation& operation);
   glm::vec4 value, SignalShape shape = SignalShape::Vector4,
   SignalSemantic semantic = SignalSemantic::Color);
 [[nodiscard]] Operation makeLuminanceOperation(OperationId id, std::string name, SignalRef input);
-[[nodiscard]] Operation makeRemapOperation(OperationId id, std::string name, SignalRef input);
+[[nodiscard]] Operation makeRemapOperation(OperationId id, std::string name, SignalRef input,
+  SignalSemantic outputSemantic = SignalSemantic::Generic);
 [[nodiscard]] Operation makeEdgeOperation(OperationId id, std::string name, SignalRef input);
 [[nodiscard]] Operation makeBlurOperation(OperationId id, std::string name, SignalRef input,
   SignalShape outputShape, SignalSemantic outputSemantic);

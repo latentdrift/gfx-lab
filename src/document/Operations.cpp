@@ -99,8 +99,10 @@ void synchronizeOperationSignalMetadata(Operation& operation) {
     }
   } else if (const auto* remap = std::get_if<RemapOperation>(&operation.data)) {
     if (!operation.outputs.empty()) {
+      operation.outputs.front().name = remap->outputSemantic == SignalSemantic::MaskCoverage
+        ? "Mask coverage" : "Remapped value";
       SignalMetadata& metadata = operation.outputs.front().metadata;
-      metadata = metadataFor(SignalSemantic::Generic);
+      metadata = metadataFor(remap->outputSemantic);
       metadata.encoding = SignalEncoding::Linear;
       metadata.units = "unitless";
       metadata.hasKnownRange = remap->clamp;
@@ -162,9 +164,14 @@ Operation makeLuminanceOperation(const OperationId id, std::string name, const S
     {{"value", SignalShape::Scalar, SignalSemantic::Luminance, "Luminance"}});
 }
 
-Operation makeRemapOperation(const OperationId id, std::string name, const SignalRef input) {
-  return operation(id, std::move(name), RemapOperation{input},
-    {{"value", SignalShape::Scalar, SignalSemantic::Generic, "Remapped value"}});
+Operation makeRemapOperation(const OperationId id, std::string name, const SignalRef input,
+    const SignalSemantic outputSemantic) {
+  RemapOperation remap;
+  remap.input = input;
+  remap.outputSemantic = outputSemantic;
+  return operation(id, std::move(name), remap,
+    {{"value", SignalShape::Scalar, outputSemantic, outputSemantic == SignalSemantic::MaskCoverage
+      ? "Mask coverage" : "Remapped value"}});
 }
 
 Operation makeEdgeOperation(const OperationId id, std::string name, const SignalRef input) {

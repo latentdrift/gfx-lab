@@ -331,6 +331,13 @@ bool drawOperation(document::Document& document, document::Operation& operation,
     ImGui::TextWrapped("Converts linear RGB to one brightness value per pixel.");
   } else if (auto* remap = std::get_if<document::RemapOperation>(&operation.data)) {
     changed |= signalPicker("Input", document, operation.id, remap->input);
+    int outputMeaning = remap->outputSemantic == document::SignalSemantic::MaskCoverage ? 1 : 0;
+    constexpr const char* outputMeanings[] = {"Generic scalar", "Mask coverage"};
+    if (ImGui::Combo("Output meaning", &outputMeaning, outputMeanings, 2)) {
+      remap->outputSemantic = outputMeaning == 1 ? document::SignalSemantic::MaskCoverage
+        : document::SignalSemantic::Generic;
+      changed = true;
+    }
     changed |= ImGui::DragFloat2("Input range", &remap->inputLow, 0.005f, -100.0f, 100.0f);
     changed |= ImGui::DragFloat2("Output range", &remap->outputLow, 0.005f, -16.0f, 16.0f);
     changed |= ImGui::Checkbox("Clamp before output range", &remap->clamp);

@@ -74,6 +74,22 @@ document::SignalRef* inputSignal(document::Operation& operation, const InputSock
   return result;
 }
 
+document::GraphNodePosition* graphPosition(document::Document& document,
+    const document::OperationId operation) {
+  const auto found = std::find_if(document.graphLayout.operations.begin(),
+    document.graphLayout.operations.end(), [operation](const document::GraphNodePosition& position) {
+      return position.operation == operation;
+    });
+  return found == document.graphLayout.operations.end() ? nullptr : &*found;
+}
+
+void setGraphPosition(document::Document& document, const document::OperationId operation,
+    const glm::vec2 position) {
+  if (document::GraphNodePosition* existing = graphPosition(document, operation))
+    existing->position = position;
+  else document.graphLayout.operations.push_back({operation, position});
+}
+
 std::string duplicateOperation(document::Document& document,
     const document::OperationId sourceId, const document::OperationId duplicateId,
     const std::size_t requestedIndex) {
@@ -81,6 +97,9 @@ std::string duplicateOperation(document::Document& document,
   if (source == nullptr) return "The source operation no longer exists.";
   if (!duplicateId || document::findOperation(document, duplicateId) != nullptr)
     return "The duplicate operation ID is invalid or already exists.";
+  const document::GraphNodePosition* sourceGraphPosition = graphPosition(document, sourceId);
+  const std::optional<glm::vec2> duplicatePosition = sourceGraphPosition == nullptr
+    ? std::nullopt : std::optional{sourceGraphPosition->position + glm::vec2(0.0f, 220.0f)};
   document::Operation duplicate = *source;
   duplicate.id = duplicateId;
   duplicate.name += " copy";
@@ -138,6 +157,7 @@ std::string duplicateOperation(document::Document& document,
   }
   document.nextOperationIdentity = std::max(document.nextOperationIdentity,
     duplicateId.value + 1);
+  if (duplicatePosition.has_value()) setGraphPosition(document, duplicateId, *duplicatePosition);
   return {};
 }
 
@@ -184,13 +204,13 @@ std::string mutate(document::Document& document, const Command& command) {
     } else if constexpr (std::is_same_v<Type, DuplicateOperation>) {
       if (const std::string error = duplicateOperation(document, data.source, data.duplicate,
           data.index); !error.empty()) return error;
-    } else if constexpr (std::is_same_v<Type, DuplicateAndBlend>) {
+    } else if constexpr (std::is_same_v<Type, DuplicateAndCompare>) {
       const document::Operation* source = document::findOperation(document, data.source);
       if (source == nullptr) return "The source operation no longer exists.";
       const document::SignalRef sourceOutput = document::primaryOutput(*source);
       const document::SignalDescriptor* descriptor = document::findSignal(document, sourceOutput.id);
       if (descriptor == nullptr || !document::isColor(*descriptor))
-        return "Duplicate + Blend requires a Color output.";
+        return "Duplicate + Compare requires a Color output.";
       const std::string outputKey = descriptor->key;
       if (!data.composite || data.composite == data.duplicate ||
           document::findOperation(document, data.composite) != nullptr)
@@ -201,14 +221,21 @@ std::string mutate(document::Document& document, const Command& command) {
         std::distance(document.operations.begin(), sourcePosition)) + 1;
       if (const std::string error = duplicateOperation(document, data.source, data.duplicate,
           duplicateIndex); !error.empty()) return error;
-      document::Operation composite = document::makeCompositeOperation(data.composite, "Composite",
+      document::Operation composite = document::makeCompositeOperation(data.composite, "Compare",
         sourceOutput, document::SignalRef{document::operationSignal(data.duplicate, outputKey), 0});
-      std::get<document::CompositeOperation>(composite.data).arithmetic.operation = data.operation;
+      std::get<document::CompositeOperation>(composite.data).arithmetic.operation = data.relationship;
       document.presentation.input = document::primaryOutput(composite);
       document.operations.insert(document.operations.begin() + static_cast<std::ptrdiff_t>(duplicateIndex + 1),
         std::move(composite));
       document.nextOperationIdentity = std::max(document.nextOperationIdentity,
         data.composite.value + 1);
+      if (const document::GraphNodePosition* sourceLayout = graphPosition(document, data.source)) {
+        const glm::vec2 sourceLocation = sourceLayout->position;
+        setGraphPosition(document, data.duplicate, sourceLocation + glm::vec2(0.0f, 220.0f));
+        setGraphPosition(document, data.composite, sourceLocation + glm::vec2(300.0f, 110.0f));
+        document.graphLayout.outputPosition = sourceLocation + glm::vec2(580.0f, 110.0f);
+        document.graphLayout.outputPositionAuthored = true;
+      }
     } else if constexpr (std::is_same_v<Type, MoveOperation>) {
       const auto found = std::find_if(document.operations.begin(), document.operations.end(),
         [&data](const document::Operation& operation) { return operation.id == data.operation; });

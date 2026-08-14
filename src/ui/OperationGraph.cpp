@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -315,6 +316,11 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
       const document::OperationId id = document::nextOperationId(document);
       add(document::makeRemapOperation(id, "Remap", selected), true);
     }
+    if (ImGui::MenuItem("Remap to Mask")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeRemapOperation(id, "Mask Remap", selected,
+        document::SignalSemantic::MaskCoverage), true);
+    }
     ImGui::EndDisabled();
     ImGui::BeginDisabled(!selectedImage || selectedDescriptor->shape == document::SignalShape::Spectrum16);
     if (ImGui::MenuItem("Edge")) {
@@ -380,18 +386,31 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
       editorState.selection = {editor::SelectionKind::Operation, id};
   }
   ImGui::SameLine();
-  if (ImGui::Button("Duplicate + Blend")) ImGui::OpenPopup("duplicate-blend-mode");
-  if (ImGui::BeginPopup("duplicate-blend-mode")) {
-    ImGui::TextDisabled("BLEND MODE");
+  const document::OperationId compareSource = selectedOperation == nullptr
+    ? document::OperationId{} : selectedOperation->id;
+  const auto duplicateAndCompare = [&](const RelationOperator relationship) {
+    const document::OperationId duplicate = document::nextOperationId(document);
+    const document::OperationId comparison{duplicate.value + 1};
+    if (execute(editor::DuplicateAndCompare{compareSource, duplicate, comparison,
+        relationship})) {
+      editorState.selection = {editor::SelectionKind::Operation, duplicate};
+      editorState.viewer.viewed = document.presentation.input;
+      const document::Operation* source = document::findOperation(document, compareSource);
+      if (source != nullptr) editorState.viewer.comparison = document::primaryOutput(*source);
+      return true;
+    }
+    return false;
+  };
+  if (ImGui::Button("Duplicate + Compare"))
+    static_cast<void>(duplicateAndCompare(RelationOperator::AbsoluteDifference));
+  ImGui::SameLine(0.0f, 2.0f);
+  if (ImGui::SmallButton("v##compare-mode")) ImGui::OpenPopup("duplicate-compare-mode");
+  if (ImGui::BeginPopup("duplicate-compare-mode")) {
+    ImGui::TextDisabled("RELATIONSHIP");
     for (int index = 0; index <= static_cast<int>(RelationOperator::Normal); ++index) {
-      const RelationOperator operation = static_cast<RelationOperator>(index);
-      if (!ImGui::MenuItem(relationOperatorLabel(operation))) continue;
-      const document::OperationId duplicate = document::nextOperationId(document);
-      const document::OperationId composite{duplicate.value + 1};
-      if (execute(editor::DuplicateAndBlend{selectedOperation->id, duplicate, composite, operation})) {
-        editorState.selection = {editor::SelectionKind::Operation, duplicate};
-        editorState.viewer.viewed = document.presentation.input;
-      }
+      const RelationOperator relationship = static_cast<RelationOperator>(index);
+      if (ImGui::MenuItem(relationOperatorLabel(relationship)))
+        static_cast<void>(duplicateAndCompare(relationship));
     }
     ImGui::EndPopup();
   }
@@ -436,6 +455,9 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
   std::unordered_map<int, OutputPort> outputPins;
   std::unordered_map<int, document::OperationId> operationNodes;
   std::unordered_map<int, LinkTarget> links;
+  std::optional<editor::Command> deferredSignalCommand;
+  std::optional<editor::ObjectSelection> deferredSelection;
+  document::SignalRef deferredViewedSignal;
   ImNodes::GetIO().LinkDetachWithModifierClick.Modifier = &ImGui::GetIO().KeyCtrl;
   ImNodes::BeginNodeEditor();
   placeGraph(document, arrange);
@@ -474,6 +496,7 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
       outputPins[pin] = {{output.id, 0}, output, pin};
       ImNodes::PushColorStyle(ImNodesCol_Pin, signalColor(output));
       ImNodes::BeginOutputAttribute(pin);
+      ImGui::PushID(pin);
       const bool viewed = editorState.viewer.viewed.id == output.id;
       if (viewed) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.9f, 1.0f, 1.0f));
       if (ImGui::Selectable(output.name.c_str(), viewed, 0, ImVec2(120.0f, 0.0f))) {
@@ -482,7 +505,66 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
         else editorState.viewer.viewed = signal;
       }
       signalTooltip(output);
+      if (ImGui::BeginPopupContextItem("signal-actions")) {
+        const document::SignalRef signal{output.id, 0};
+        ImGui::TextDisabled("%s", document::signalDescriptorSummary(output).c_str());
+        if (ImGui::MenuItem("View Signal")) deferredViewedSignal = signal;
+        ImGui::BeginDisabled(output.metadata.domain == document::SignalDomain::Document);
+        if (ImGui::MenuItem("Set as Final Output")) {
+          deferredSignalCommand = editor::SetFinalSignal{signal};
+          deferredViewedSignal = signal;
+          deferredSelection = editor::ObjectSelection{editor::SelectionKind::Presentation, {}};
+        }
+        ImGui::EndDisabled();
+        const bool continuesFinal = document.presentation.input.id == output.id;
+        const auto insertionPoint = std::find_if(document.operations.begin(), document.operations.end(),
+          [&](const document::Operation& candidate) { return candidate.id == operation.id; });
+        const std::size_t insertionIndex = insertionPoint == document.operations.end()
+          ? static_cast<std::size_t>(-1) : static_cast<std::size_t>(
+              std::distance(document.operations.begin(), insertionPoint)) + 1;
+        const auto deferOperation = [&](document::Operation inserted) {
+          const document::OperationId insertedId = inserted.id;
+          deferredViewedSignal = document::primaryOutput(inserted);
+          deferredSelection = editor::ObjectSelection{editor::SelectionKind::Operation, insertedId};
+          deferredSignalCommand = editor::AddOperation{std::move(inserted), insertionIndex,
+            continuesFinal};
+        };
+        ImGui::Separator();
+        ImGui::TextDisabled("INSERT FROM THIS SIGNAL");
+        ImGui::BeginDisabled(!document::isColor(output));
+        if (ImGui::MenuItem("Extract Luminance")) {
+          const document::OperationId id = document::nextOperationId(document);
+          deferOperation(document::makeLuminanceOperation(id, "Luminance", signal));
+        }
+        ImGui::EndDisabled();
+        const bool scalar = document::isScreenScalar(output);
+        ImGui::BeginDisabled(!scalar);
+        if (ImGui::MenuItem("Remap Scalar")) {
+          const document::OperationId id = document::nextOperationId(document);
+          deferOperation(document::makeRemapOperation(id, "Remap", signal));
+        }
+        if (ImGui::MenuItem("Remap to Mask")) {
+          const document::OperationId id = document::nextOperationId(document);
+          deferOperation(document::makeRemapOperation(id, "Mask Remap", signal,
+            document::SignalSemantic::MaskCoverage));
+        }
+        if (ImGui::MenuItem("Threshold to Mask")) {
+          const document::OperationId id = document::nextOperationId(document);
+          deferOperation(document::makeThresholdOperation(id, "Threshold Mask", signal));
+        }
+        ImGui::EndDisabled();
+        const bool edgeCompatible = document::isScreenImage(output) &&
+          output.shape != document::SignalShape::Spectrum16;
+        ImGui::BeginDisabled(!edgeCompatible);
+        if (ImGui::MenuItem("Find Edges")) {
+          const document::OperationId id = document::nextOperationId(document);
+          deferOperation(document::makeEdgeOperation(id, "Edge", signal));
+        }
+        ImGui::EndDisabled();
+        ImGui::EndPopup();
+      }
       if (viewed) ImGui::PopStyleColor();
+      ImGui::PopID();
       ImNodes::EndOutputAttribute();
       ImNodes::PopColorStyle();
     }
@@ -586,6 +668,13 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
     if (selected == outputNodeId) editorState.selection = {editor::SelectionKind::Presentation, {}};
     else if (const auto found = operationNodes.find(selected); found != operationNodes.end())
       editorState.selection = {editor::SelectionKind::Operation, found->second};
+  }
+
+  if (deferredSignalCommand.has_value() && execute(*deferredSignalCommand)) {
+    if (deferredSelection.has_value()) editorState.selection = *deferredSelection;
+    if (deferredViewedSignal) editorState.viewer.viewed = deferredViewedSignal;
+  } else if (deferredViewedSignal) {
+    editorState.viewer.viewed = deferredViewedSignal;
   }
 
   ImGui::End();

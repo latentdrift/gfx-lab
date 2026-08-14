@@ -149,7 +149,12 @@ EvaluationPlan compileDocument(const document::Document& document) {
       if (input != nullptr && !document::isScreenScalar(*input))
         result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
           "Remap requires a Scalar image, Depth, or Field input."});
-      else if (input != nullptr && (!input->metadata.units.empty() ||
+      if (remap->outputSemantic != document::SignalSemantic::Generic &&
+          remap->outputSemantic != document::SignalSemantic::MaskCoverage)
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+          "Remap output meaning must be Generic Scalar or Mask coverage."});
+      else if (input != nullptr && remap->outputSemantic == document::SignalSemantic::Generic &&
+          (!input->metadata.units.empty() ||
           input->metadata.semantic == document::SignalSemantic::SignedDistance))
         result.diagnostics.push_back({operation.id, DiagnosticSeverity::Warning,
           "Remap intentionally produces a unitless Scalar and does not preserve the input semantic."});

@@ -255,6 +255,7 @@ Json operation(const Operation& value) {
       result["input_range"] = {data.inputLow, data.inputHigh};
       result["output_range"] = {data.outputLow, data.outputHigh};
       result["clamp"] = data.clamp;
+      result["output_semantic"] = static_cast<int>(data.outputSemantic);
     } else if constexpr (std::is_same_v<Type, EdgeOperation>) {
       result["type"] = "edge"; result["input"] = signal(data.input); result["strength"] = data.strength;
     } else if constexpr (std::is_same_v<Type, BlurOperation>) {
@@ -357,7 +358,9 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
   } else if (type == "luminance") {
     result = makeLuminanceOperation(id, name, signal(source.at("input")));
   } else if (type == "remap") {
-    result = makeRemapOperation(id, name, signal(source.at("input")));
+    result = makeRemapOperation(id, name, signal(source.at("input")),
+      static_cast<SignalSemantic>(source.value("output_semantic",
+        static_cast<int>(SignalSemantic::Generic))));
     auto& data = std::get<RemapOperation>(result.data);
     if (source.contains("input_range")) {
       const glm::vec4 range = vector(source.at("input_range"), 2);
