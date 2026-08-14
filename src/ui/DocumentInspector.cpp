@@ -266,7 +266,8 @@ bool drawOperation(document::Document& document, document::Operation& operation,
   } else if (auto* composite = std::get_if<document::CompositeOperation>(&operation.data)) {
     ImGui::SeparatorText("INPUTS");
     changed |= signalPicker("Source A", document, editorState, operation.id, composite->a);
-    changed |= signalPicker("Source B", document, editorState, operation.id, composite->b);
+    if (composite->feedback.has_value()) ImGui::TextDisabled("Source B  Previous frame history");
+    else changed |= signalPicker("Source B", document, editorState, operation.id, composite->b);
     ImGui::SeparatorText("RELATIONSHIP");
     int blend = static_cast<int>(composite->arithmetic.operation);
     if (ImGui::BeginCombo("Mode", relationOperatorLabel(composite->arithmetic.operation))) {
@@ -281,6 +282,40 @@ bool drawOperation(document::Document& document, document::Operation& operation,
     changed |= ImGui::SliderFloat("Opacity", &composite->arithmetic.opacity, 0.0f, 1.0f);
     changed |= ImGui::DragFloat("Gain", &composite->arithmetic.gain, 0.01f, 0.0f, 16.0f);
     changed |= ImGui::DragFloat("Bias", &composite->arithmetic.bias, 0.01f, -1.0f, 1.0f);
+    if (ImGui::CollapsingHeader("Interpretation and numeric behavior")) {
+      constexpr const char* interpretations[] = {"Raw RGB", "L cone", "M cone", "S cone",
+        "Cone luminance", "Rod", "Red-green opponent", "Blue-yellow opponent",
+        "Spectral human", "Spectral alternate", "Spectral rod"};
+      int interpretationA = static_cast<int>(composite->interpretationA);
+      int interpretationB = static_cast<int>(composite->interpretationB);
+      if (ImGui::Combo("Interpret A", &interpretationA, interpretations, 11)) {
+        composite->interpretationA = static_cast<CompositeInterpretation>(interpretationA);
+        changed = true;
+      }
+      if (ImGui::Combo("Interpret B", &interpretationB, interpretations, 11)) {
+        composite->interpretationB = static_cast<CompositeInterpretation>(interpretationB);
+        changed = true;
+      }
+      changed |= ImGui::DragFloat("Observer exposure", &composite->observer.exposureStops,
+        0.05f, -12.0f, 12.0f, "%+.2f stops");
+      changed |= ImGui::DragFloat("Rod sensitivity", &composite->observer.rodSensitivity,
+        0.05f, 0.0f, 32.0f);
+      changed |= ImGui::DragFloat("Opponent gain", &composite->observer.opponentGain,
+        0.05f, 0.0f, 32.0f);
+      changed |= ImGui::SliderInt("Bit depth", &composite->arithmetic.bitDepth, 1, 16);
+      int colorSpace = static_cast<int>(composite->arithmetic.colorSpace);
+      constexpr const char* colorSpaces[] = {"Encoded RGB", "Linear light"};
+      if (ImGui::Combo("Arithmetic space", &colorSpace, colorSpaces, 2)) {
+        composite->arithmetic.colorSpace = static_cast<CompositeColorSpace>(colorSpace);
+        changed = true;
+      }
+      int range = static_cast<int>(composite->arithmetic.range);
+      constexpr const char* ranges[] = {"Clamp", "Preserve", "Wrap"};
+      if (ImGui::Combo("Output range", &range, ranges, 3)) {
+        composite->arithmetic.range = static_cast<CompositeRange>(range);
+        changed = true;
+      }
+    }
     ImGui::SeparatorText("MASK");
     changed |= signalPicker("Mask input", document, editorState, operation.id, composite->mask,
       document::SignalShape::Scalar);
@@ -289,11 +324,39 @@ bool drawOperation(document::Document& document, document::Operation& operation,
       if (ImGui::Button("Clear")) { composite->mask = {}; changed = true; }
       changed |= ImGui::Checkbox("Invert mask", &composite->invertMask);
     }
+    ImGui::SeparatorText("FRAME HISTORY");
+    bool feedbackEnabled = composite->feedback.has_value();
+    if (ImGui::Checkbox("Use previous frame", &feedbackEnabled)) {
+      if (feedbackEnabled) composite->feedback = document::FeedbackSettings{};
+      else composite->feedback.reset();
+      changed = true;
+    }
+    ImGui::BeginDisabled(!composite->feedback.has_value());
+    if (composite->feedback.has_value()) {
+      changed |= ImGui::SliderFloat("History decay", &composite->feedback->decay,
+        0.0f, 1.0f, "%.3f");
+      changed |= ImGui::DragFloat2("History UV offset", &composite->feedback->uvOffset.x,
+        1.0f / 512.0f, -2.0f, 2.0f, "%.4f");
+      changed |= ImGui::DragFloat2("History UV scale", &composite->feedback->uvScale.x,
+        0.001f, -4.0f, 4.0f, "%.3f");
+    } else {
+      float disabled = 0.0f;
+      ImGui::SliderFloat("History decay", &disabled, 0.0f, 1.0f);
+    }
+    ImGui::EndDisabled();
   } else if (auto* interpret = std::get_if<document::InterpretOperation>(&operation.data)) {
     ImGui::SeparatorText("INPUT");
     changed |= signalPicker("Spectrum", document, editorState, operation.id, interpret->spectrum,
       document::SignalShape::Spectrum16);
     ImGui::SeparatorText("INTERPRETATION");
+    constexpr const char* observers[] = {"Raw RGB", "L cone", "M cone", "S cone",
+      "Cone luminance", "Rod", "Red-green opponent", "Blue-yellow opponent",
+      "Spectral human", "Spectral alternate", "Spectral rod"};
+    int observer = static_cast<int>(interpret->observer);
+    if (ImGui::Combo("Observer", &observer, observers, 11)) {
+      interpret->observer = static_cast<CompositeInterpretation>(observer);
+      changed = true;
+    }
     changed |= ImGui::DragFloat("Exposure", &interpret->exposureStops, 0.05f, -12.0f, 12.0f);
     changed |= ImGui::DragFloat("Gain", &interpret->gain, 0.01f, 0.0f, 16.0f);
     changed |= ImGui::DragFloat("Bias", &interpret->bias, 0.01f, -1.0f, 1.0f);
@@ -397,7 +460,25 @@ bool drawOperation(document::Document& document, document::Operation& operation,
     }
   } else if (auto* constant = std::get_if<document::ConstantOperation>(&operation.data)) {
     ImGui::SeparatorText("VALUE");
-    changed |= ImGui::ColorEdit4("Value", &constant->value.x, ImGuiColorEditFlags_Float);
+    int preset = constant->semantic == document::SignalSemantic::Color ? 0
+      : constant->shape == document::SignalShape::Scalar ? 1
+      : constant->shape == document::SignalShape::Vector2 ? 2
+      : constant->shape == document::SignalShape::Vector3 ? 3 : 4;
+    constexpr const char* presets[] = {"Color", "Scalar", "Vector2", "Vector3", "Vector4"};
+    if (ImGui::Combo("Output", &preset, presets, 5)) {
+      constant->shape = preset == 1 ? document::SignalShape::Scalar
+        : preset == 2 ? document::SignalShape::Vector2
+        : preset == 3 ? document::SignalShape::Vector3 : document::SignalShape::Vector4;
+      constant->semantic = preset == 0 ? document::SignalSemantic::Color
+        : document::SignalSemantic::Generic;
+      changed = true;
+    }
+    if (preset == 0) changed |= ImGui::ColorEdit4("Value", &constant->value.x,
+      ImGuiColorEditFlags_Float);
+    else if (preset == 1) changed |= ImGui::DragFloat("Value", &constant->value.x, 0.01f);
+    else if (preset == 2) changed |= ImGui::DragFloat2("Value", &constant->value.x, 0.01f);
+    else if (preset == 3) changed |= ImGui::DragFloat3("Value", &constant->value.x, 0.01f);
+    else changed |= ImGui::DragFloat4("Value", &constant->value.x, 0.01f);
   } else if (auto* luminance = std::get_if<document::LuminanceOperation>(&operation.data)) {
     ImGui::SeparatorText("INPUT");
     changed |= signalPicker("Input", document, editorState, operation.id, luminance->input,

@@ -90,6 +90,23 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
           typedFixture.graphLayout.outputPosition) > 0.0001f ||
         !evaluation::compileDocument(*typedRoundTrip.document).valid())
       fail("typed document round-trip validation failed");
+    document::Document draftGraph = document::makeDefaultDocument();
+    document::Operation draftLuminance = document::makeLuminanceOperation({2},
+      "Unconnected luminance", {});
+    const document::SignalRef draftOutput = document::primaryOutput(draftLuminance);
+    const editor::CommandResult addedDraft = editor::applyCommand(draftGraph,
+      editor::AddOperation{std::move(draftLuminance), static_cast<std::size_t>(-1), false});
+    const evaluation::EvaluationPlan draftPlan = evaluation::compileDocument(draftGraph);
+    const bool warnedAboutDraft = std::any_of(draftPlan.diagnostics.begin(),
+      draftPlan.diagnostics.end(), [](const evaluation::OperationDiagnostic& diagnostic) {
+        return diagnostic.severity == evaluation::DiagnosticSeverity::Warning &&
+          diagnostic.message.find("not connected") != std::string::npos;
+      });
+    const editor::CommandResult presentedDraft = editor::applyCommand(draftGraph,
+      editor::SetFinalSignal{draftOutput});
+    if (!addedDraft.applied || !draftPlan.valid() || !warnedAboutDraft ||
+        presentedDraft.applied || draftGraph.presentation.input == draftOutput)
+      fail("detached draft nodes were rejected or allowed to become an invalid final graph");
     document::Document sdfGraph = document::makeDefaultDocument();
     document::Operation sdfField = document::makeSdfFieldOperation({2}, "Animated volume");
     auto& sdfDefinition = std::get<document::SdfFieldOperation>(sdfField.data);

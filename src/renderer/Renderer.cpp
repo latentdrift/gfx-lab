@@ -1806,6 +1806,7 @@ public:
         step.mask = CompositeMask::None;
         step.invertMask = data->invertMask;
         if (data->feedback.has_value()) {
+          step.sourceB = CompositeSource::PreviousFrame;
           step.historyDecay = data->feedback->decay;
           step.historyUvOffset = data->feedback->uvOffset;
           step.historyUvScale = data->feedback->uvScale;

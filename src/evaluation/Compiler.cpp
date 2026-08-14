@@ -21,7 +21,7 @@ std::vector<document::SignalRef> operationInputs(const document::Operation& oper
     if constexpr (std::is_same_v<Type, document::InterpretOperation>) addInput(result, data.spectrum);
     if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
       addInput(result, data.a);
-      addInput(result, data.b);
+      if (!data.feedback.has_value()) addInput(result, data.b);
       addInput(result, data.mask);
     }
     if constexpr (std::is_same_v<Type, document::StereoOperation>) {
@@ -83,6 +83,19 @@ EvaluationPlan compileDocument(const document::Document& document) {
     result.diagnostics.push_back({{}, DiagnosticSeverity::Error,
       "The persistent operation allocator would reuse an existing identity."});
 
+  std::unordered_set<document::OperationId> requiredByPresentation;
+  std::vector<document::OperationId> pendingRequirements;
+  if (result.finalSignal) pendingRequirements.push_back(result.finalSignal.id.producer);
+  while (!pendingRequirements.empty()) {
+    const document::OperationId id = pendingRequirements.back();
+    pendingRequirements.pop_back();
+    if (!requiredByPresentation.insert(id).second) continue;
+    const document::Operation* operation = document::findOperation(document, id);
+    if (operation == nullptr) continue;
+    for (const document::SignalRef& input : operationInputs(*operation))
+      if (input && input.frameOffset == 0) pendingRequirements.push_back(input.id.producer);
+  }
+
   std::vector<EvaluationNode> authoredNodes;
   authoredNodes.reserve(document.operations.size());
   std::vector<std::vector<std::size_t>> dependents(document.operations.size());
@@ -122,9 +135,13 @@ EvaluationPlan compileDocument(const document::Document& document) {
       return found == descriptors.end() ? nullptr : found->second;
     };
     const auto requireInput = [&](const document::SignalRef signal, const char* label) {
-      if (!signal) result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+      if (!signal) result.diagnostics.push_back({operation.id,
+        requiredByPresentation.contains(operation.id) ? DiagnosticSeverity::Error
+          : DiagnosticSeverity::Warning,
         std::string(label) + " is not connected."});
     };
+    if (const auto* interpret = std::get_if<document::InterpretOperation>(&operation.data))
+      requireInput(interpret->spectrum, "Interpret input");
     if (const auto* render = std::get_if<document::RenderOperation>(&operation.data);
         render != nullptr && render->field) {
       const auto* field = descriptorOf(render->field);
@@ -136,7 +153,7 @@ EvaluationPlan compileDocument(const document::Document& document) {
     }
     if (const auto* composite = std::get_if<document::CompositeOperation>(&operation.data)) {
       requireInput(composite->a, "Composite Input A");
-      requireInput(composite->b, "Composite Input B");
+      if (!composite->feedback.has_value()) requireInput(composite->b, "Composite Input B");
       if (composite->mask) {
         const auto* mask = descriptorOf(composite->mask);
         if (mask != nullptr && !document::isScreenScalar(*mask))
@@ -146,6 +163,10 @@ EvaluationPlan compileDocument(const document::Document& document) {
           result.diagnostics.push_back({operation.id, DiagnosticSeverity::Warning,
             "Composite interprets this Scalar as 0..1 mask coverage."});
       }
+    }
+    if (const auto* stereo = std::get_if<document::StereoOperation>(&operation.data)) {
+      requireInput(stereo->left, "Stereo Left");
+      requireInput(stereo->right, "Stereo Right");
     }
     if (const auto* luminance = std::get_if<document::LuminanceOperation>(&operation.data)) {
       requireInput(luminance->input, "Luminance input");
@@ -219,6 +240,7 @@ EvaluationPlan compileDocument(const document::Document& document) {
           "Warp interprets this Vector2 as a signed direction packed into 0..1."});
     }
     if (const auto* measure = std::get_if<document::MeasureOperation>(&operation.data)) {
+      requireInput(measure->input, "Measure input");
       const auto descriptor = descriptors.find(measure->input.id);
       if (descriptor != descriptors.end() &&
           descriptor->second->metadata.domain == document::SignalDomain::Document)

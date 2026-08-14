@@ -117,7 +117,7 @@ std::vector<InputPort> inputsFor(const document::Operation& operation) {
       add(editor::InputSocket::Primary, "Spectrum", data.spectrum);
     else if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
       add(editor::InputSocket::A, "Input A", data.a);
-      add(editor::InputSocket::B, "Input B", data.b);
+      if (!data.feedback.has_value()) add(editor::InputSocket::B, "Input B", data.b);
       add(editor::InputSocket::Mask, "Mask", data.mask);
     } else if constexpr (std::is_same_v<Type, document::StereoOperation>) {
       add(editor::InputSocket::Left, "Left", data.left);
@@ -283,6 +283,12 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
   if (ImGui::BeginPopup("add-operation-graph")) {
     ImGui::TextDisabled("ADD OPERATION");
     const document::SignalRef selected = selectedSignal(document, editorState);
+    const document::SignalDescriptor* selectedDescriptor = document::findSignal(document, selected.id);
+    const bool selectedColor = selectedDescriptor != nullptr && document::isColor(*selectedDescriptor);
+    const bool selectedScalar = selectedDescriptor != nullptr && document::isScreenScalar(*selectedDescriptor);
+    const bool selectedImage = selectedDescriptor != nullptr && document::isScreenImage(*selectedDescriptor);
+    const bool selectedFilterable = selectedImage &&
+      selectedDescriptor->shape != document::SignalShape::Spectrum16;
     const auto add = [&](document::Operation operation, const bool final) {
       const document::OperationId id = operation.id;
       const bool followingFinal = editorState.viewer.viewed == document.presentation.input;
@@ -321,69 +327,84 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
     }
     if (ImGui::MenuItem("Composite")) {
       const document::OperationId id = document::nextOperationId(document);
-      add(document::makeCompositeOperation(id, "Composite", document.presentation.input, selected), true);
+      const document::SignalDescriptor* finalDescriptor = document::findSignal(document,
+        document.presentation.input.id);
+      const document::SignalRef a = finalDescriptor != nullptr &&
+        document::isScreenImage(*finalDescriptor) ? document.presentation.input : document::SignalRef{};
+      const document::SignalRef b = selectedImage ? selected : document::SignalRef{};
+      add(document::makeCompositeOperation(id, "Composite", a, b), a && b);
     }
     if (ImGui::MenuItem("Interpret")) {
       const document::OperationId id = document::nextOperationId(document);
-      add(document::makeInterpretOperation(id, "Interpret", spectrumFromSelection(document, editorState)), true);
+      const document::SignalRef spectrum = spectrumFromSelection(document, editorState);
+      add(document::makeInterpretOperation(id, "Interpret", spectrum), static_cast<bool>(spectrum));
     }
     if (ImGui::MenuItem("Measure")) {
       const document::OperationId id = document::nextOperationId(document);
-      add(document::makeMeasureOperation(id, "Measure", selected), false);
+      add(document::makeMeasureOperation(id, "Measure", selectedImage ? selected : document::SignalRef{}), false);
     }
-    const document::SignalDescriptor* selectedDescriptor = document::findSignal(document, selected.id);
-    const bool selectedColor = selectedDescriptor != nullptr && document::isColor(*selectedDescriptor);
-    const bool selectedScalar = selectedDescriptor != nullptr && document::isScreenScalar(*selectedDescriptor);
-    const bool selectedImage = selectedDescriptor != nullptr && document::isScreenImage(*selectedDescriptor);
+    if (ImGui::MenuItem("Stereo")) {
+      const document::OperationId id = document::nextOperationId(document);
+      document::SignalRef renderColor;
+      if (selectedColor) {
+        const document::Operation* producer = document::findOperation(document,
+          selected.id.producer);
+        if (producer != nullptr && std::holds_alternative<document::RenderOperation>(producer->data))
+          renderColor = selected;
+      }
+      add(document::makeStereoOperation(id, "Stereo", renderColor, renderColor),
+        static_cast<bool>(renderColor));
+    }
+    if (ImGui::MenuItem("Constant")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeConstantOperation(id, "Constant", glm::vec4(1.0f)), false);
+    }
     ImGui::Separator();
     ImGui::TextDisabled("WORKING SIGNALS");
-    ImGui::BeginDisabled(!selectedColor);
     if (ImGui::MenuItem("Luminance")) {
       const document::OperationId id = document::nextOperationId(document);
-      add(document::makeLuminanceOperation(id, "Luminance", selected), true);
+      add(document::makeLuminanceOperation(id, "Luminance",
+        selectedColor ? selected : document::SignalRef{}), selectedColor);
     }
-    ImGui::EndDisabled();
-    ImGui::BeginDisabled(!selectedScalar);
     if (ImGui::MenuItem("Remap")) {
       const document::OperationId id = document::nextOperationId(document);
-      add(document::makeRemapOperation(id, "Remap", selected), true);
+      add(document::makeRemapOperation(id, "Remap",
+        selectedScalar ? selected : document::SignalRef{}), selectedScalar);
     }
     if (ImGui::MenuItem("Remap to Mask")) {
       const document::OperationId id = document::nextOperationId(document);
-      add(document::makeRemapOperation(id, "Mask Remap", selected,
-        document::SignalSemantic::MaskCoverage), true);
+      add(document::makeRemapOperation(id, "Mask Remap",
+        selectedScalar ? selected : document::SignalRef{},
+        document::SignalSemantic::MaskCoverage), selectedScalar);
     }
-    ImGui::EndDisabled();
-    ImGui::BeginDisabled(!selectedImage || selectedDescriptor->shape == document::SignalShape::Spectrum16);
     if (ImGui::MenuItem("Edge")) {
       const document::OperationId id = document::nextOperationId(document);
-      add(document::makeEdgeOperation(id, "Edge", selected), true);
+      add(document::makeEdgeOperation(id, "Edge",
+        selectedFilterable ? selected : document::SignalRef{}), selectedFilterable);
     }
-    ImGui::EndDisabled();
-    const bool blurCompatible = selectedImage && selectedDescriptor->shape != document::SignalShape::Spectrum16;
-    ImGui::BeginDisabled(!blurCompatible);
     if (ImGui::MenuItem("Blur")) {
       const document::OperationId id = document::nextOperationId(document);
-      const document::SignalSemantic safeSemantic = selectedDescriptor->metadata.semantic ==
+      const document::SignalSemantic safeSemantic = selectedFilterable && (selectedDescriptor->metadata.semantic ==
           document::SignalSemantic::Color || selectedDescriptor->metadata.semantic ==
           document::SignalSemantic::Luminance || selectedDescriptor->metadata.semantic ==
           document::SignalSemantic::MaskCoverage || selectedDescriptor->metadata.semantic ==
-          document::SignalSemantic::EdgeStrength
+          document::SignalSemantic::EdgeStrength)
         ? selectedDescriptor->metadata.semantic : document::SignalSemantic::Generic;
-      add(document::makeBlurOperation(id, "Blur", selected, selectedDescriptor->shape,
-        safeSemantic), true);
+      add(document::makeBlurOperation(id, "Blur",
+        selectedFilterable ? selected : document::SignalRef{},
+        selectedFilterable ? selectedDescriptor->shape : document::SignalShape::Vector4,
+        safeSemantic), selectedFilterable);
     }
-    ImGui::EndDisabled();
-    ImGui::BeginDisabled(!selectedScalar);
     if (ImGui::MenuItem("Threshold")) {
       const document::OperationId id = document::nextOperationId(document);
-      add(document::makeThresholdOperation(id, "Threshold", selected), true);
+      add(document::makeThresholdOperation(id, "Threshold",
+        selectedScalar ? selected : document::SignalRef{}), selectedScalar);
     }
     if (ImGui::MenuItem("Gradient Map")) {
       const document::OperationId id = document::nextOperationId(document);
-      add(document::makeGradientMapOperation(id, "Gradient Map", selected), true);
+      add(document::makeGradientMapOperation(id, "Gradient Map",
+        selectedScalar ? selected : document::SignalRef{}), selectedScalar);
     }
-    ImGui::EndDisabled();
     document::SignalRef warpImage;
     const document::SignalDescriptor* finalDescriptor = document::findSignal(document,
       document.presentation.input.id);
@@ -399,12 +420,11 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
     const bool vectorSelected = selectedDescriptor != nullptr &&
       selectedDescriptor->shape == document::SignalShape::Vector2 &&
       selectedDescriptor->metadata.domain == document::SignalDomain::Screen2D;
-    ImGui::BeginDisabled(!vectorSelected || !warpImage);
     if (ImGui::MenuItem("Warp")) {
       const document::OperationId id = document::nextOperationId(document);
-      add(document::makeWarpOperation(id, "Warp", warpImage, selected), true);
+      add(document::makeWarpOperation(id, "Warp", warpImage,
+        vectorSelected ? selected : document::SignalRef{}), warpImage && vectorSelected);
     }
-    ImGui::EndDisabled();
     ImGui::EndPopup();
   }
 

@@ -29,7 +29,9 @@ bool referencesOperation(const document::Operation& operation,
     if constexpr (std::is_same_v<Type, document::RenderOperation>) check(data.field);
     else if constexpr (std::is_same_v<Type, document::InterpretOperation>) check(data.spectrum);
     else if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
-      check(data.a); check(data.b); check(data.mask);
+      check(data.a);
+      if (!data.feedback.has_value()) check(data.b);
+      check(data.mask);
     } else if constexpr (std::is_same_v<Type, document::StereoOperation>) {
       check(data.left); check(data.right);
     } else if constexpr (std::is_same_v<Type, document::MeasureOperation>) check(data.input);
