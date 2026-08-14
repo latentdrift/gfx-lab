@@ -2,6 +2,7 @@
 
 #include "app/HardwareProfile.hpp"
 #include "app/RenderOperationState.hpp"
+#include "ui/AnimationControls.hpp"
 #include "ui/DisplayInspector.hpp"
 #include "ui/Inspector.hpp"
 #include "ui/TextureMappingEditor.hpp"
@@ -144,7 +145,8 @@ const document::SignalDescriptor* descriptor(const document::Document& document,
   return document::findSignal(document, signal.id);
 }
 
-void drawSignalDescriptor(const document::SignalDescriptor& signal) {
+void drawSignalDescriptor(const document::SignalDescriptor& signal,
+    editor::EditorState& editorState) {
   ImGui::PushID(signal.key.c_str());
   ImGui::TextUnformatted(signal.name.c_str());
   ImGui::TextDisabled("%s", document::signalDescriptorSummary(signal).c_str());
@@ -156,16 +158,35 @@ void drawSignalDescriptor(const document::SignalDescriptor& signal) {
   if (signal.metadata.hasKnownRange)
     ImGui::TextDisabled("Range: %.3g .. %.3g", signal.metadata.knownRange.x,
       signal.metadata.knownRange.y);
+  if (ImGui::SmallButton("View")) editorState.viewer.viewed = {signal.id, 0};
   ImGui::PopID();
 }
 
+std::string overrideValueText(const PropertyOverride& overrideValue) {
+  const AnimationPropertyInfo& info = animationPropertyInfo(overrideValue.property);
+  std::array<char, 128> text{};
+  if (info.components == 1) std::snprintf(text.data(), text.size(), "%.3g", overrideValue.value.x);
+  else if (info.components == 2) std::snprintf(text.data(), text.size(), "%.3g, %.3g",
+    overrideValue.value.x, overrideValue.value.y);
+  else if (info.components == 3) std::snprintf(text.data(), text.size(), "%.3g, %.3g, %.3g",
+    overrideValue.value.x, overrideValue.value.y, overrideValue.value.z);
+  else std::snprintf(text.data(), text.size(), "%.3g, %.3g, %.3g, %.3g",
+    overrideValue.value.x, overrideValue.value.y, overrideValue.value.z, overrideValue.value.w);
+  return text.data();
+}
+
 bool signalPicker(const char* label, document::Document& document,
-    const document::OperationId consumer, document::SignalRef& selected,
+    editor::EditorState& editorState, const document::OperationId consumer,
+    document::SignalRef& selected,
     const std::optional<document::SignalShape> requiredShape = std::nullopt,
     const std::optional<document::SignalSemantic> requiredSemantic = std::nullopt) {
   bool changed = false;
   const document::SignalDescriptor* current = descriptor(document, selected);
-  if (ImGui::BeginCombo(label, current != nullptr ? current->name.c_str() : "Select signal")) {
+  const document::Operation* currentProducer = current == nullptr ? nullptr
+    : document::findOperation(document, current->producer);
+  const std::string currentLabel = current == nullptr ? "Select signal"
+    : (currentProducer != nullptr ? currentProducer->name + " / " : std::string{}) + current->name;
+  if (ImGui::BeginCombo(label, currentLabel.c_str())) {
     for (const document::Operation& operation : document.operations) {
       if (operation.id == consumer) continue;
       for (const document::SignalDescriptor& output : operation.outputs) {
@@ -184,24 +205,26 @@ bool signalPicker(const char* label, document::Document& document,
     }
     ImGui::EndCombo();
   }
+  if (current != nullptr) {
+    ImGui::PushID(label);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("View")) editorState.viewer.viewed = selected;
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Go"))
+      editorState.selection = {editor::SelectionKind::Operation, current->producer};
+    ImGui::PopID();
+  }
   return changed;
 }
 
 bool drawOperation(document::Document& document, document::Operation& operation,
-    const SignalMeasurement* measurement) {
+    editor::EditorState& editorState, const SignalMeasurement* measurement) {
   bool changed = false;
-  ImGui::TextDisabled("%s", document::operationTypeLabel(operation));
-  std::array<char, 256> name{};
-  std::snprintf(name.data(), name.size(), "%s", operation.name.c_str());
-  if (ImGui::InputText("Name", name.data(), name.size())) {
-    operation.name = name.data();
-    changed = true;
-  }
   if (auto* composite = std::get_if<document::CompositeOperation>(&operation.data)) {
     ImGui::SeparatorText("INPUTS");
-    changed |= signalPicker("Source A", document, operation.id, composite->a);
-    changed |= signalPicker("Source B", document, operation.id, composite->b);
-    ImGui::SeparatorText("BLEND");
+    changed |= signalPicker("Source A", document, editorState, operation.id, composite->a);
+    changed |= signalPicker("Source B", document, editorState, operation.id, composite->b);
+    ImGui::SeparatorText("RELATIONSHIP");
     int blend = static_cast<int>(composite->arithmetic.operation);
     if (ImGui::BeginCombo("Mode", relationOperatorLabel(composite->arithmetic.operation))) {
       for (int index = 0; index <= static_cast<int>(RelationOperator::Normal); ++index) {
@@ -216,7 +239,7 @@ bool drawOperation(document::Document& document, document::Operation& operation,
     changed |= ImGui::DragFloat("Gain", &composite->arithmetic.gain, 0.01f, 0.0f, 16.0f);
     changed |= ImGui::DragFloat("Bias", &composite->arithmetic.bias, 0.01f, -1.0f, 1.0f);
     ImGui::SeparatorText("MASK");
-    changed |= signalPicker("Mask input", document, operation.id, composite->mask,
+    changed |= signalPicker("Mask input", document, editorState, operation.id, composite->mask,
       document::SignalShape::Scalar);
     if (composite->mask) {
       ImGui::SameLine();
@@ -224,16 +247,20 @@ bool drawOperation(document::Document& document, document::Operation& operation,
       changed |= ImGui::Checkbox("Invert mask", &composite->invertMask);
     }
   } else if (auto* interpret = std::get_if<document::InterpretOperation>(&operation.data)) {
-    changed |= signalPicker("Spectrum", document, operation.id, interpret->spectrum,
+    ImGui::SeparatorText("INPUT");
+    changed |= signalPicker("Spectrum", document, editorState, operation.id, interpret->spectrum,
       document::SignalShape::Spectrum16);
+    ImGui::SeparatorText("INTERPRETATION");
     changed |= ImGui::DragFloat("Exposure", &interpret->exposureStops, 0.05f, -12.0f, 12.0f);
     changed |= ImGui::DragFloat("Gain", &interpret->gain, 0.01f, 0.0f, 16.0f);
     changed |= ImGui::DragFloat("Bias", &interpret->bias, 0.01f, -1.0f, 1.0f);
   } else if (auto* stereo = std::get_if<document::StereoOperation>(&operation.data)) {
-    changed |= signalPicker("Left", document, operation.id, stereo->left,
+    ImGui::SeparatorText("INPUTS");
+    changed |= signalPicker("Left", document, editorState, operation.id, stereo->left,
       document::SignalShape::Vector4, document::SignalSemantic::Color);
-    changed |= signalPicker("Right", document, operation.id, stereo->right,
+    changed |= signalPicker("Right", document, editorState, operation.id, stereo->right,
       document::SignalShape::Vector4, document::SignalSemantic::Color);
+    ImGui::SeparatorText("ANALYSIS");
     int mode = static_cast<int>(stereo->mode);
     constexpr const char* modes[] = {"Anaglyph", "Signed disparity", "Absolute disparity",
       "Correspondence", "Monocular occlusion"};
@@ -242,7 +269,9 @@ bool drawOperation(document::Document& document, document::Operation& operation,
     changed |= ImGui::DragFloat("Occlusion tolerance", &stereo->occlusionTolerance,
       0.00005f, 0.00001f, 0.05f);
   } else if (auto* measure = std::get_if<document::MeasureOperation>(&operation.data)) {
-    changed |= signalPicker("Input", document, operation.id, measure->input);
+    ImGui::SeparatorText("INPUT");
+    changed |= signalPicker("Input", document, editorState, operation.id, measure->input);
+    ImGui::SeparatorText("MEASUREMENT");
     int metric = static_cast<int>(measure->metric);
     constexpr const char* metrics[] = {"Mean magnitude", "RMS", "Peak", "Coverage",
       "Mean red", "Mean green", "Mean blue"};
@@ -324,13 +353,21 @@ bool drawOperation(document::Document& document, document::Operation& operation,
       changed |= ImGui::DragFloat("Smoothing", &route->smoothingSeconds, 0.01f, 0.0f, 5.0f, "%.2f s");
     }
   } else if (auto* constant = std::get_if<document::ConstantOperation>(&operation.data)) {
+    ImGui::SeparatorText("VALUE");
     changed |= ImGui::ColorEdit4("Value", &constant->value.x, ImGuiColorEditFlags_Float);
   } else if (auto* luminance = std::get_if<document::LuminanceOperation>(&operation.data)) {
-    changed |= signalPicker("Input", document, operation.id, luminance->input,
+    ImGui::SeparatorText("INPUT");
+    changed |= signalPicker("Input", document, editorState, operation.id, luminance->input,
       std::nullopt, document::SignalSemantic::Color);
     ImGui::TextWrapped("Converts linear RGB to one brightness value per pixel.");
   } else if (auto* remap = std::get_if<document::RemapOperation>(&operation.data)) {
-    changed |= signalPicker("Input", document, operation.id, remap->input);
+    ImGui::SeparatorText("INPUT");
+    changed |= signalPicker("Input", document, editorState, operation.id, remap->input);
+    ImGui::SeparatorText("RANGE");
+    changed |= ImGui::DragFloat2("Input range", &remap->inputLow, 0.005f, -100.0f, 100.0f);
+    changed |= ImGui::DragFloat2("Output range", &remap->outputLow, 0.005f, -16.0f, 16.0f);
+    changed |= ImGui::Checkbox("Clamp before output range", &remap->clamp);
+    ImGui::SeparatorText("MEANING");
     int outputMeaning = remap->outputSemantic == document::SignalSemantic::MaskCoverage ? 1 : 0;
     constexpr const char* outputMeanings[] = {"Generic scalar", "Mask coverage"};
     if (ImGui::Combo("Output meaning", &outputMeaning, outputMeanings, 2)) {
@@ -338,32 +375,39 @@ bool drawOperation(document::Document& document, document::Operation& operation,
         : document::SignalSemantic::Generic;
       changed = true;
     }
-    changed |= ImGui::DragFloat2("Input range", &remap->inputLow, 0.005f, -100.0f, 100.0f);
-    changed |= ImGui::DragFloat2("Output range", &remap->outputLow, 0.005f, -16.0f, 16.0f);
-    changed |= ImGui::Checkbox("Clamp before output range", &remap->clamp);
   } else if (auto* edge = std::get_if<document::EdgeOperation>(&operation.data)) {
-    changed |= signalPicker("Input", document, operation.id, edge->input);
+    ImGui::SeparatorText("INPUT");
+    changed |= signalPicker("Input", document, editorState, operation.id, edge->input);
+    ImGui::SeparatorText("CONTROLS");
     changed |= ImGui::DragFloat("Strength", &edge->strength, 0.01f, 0.0f, 32.0f);
     ImGui::TextWrapped("Sobel magnitude from scalar change or multi-channel disagreement.");
   } else if (auto* blur = std::get_if<document::BlurOperation>(&operation.data)) {
-    changed |= signalPicker("Input", document, operation.id, blur->input,
+    ImGui::SeparatorText("INPUT");
+    changed |= signalPicker("Input", document, editorState, operation.id, blur->input,
       blur->outputShape);
+    ImGui::SeparatorText("CONTROLS");
     changed |= ImGui::SliderFloat("Radius", &blur->radiusPixels, 0.0f, 4.0f, "%.0f px");
   } else if (auto* threshold = std::get_if<document::ThresholdOperation>(&operation.data)) {
-    changed |= signalPicker("Input", document, operation.id, threshold->input,
+    ImGui::SeparatorText("INPUT");
+    changed |= signalPicker("Input", document, editorState, operation.id, threshold->input,
       document::SignalShape::Scalar);
+    ImGui::SeparatorText("CONTROLS");
     changed |= ImGui::SliderFloat("Threshold", &threshold->threshold, 0.0f, 1.0f);
     changed |= ImGui::SliderFloat("Softness", &threshold->softness, 0.0f, 0.5f);
   } else if (auto* gradient = std::get_if<document::GradientMapOperation>(&operation.data)) {
-    changed |= signalPicker("Input", document, operation.id, gradient->input,
+    ImGui::SeparatorText("INPUT");
+    changed |= signalPicker("Input", document, editorState, operation.id, gradient->input,
       document::SignalShape::Scalar);
+    ImGui::SeparatorText("COLORS");
     changed |= ImGui::ColorEdit4("Low color", &gradient->lowColor.x, ImGuiColorEditFlags_Float);
     changed |= ImGui::ColorEdit4("High color", &gradient->highColor.x, ImGuiColorEditFlags_Float);
   } else if (auto* warp = std::get_if<document::WarpOperation>(&operation.data)) {
-    changed |= signalPicker("Image", document, operation.id, warp->image,
+    ImGui::SeparatorText("INPUTS");
+    changed |= signalPicker("Image", document, editorState, operation.id, warp->image,
       document::SignalShape::Vector4, document::SignalSemantic::Color);
-    changed |= signalPicker("Displacement", document, operation.id, warp->displacement,
+    changed |= signalPicker("Displacement", document, editorState, operation.id, warp->displacement,
       document::SignalShape::Vector2);
+    ImGui::SeparatorText("CONTROLS");
     changed |= ImGui::DragFloat("Strength", &warp->strengthPixels, 0.1f, -512.0f, 512.0f, "%.1f px");
     ImGui::TextWrapped("Samples the image along the screen-space Vector2 direction.");
   }
@@ -381,6 +425,72 @@ void drawDocumentInspector(bool& open, document::Document& document,
   keepCurrentWindowVisible();
   document::Document edited = document;
   bool changed = false;
+  std::optional<AnimationProperty> resetOverride;
+  bool operationActionApplied = false;
+  if (editorState.selection.kind == editor::SelectionKind::Operation) {
+    document::Operation* selected = document::findOperation(edited, editorState.selection.operation);
+    const document::Operation* authored = document::findOperation(document,
+      editorState.selection.operation);
+    if (selected != nullptr && authored != nullptr) {
+      ImGui::TextDisabled("%s · ID %llu", document::operationTypeLabel(*selected),
+        static_cast<unsigned long long>(selected->id.value));
+      std::array<char, 256> name{};
+      std::snprintf(name.data(), name.size(), "%s", selected->name.c_str());
+      ImGui::SetNextItemWidth(-1.0f);
+      if (ImGui::InputText("##operation-name", name.data(), name.size())) {
+        selected->name = name.data();
+        changed = true;
+      }
+      const document::SignalRef primary = document::primaryOutput(*authored);
+      const document::SignalDescriptor* primaryDescriptor = document::findSignal(document, primary.id);
+      if (ImGui::Button("View Output")) editorState.viewer.viewed = primary;
+      ImGui::SameLine();
+      if (ImGui::Button("Duplicate")) {
+        const document::OperationId duplicate = document::nextOperationId(document);
+        if (history.execute(document, editor::DuplicateOperation{authored->id, duplicate,
+            static_cast<std::size_t>(-1)}).applied) {
+          editorState.selection = {editor::SelectionKind::Operation, duplicate};
+          operationActionApplied = true;
+        }
+      }
+      ImGui::SameLine();
+      ImGui::BeginDisabled(primaryDescriptor == nullptr || !document::isColor(*primaryDescriptor));
+      if (ImGui::Button("Compare")) {
+        const document::OperationId duplicate = document::nextOperationId(document);
+        const document::OperationId comparison{duplicate.value + 1};
+        if (history.execute(document, editor::DuplicateAndCompare{authored->id, duplicate,
+            comparison}).applied) {
+          editorState.selection = {editor::SelectionKind::Operation, duplicate};
+          editorState.viewer.viewed = document.presentation.input;
+          editorState.viewer.comparison = primary;
+          operationActionApplied = true;
+        }
+      }
+      ImGui::EndDisabled();
+      ImGui::SameLine();
+      if (ImGui::Button(selected->enabled ? "Bypass" : "Enable")) {
+        operationActionApplied = history.execute(document,
+          editor::SetOperationEnabled{authored->id, !authored->enabled}).applied;
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("...##operation-actions")) ImGui::OpenPopup("operation-actions");
+      if (ImGui::BeginPopup("operation-actions")) {
+        if (ImGui::MenuItem("Set Primary Output as Final")) {
+          operationActionApplied = history.execute(document, editor::SetFinalSignal{primary}).applied;
+          if (operationActionApplied) editorState.viewer.viewed = document.presentation.input;
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Delete Operation")) {
+          operationActionApplied = history.execute(document,
+            editor::RemoveOperation{authored->id}).applied;
+          if (operationActionApplied) editorState.selection = {};
+        }
+        ImGui::EndPopup();
+      }
+      ImGui::Separator();
+    }
+  }
+  if (operationActionApplied) { ImGui::End(); return; }
   if (editorState.selection.kind == editor::SelectionKind::Scene) {
     ImGui::TextDisabled("SCENE");
     ImGui::TextUnformatted("World, assets, and document camera");
@@ -400,10 +510,15 @@ void drawDocumentInspector(bool& open, document::Document& document,
       ? std::optional{editorState.selection.operation} : std::nullopt;
     const RenderPass before = renderView(edited, operation, timeSeconds);
     RenderPass view = before;
-    ImGui::TextDisabled("%s", operation.has_value() ? "RENDER" : "RENDER DEFAULTS");
-    ImGui::TextUnformatted(view.name.c_str());
+    if (!operation.has_value()) {
+      ImGui::TextDisabled("RENDER DEFAULTS");
+      ImGui::TextUnformatted("Shared source state for every Render operation");
+    }
     if (ImGui::CollapsingHeader("Essentials", ImGuiTreeNodeFlags_DefaultOpen)) {
-      if (operation.has_value()) {
+      if (!operation.has_value()) {
+        drawInspector(Category::Camera, view, edited.hardwareProfile, timeline,
+          edited.scene.importedModel.get(), edited.scene.testScene);
+      } else {
         auto* render = std::get_if<document::RenderOperation>(
           &document::findOperation(edited, *operation)->data);
         const document::ObjectId owner = document::operationObject(*operation);
@@ -420,40 +535,107 @@ void drawDocumentInspector(bool& open, document::Document& document,
             static_cast<void>(editor::applyCommand(edited, editor::SetKeyframe{
               {owner, property}, timeline.timeSeconds, glm::vec4(value)}));
         };
+
+        ImGui::TextDisabled("OBJECT VARIATION");
+        animationKeyControl(view, AnimationProperty::ModelTranslation, timeline,
+          ImGui::DragFloat3("Position", &view.perturbation.modelTranslation.x,
+            0.01f, -10.0f, 10.0f, "%.3f"));
+        animationKeyControl(view, AnimationProperty::ModelScale, timeline,
+          ImGui::DragFloat("Scale", &view.perturbation.modelScale, 0.01f, 0.01f, 8.0f, "%.3f"));
+        animationKeyControl(view, AnimationProperty::NormalInflation, timeline,
+          ImGui::DragFloat("Normal inflation", &view.perturbation.normalInflation,
+            0.005f, -2.0f, 2.0f, "%.3f"));
+
+        ImGui::Separator();
+        ImGui::TextDisabled("CAMERA VARIATION");
+        animationKeyControl(view, AnimationProperty::CameraYaw, timeline,
+          ImGui::SliderAngle("Yaw offset", &view.perturbation.cameraYaw, -45.0f, 45.0f));
+        animationKeyControl(view, AnimationProperty::CameraPitch, timeline,
+          ImGui::SliderAngle("Pitch offset", &view.perturbation.cameraPitch, -45.0f, 45.0f));
+        animationKeyControl(view, AnimationProperty::CameraLateral, timeline,
+          ImGui::DragFloat("Lateral offset", &view.perturbation.cameraLateral,
+            0.005f, -2.0f, 2.0f, "%.3f"));
+
+        ImGui::Separator();
+        ImGui::TextDisabled("IMAGE COORDINATES");
+        animationKeyControl(view, AnimationProperty::UvScale, timeline,
+          ImGui::DragFloat2("UV scale", &view.perturbation.uvScale.x,
+            0.005f, -16.0f, 16.0f, "%.3f"));
+        animationKeyControl(view, AnimationProperty::UvOffset, timeline,
+          ImGui::DragFloat2("UV offset", &view.perturbation.uvOffset.x,
+            1.0f / 512.0f, -4.0f, 4.0f, "%.4f"));
+
+        ImGui::Separator();
         ImGui::TextDisabled("LOCAL PROCEDURAL TIME");
-        timeControl("Time Scale", render->time.scale, document::timeScaleProperty(), 0.01f);
-        timeControl("Time Offset", render->time.offsetSeconds, document::timeOffsetProperty(), 0.01f);
-        ImGui::TextDisabled("local = timeline × scale + offset; negative reverses, zero freezes");
+        timeControl("Time scale", render->time.scale, document::timeScaleProperty(), 0.01f);
+        timeControl("Time offset", render->time.offsetSeconds, document::timeOffsetProperty(), 0.01f);
+        ImGui::TextDisabled("timeline × scale + offset; negative reverses, zero freezes");
       }
-      drawInspector(Category::Geometry, view, edited.hardwareProfile, timeline,
-        edited.scene.importedModel.get(), edited.scene.testScene);
-      drawTextureMappingEditorContents(view, timeline, edited.scene.importedModel.get(),
-        edited.scene.testScene, texturePreview);
     }
-    if (operation.has_value() && ImGui::CollapsingHeader("Changes", ImGuiTreeNodeFlags_DefaultOpen)) {
-      const auto* render = std::get_if<document::RenderOperation>(
+    if (operation.has_value() && ImGui::CollapsingHeader("Changes from Render Defaults",
+        ImGuiTreeNodeFlags_DefaultOpen)) {
+      auto* render = std::get_if<document::RenderOperation>(
         &document::findOperation(edited, *operation)->data);
-      if (render == nullptr || (render->overrides.empty() && render->time.scale == 1.0f &&
-          render->time.offsetSeconds == 0.0f)) ImGui::TextDisabled("No changes from Render Defaults.");
-      else if (render != nullptr) {
-        if (render->time.scale != 1.0f) ImGui::Text("Time Scale: %.3f", render->time.scale);
-        if (render->time.offsetSeconds != 0.0f) ImGui::Text("Time Offset: %.3f s", render->time.offsetSeconds);
+      const bool hasTimeChanges = render != nullptr &&
+        (render->time.scale != 1.0f || render->time.offsetSeconds != 0.0f);
+      if (render == nullptr || (render->overrides.empty() && !hasTimeChanges &&
+          view.animation.tracks.empty())) {
+        ImGui::TextDisabled("No local changes. This Render follows Render Defaults.");
+      } else if (render != nullptr) {
+        if (render->time.scale != 1.0f) {
+          ImGui::Text("Time scale  %.3f", render->time.scale);
+          ImGui::SameLine();
+          if (ImGui::SmallButton("Reset##time-scale")) {
+            render->time.scale = 1.0f;
+            changed = true;
+          }
+        }
+        if (render->time.offsetSeconds != 0.0f) {
+          ImGui::Text("Time offset  %.3f s", render->time.offsetSeconds);
+          ImGui::SameLine();
+          if (ImGui::SmallButton("Reset##time-offset")) {
+            render->time.offsetSeconds = 0.0f;
+            changed = true;
+          }
+        }
         for (const PropertyOverride& overrideValue : render->overrides) {
+          ImGui::PushID(static_cast<int>(overrideValue.property));
           const AnimationPropertyInfo& info = animationPropertyInfo(overrideValue.property);
           ImGui::TextUnformatted(info.label.data());
+          ImGui::SameLine();
+          ImGui::TextDisabled("%s", overrideValueText(overrideValue).c_str());
+          ImGui::SameLine();
+          if (ImGui::SmallButton("Reset")) resetOverride = overrideValue.property;
+          ImGui::PopID();
+        }
+        if (!view.animation.tracks.empty()) {
+          ImGui::Separator();
+          ImGui::TextDisabled("ANIMATED HERE");
+          for (const PropertyAnimationTrack& track : view.animation.tracks)
+            ImGui::BulletText("%s", animationPropertyInfo(track.property).label.data());
         }
       }
     }
     if (ImGui::CollapsingHeader("All Properties")) {
-      constexpr std::array categories = {Category::Camera, Category::Lighting, Category::Rasterization,
-        Category::Surface, Category::Texture, Category::Depth, Category::Stencil, Category::Field,
-        Category::Spectral, Category::Post, Category::Color, Category::Output};
+      static ImGuiTextFilter propertyGroupFilter;
+      propertyGroupFilter.Draw("Filter groups");
+      constexpr std::array categories = {Category::Geometry, Category::Camera, Category::Lighting,
+        Category::Rasterization, Category::Surface, Category::Texture, Category::Depth,
+        Category::Stencil, Category::Field, Category::Spectral, Category::Post,
+        Category::Color, Category::Output};
       for (const Category category : categories) {
-        if (!categoryAvailableForHardwareProfile(edited.hardwareProfile, category)) continue;
+        if (!categoryAvailableForHardwareProfile(edited.hardwareProfile, category) ||
+            !propertyGroupFilter.PassFilter(categoryName(category))) continue;
         ImGui::PushID(static_cast<int>(category));
-        drawInspector(category, view, edited.hardwareProfile, timeline,
-          edited.scene.importedModel.get(), edited.scene.testScene);
+        if (ImGui::CollapsingHeader(categoryName(category)))
+          drawInspector(category, view, edited.hardwareProfile, timeline,
+            edited.scene.importedModel.get(), edited.scene.testScene);
         ImGui::PopID();
+      }
+      if (propertyGroupFilter.PassFilter("Texture Mapping") &&
+          ImGui::CollapsingHeader("Texture Mapping")) {
+        drawTextureMappingEditorContents(view, timeline, edited.scene.importedModel.get(),
+          edited.scene.testScene, texturePreview);
       }
     }
     if (renderViewChanged(before, view)) {
@@ -463,7 +645,13 @@ void drawDocumentInspector(bool& open, document::Document& document,
   } else if (editorState.selection.kind == editor::SelectionKind::Operation) {
     document::Operation* operation = document::findOperation(edited,
       editorState.selection.operation);
-    if (operation != nullptr) changed = drawOperation(edited, *operation, measurement);
+    if (operation != nullptr) changed |= drawOperation(edited, *operation, editorState, measurement);
+  }
+  if (resetOverride.has_value()) {
+    static_cast<void>(history.execute(document, editor::SetRenderOverride{
+      editorState.selection.operation, *resetOverride, std::nullopt}));
+    ImGui::End();
+    return;
   }
   if (editorState.selection.kind == editor::SelectionKind::Operation) {
     document::Operation* selected = document::findOperation(edited, editorState.selection.operation);
@@ -471,7 +659,7 @@ void drawDocumentInspector(bool& open, document::Document& document,
       if (changed) document::synchronizeOperationSignalMetadata(*selected);
       ImGui::SeparatorText("OUTPUT SIGNALS");
       for (const document::SignalDescriptor& output : selected->outputs)
-        drawSignalDescriptor(output);
+        drawSignalDescriptor(output, editorState);
     }
   }
   if (changed) {

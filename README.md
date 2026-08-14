@@ -132,9 +132,9 @@ and Spectrum16 is reconstructed to RGB. None of those mappings modify the resour
 Edge publishes separate scalar strength and RG direction textures; Warp consumes a screen-space Vector2 direction
 and samples a Color image along it.
 
-The renderer implementation catalog remains available under **All Properties** without dictating workspace
-navigation. **Changes** stays beside a variant so inherited state and local deviations do not require touring
-separate panels.
+The renderer implementation catalog remains available as filtered, collapsed groups under **All Properties**
+without dictating workspace navigation. **Changes from Render Defaults** stays beside a variant, reports the
+actual local values and animation tracks, and resets individual overrides in place.
 
 Observer parameters used while an Interpret or Composite operation evaluates are stored on that operation. Final Output keeps a separate presentation observer.
 
@@ -146,15 +146,16 @@ Floating tools are checked against the current monitor work areas. If a saved po
 or rearranged display, the tool is resized if necessary and recovered to the center of the main display. The
 Timeline also changes between side-by-side and stacked panes as its available width changes.
 
-Use **File > Import Model** or **Scene** in the Operation Graph to load OBJ, glTF, or GLB geometry through the native file chooser. The importer applies scene-node transforms, triangulates faces, generates missing smooth normals and usable tangents, preserves UV0, vertex color 0, submesh material assignments, base-color factors, and external or embedded base-color images. It centers the result and scales its longest bounds extent to exactly 3.0 units so camera distance, fog, quantization, and operation perturbations remain comparable between unrelated assets. Missing image references remain explicit warnings. Unloading a model is undoable.
+Use **File > Import Model** or the graph toolbar's overflow menu to load OBJ, glTF, or GLB geometry through the native file chooser. The importer applies scene-node transforms, triangulates faces, generates missing smooth normals and usable tangents, preserves UV0, vertex color 0, submesh material assignments, base-color factors, and external or embedded base-color images. It centers the result and scales its longest bounds extent to exactly 3.0 units so camera distance, fog, quantization, and operation perturbations remain comparable between unrelated assets. Missing image references remain explicit warnings. Unloading a model is undoable.
 
 The **Texture source** control can be authored on the global base and inherited by every pass. A selected pass stores a local override only when it differs. **Scene material** uses imported submesh materials, **Built-in checker** substitutes the diagnostic texture, **White texel** removes image variation while retaining material factors, and **Imported override** applies a separately imported PNG, JPEG, TGA, or BMP to any scene. A locally overridden texture is copied when its pass is duplicated, so correlated renders can perturb its UVs, sampling, color precision, and compositing independently. The inspector reports dimensions and alpha and exposes sRGB-color versus linear-data interpretation.
 
 This first material boundary intentionally imports only base color and alpha. Normal, emissive, metallic-roughness, occlusion, multiple UV sets, skeletal animation, morph targets, cameras, and lights remain separate future systems. Copying stack JSON records source paths, content hashes, dimensions, material facts, and normalization scale rather than embedding image pixels or vertex buffers.
 
-Render **Essentials** keeps image assignment and mapping together: mesh UV0 versus model-space planar projection,
-scale/tiling, rotation and pivot, offset, axis flips, repeat/clamp addressing, filtering, mipmapping, and sRGB
-interpretation. UV transforms and coordinate source remain keyable.
+Render **Essentials** concentrates the changes most useful while making a variant: object transform, normal
+inflation, camera offsets, UV scale/offset, and local procedural time. Image assignment, exact mapping,
+sampling, hardware behavior, and the rest of the renderer remain available under the collapsed **All Properties**
+groups. Every keyable Essential retains its animation control.
 
 Undo and redo operate on typed document commands, covering renderer and composite settings, operation order and
 names, animation tracks, scene state, hardware target, and presentation. Continuous property and gizmo edits
@@ -162,7 +163,7 @@ collapse into one history entry; selection, comparison view, and open windows re
 
 The document is a validated dependency graph ending at **Output**. A new document begins as `Render → Output`. A **Render** applies inherited renderer state plus sparse local overrides and produces named Color, Depth, Normal, Field, and Spectrum16 resources. An **Interpret** converts a spectral resource through a selected observer without rerendering the scene. A **Composite** combines two named signals with explicit arithmetic. A **Measure** reduces an upstream image or field to a scalar—mean, RMS, peak, threshold coverage, or one mean color channel—and maps that signal onto a continuous property. The compiler performs a stable topological sort, so canvas position and document display order do not dictate execution; invalid cycles are rejected before mutation. The Inspector shows only controls owned by the selected object.
 
-Use **+ Add** to create literal Render, Composite, Interpret, or Measure operations. The selected operation or final output supplies the obvious compatible input automatically. **Duplicate + Compare** atomically creates an exact variant and a Compare operation, wires both Color outputs, lays out the branch, and makes absolute difference the visible output in one undo step; its adjacent menu exposes every other relationship. Right-click any output socket to continue directly with compatible signal operations such as Luminance, Edge, Threshold, or an explicit Remap to Mask conversion. Named ports use stable operation/port addresses. Per-channel operations include Normal, difference, multiply, screen, exclusion, minimum/maximum, additive and subtractive hardware color math, half-add, quarter-add, signed color offset, and quantized bitwise XOR.
+Use **+ Add** to create literal Render, Composite, Interpret, or Measure operations. The selected operation or final output supplies the obvious compatible input automatically. **Duplicate + Compare**, available beside the selected operation in Properties, from its node-title menu, or through searchable Commands, atomically creates an exact variant and a Compare operation, lays out the branch, and makes absolute difference visible in one undo step. Right-click any output socket to continue directly with compatible signal operations such as Luminance, Edge, Threshold, or an explicit Remap to Mask conversion. Input rows show their producer and provide direct **View** and **Go** actions. Named ports use stable operation/port addresses. Per-channel operations include Normal, difference, multiply, screen, exclusion, minimum/maximum, additive and subtractive hardware color math, half-add, quarter-add, signed color offset, and quantized bitwise XOR.
 
 **Output** is deliberately downstream of the operation graph. Its Inspector can leave the final image as direct RGB or approximate composite-NTSC chroma bandwidth and luma/chroma crosstalk, then model scanlines, an aperture grille, and display bloom. These controls affect presentation only: raw operation textures and all A/B arithmetic remain unchanged and inspectable.
 
