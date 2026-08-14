@@ -426,35 +426,48 @@ public:
     const std::size_t requestedPassTargets = std::max<std::size_t>(operationCount, 2);
     if (passTargets_.size() < requestedPassTargets) passTargets_.resize(requestedPassTargets);
     const auto growTargets = [&](std::vector<GLuint>& framebuffers,
-        std::vector<GLuint>& textures, const std::size_t requested,
-        const GLint internalFormat, const GLenum format, const char* failure) {
+        std::vector<GLuint>& textures, std::vector<glm::ivec2>& extents,
+        const std::size_t requested) {
       if (textures.size() >= requested) return;
       const std::size_t previous = textures.size();
       framebuffers.resize(requested, 0);
       textures.resize(requested, 0);
+      extents.resize(requested, glm::ivec2(0));
       const GLsizei added = static_cast<GLsizei>(requested - previous);
       glGenFramebuffers(added, framebuffers.data() + previous);
       glGenTextures(added, textures.data() + previous);
-      for (std::size_t index = previous; index < requested; ++index) {
-        glBindTexture(GL_TEXTURE_2D, textures[index]);
-        glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, relationWidth_, relationHeight_, 0,
-          format, GL_FLOAT, nullptr);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glBindFramebuffer(GL_FRAMEBUFFER, framebuffers[index]);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-          textures[index], 0);
-        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-          failRenderer(failure);
-      }
-      glBindFramebuffer(GL_FRAMEBUFFER, 0);
     };
-    growTargets(relationFbos_, relationTextures_, std::max<std::size_t>(operationCount + 1, 3),
-      GL_RGBA16F, GL_RGBA, "could not create render-algebra target");
-    growTargets(directionFbos_, directionTextures_, std::max<std::size_t>(operationCount, 2),
-      GL_RG16F, GL_RG, "could not create edge-direction target");
+    growTargets(relationFbos_, relationTextures_, relationExtents_,
+      std::max<std::size_t>(operationCount + 1, 3));
+    growTargets(directionFbos_, directionTextures_, directionExtents_,
+      std::max<std::size_t>(operationCount, 2));
+  }
+
+  void prepareGraphTarget(const bool direction, const std::size_t index,
+      const int requestedWidth, const int requestedHeight) {
+    std::vector<GLuint>& framebuffers = direction ? directionFbos_ : relationFbos_;
+    std::vector<GLuint>& textures = direction ? directionTextures_ : relationTextures_;
+    std::vector<glm::ivec2>& extents = direction ? directionExtents_ : relationExtents_;
+    const int width = std::max(requestedWidth, 1);
+    const int height = std::max(requestedHeight, 1);
+    if (extents[index] != glm::ivec2(width, height)) {
+      extents[index] = {width, height};
+      glBindTexture(GL_TEXTURE_2D, textures[index]);
+      glTexImage2D(GL_TEXTURE_2D, 0, direction ? GL_RG16F : GL_RGBA16F,
+        width, height, 0, direction ? GL_RG : GL_RGBA, GL_FLOAT, nullptr);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      glBindFramebuffer(GL_FRAMEBUFFER, framebuffers[index]);
+      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+        textures[index], 0);
+      if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        failRenderer(direction ? "could not create edge-direction target"
+          : "could not create render-algebra target");
+    } else {
+      glBindFramebuffer(GL_FRAMEBUFFER, framebuffers[index]);
+    }
   }
 
   void setImportedModel(const ModelAsset& asset) {
@@ -1262,10 +1275,10 @@ public:
       const GLuint maskField, const std::array<GLuint, 4>& spectrumA,
       const std::array<GLuint, 4>& spectrumB,
       const RendererState& maskState, const CompositeStep& step,
-      const std::size_t outputIndex) {
+      const std::size_t outputIndex, const int width, const int height) {
     const std::size_t pingPong = outputIndex % relationFbos_.size();
-    glBindFramebuffer(GL_FRAMEBUFFER, relationFbos_[pingPong]);
-    glViewport(0, 0, relationWidth_, relationHeight_);
+    prepareGraphTarget(false, pingPong, width, height);
+    glViewport(0, 0, width, height);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
@@ -1340,7 +1353,7 @@ public:
     step.bias = bias;
     return compositeTextures(passTargets_[0].outputTexture, passTargets_[1].outputTexture, 0,
       passTargets_[1].depthTexture, passTargets_[1].fieldTexture, {}, {}, RendererState{}, step,
-      0);
+      0, passTargets_[0].width, passTargets_[0].height);
   }
 
   GLuint compareSignals(const GLuint a, const GLuint b, const RelationOperator operation,
@@ -1354,17 +1367,18 @@ public:
     step.bias = bias;
     step.colorSpace = CompositeColorSpace::LinearLight;
     return compositeTextures(a, b, 0, 0, 0, {}, {}, RendererState{}, step,
-      relationTextures_.size() - 1);
+      relationTextures_.size() - 1, relationWidth_, relationHeight_);
   }
 
   GLuint processImage(const GLuint input, const int mode, const bool scalarInput,
       const glm::vec4 parameters, const glm::vec4 lowColor, const glm::vec4 highColor,
       const std::size_t outputIndex, const bool directionTarget = false,
-      const GLuint vectorInput = 0) {
+      const GLuint vectorInput = 0, const int width = relationWidth_,
+      const int height = relationHeight_) {
     if (input == 0) return 0;
     const std::size_t target = outputIndex % (directionTarget ? directionFbos_.size() : relationFbos_.size());
-    glBindFramebuffer(GL_FRAMEBUFFER, directionTarget ? directionFbos_[target] : relationFbos_[target]);
-    glViewport(0, 0, relationWidth_, relationHeight_);
+    prepareGraphTarget(directionTarget, target, width, height);
+    glViewport(0, 0, width, height);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
@@ -1391,8 +1405,8 @@ public:
 
   GLuint analyzeStereo(const RenderTarget& left, const RenderTarget& right, const RenderPass& operation,
       const std::size_t outputIndex) {
-    glBindFramebuffer(GL_FRAMEBUFFER, relationFbos_[outputIndex]);
-    glViewport(0, 0, relationWidth_, relationHeight_);
+    prepareGraphTarget(false, outputIndex, left.width, left.height);
+    glViewport(0, 0, left.width, left.height);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
@@ -1479,6 +1493,12 @@ public:
     const auto signalDescriptor = [&](const document::SignalRef signal) {
       return document::findSignal(document, signal.id);
     };
+    const auto signalExtent = [&](const document::SignalRef signal) {
+      const evaluation::SignalResource* resource = signalResource(signal);
+      return resource == nullptr || resource->extent.x <= 0 || resource->extent.y <= 0
+        ? glm::ivec2(relationWidth_, relationHeight_)
+        : glm::ivec2(resource->extent);
+    };
     const auto isScalarImage = [&](const document::SignalRef signal) {
       const document::SignalDescriptor* descriptor = signalDescriptor(signal);
       return descriptor != nullptr && document::isScreenScalar(*descriptor);
@@ -1496,11 +1516,16 @@ public:
       return constant == nullptr ? std::nullopt : std::optional{constant->value};
     };
     const auto publish = [&](const document::Operation& operation,
-        const std::size_t targetIndex, const GLuint primaryTexture, const GLuint auxiliaryTexture) {
+        const std::size_t targetIndex, const GLuint primaryTexture, const GLuint auxiliaryTexture,
+        const glm::ivec2 extent) {
       for (const document::SignalDescriptor& descriptor : operation.outputs) {
         evaluation::SignalResource resource;
         resource.descriptor = descriptor;
         resource.revision = revision;
+        if (descriptor.metadata.domain == document::SignalDomain::Screen2D) {
+          resource.extent = {extent.x, extent.y, 1};
+          resource.descriptor.metadata.extent = resource.extent;
+        }
         if (descriptor.metadata.semantic == document::SignalSemantic::Normal) {
             resource.textures[0] = passTargets_[targetIndex].normalTexture;
             resource.textureCount = resource.textures[0] == 0 ? 0 : 1;
@@ -1593,6 +1618,7 @@ public:
       if (!operation->enabled) continue;
       GLuint output = 0;
       GLuint auxiliaryOutput = 0;
+      glm::ivec2 outputExtent(relationWidth_, relationHeight_);
       if (const auto* data = std::get_if<document::RenderOperation>(&operation->data)) {
         RenderPass pass = renderState(*operation, *data);
         document::TimeTransform time = data->time;
@@ -1609,6 +1635,7 @@ public:
         output = render(pass.renderer, document.scene.authoredCamera, document.scene.testScene,
           nodeIndex, pass.perturbation, pass.output, pass.textureSource,
           pass.importedTexture.get(), pass.importedTextureSrgb, time.apply(timeSeconds));
+        outputExtent = {passTargets_[nodeIndex].width, passTargets_[nodeIndex].height};
       } else if (std::holds_alternative<document::ConstantOperation>(operation->data)) {
         for (const document::SignalDescriptor& descriptor : operation->outputs) {
           evaluation::SignalResource resource;
@@ -1629,8 +1656,10 @@ public:
         step.bias = data->bias;
         step.opacity = 1.0f;
         const auto spectrum = signalSpectrum(data->spectrum);
+        outputExtent = signalExtent(data->spectrum);
         output = compositeTextures(signalTexture(data->spectrum), signalTexture(data->spectrum),
-          0, 0, 0, spectrum, spectrum, RendererState{}, step, nodeIndex);
+          0, 0, 0, spectrum, spectrum, RendererState{}, step, nodeIndex,
+          outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::CompositeOperation>(&operation->data)) {
         CompositeStep step;
         step.sourceA = data->a.frameOffset < 0 ? CompositeSource::PreviousFrame : CompositeSource::RenderPass;
@@ -1666,10 +1695,11 @@ public:
           step.historyUvOffset = data->feedback->uvOffset;
           step.historyUvScale = data->feedback->uvScale;
         }
+        outputExtent = signalExtent(data->a);
         output = compositeTextures(signalTexture(data->a), signalTexture(data->b),
           signalTexture(data->mask), 0, 0,
           signalSpectrum(data->a), signalSpectrum(data->b), document.renderDefaults.renderer,
-          step, nodeIndex);
+          step, nodeIndex, outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::StereoOperation>(&operation->data)) {
         const RenderTarget* left = signalTarget(data->left);
         const RenderTarget* right = signalTarget(data->right);
@@ -1679,36 +1709,51 @@ public:
           settings.stereoMaximumDisparityPixels = data->maximumDisparityPixels;
           settings.stereoOcclusionTolerance = data->occlusionTolerance;
           output = analyzeStereo(*left, *right, settings, nodeIndex);
+          outputExtent = {left->width, left->height};
         }
       } else if (const auto* data = std::get_if<document::MeasureOperation>(&operation->data)) {
         output = signalTexture(data->input);
+        outputExtent = signalExtent(data->input);
       } else if (const auto* data = std::get_if<document::LuminanceOperation>(&operation->data)) {
-        output = processImage(signalTexture(data->input), 0, false, {}, {}, {}, nodeIndex);
+        outputExtent = signalExtent(data->input);
+        output = processImage(signalTexture(data->input), 0, false, {}, {}, {}, nodeIndex,
+          false, 0, outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::RemapOperation>(&operation->data)) {
+        outputExtent = signalExtent(data->input);
         output = processImage(signalTexture(data->input), 1, true,
           {data->inputLow, data->inputHigh, 0.0f, data->clamp ? 1.0f : 0.0f},
-          glm::vec4(data->outputLow), glm::vec4(data->outputHigh), nodeIndex);
+          glm::vec4(data->outputLow), glm::vec4(data->outputHigh), nodeIndex,
+          false, 0, outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::EdgeOperation>(&operation->data)) {
+        outputExtent = signalExtent(data->input);
         output = processImage(signalTexture(data->input), 2, isScalarImage(data->input),
-          glm::vec4(data->strength, 0.0f, 0.0f, 0.0f), {}, {}, nodeIndex);
+          glm::vec4(data->strength, 0.0f, 0.0f, 0.0f), {}, {}, nodeIndex,
+          false, 0, outputExtent.x, outputExtent.y);
         auxiliaryOutput = processImage(signalTexture(data->input), 6, isScalarImage(data->input),
-          {}, {}, {}, nodeIndex, true);
+          {}, {}, {}, nodeIndex, true, 0, outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::BlurOperation>(&operation->data)) {
+        outputExtent = signalExtent(data->input);
         output = processImage(signalTexture(data->input), 3,
           data->outputShape == document::SignalShape::Scalar,
-          glm::vec4(data->radiusPixels, 0.0f, 0.0f, 0.0f), {}, {}, nodeIndex);
+          glm::vec4(data->radiusPixels, 0.0f, 0.0f, 0.0f), {}, {}, nodeIndex,
+          false, 0, outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::ThresholdOperation>(&operation->data)) {
+        outputExtent = signalExtent(data->input);
         output = processImage(signalTexture(data->input), 4, true,
-          {data->threshold, data->softness, 0.0f, 0.0f}, {}, {}, nodeIndex);
+          {data->threshold, data->softness, 0.0f, 0.0f}, {}, {}, nodeIndex,
+          false, 0, outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::GradientMapOperation>(&operation->data)) {
+        outputExtent = signalExtent(data->input);
         output = processImage(signalTexture(data->input), 5, true, {},
-          data->lowColor, data->highColor, nodeIndex);
+          data->lowColor, data->highColor, nodeIndex, false, 0,
+          outputExtent.x, outputExtent.y);
       } else if (const auto* data = std::get_if<document::WarpOperation>(&operation->data)) {
+        outputExtent = signalExtent(data->image);
         output = processImage(signalTexture(data->image), 7, false,
           glm::vec4(data->strengthPixels, 0.0f, 0.0f, 0.0f), {}, {}, nodeIndex, false,
-          signalTexture(data->displacement));
+          signalTexture(data->displacement), outputExtent.x, outputExtent.y);
       }
-      publish(*operation, nodeIndex, output, auxiliaryOutput);
+      publish(*operation, nodeIndex, output, auxiliaryOutput, outputExtent);
     }
     const GLuint finalTexture = signals.displayTexture(document.presentation.input.id);
     if (finalTexture != 0) copyToFrameHistory(finalTexture);
@@ -1886,8 +1931,10 @@ private:
   std::vector<RenderTarget> passTargets_;
   std::vector<GLuint> relationFbos_;
   std::vector<GLuint> relationTextures_;
+  std::vector<glm::ivec2> relationExtents_;
   std::vector<GLuint> directionFbos_;
   std::vector<GLuint> directionTextures_;
+  std::vector<glm::ivec2> directionExtents_;
   GLuint historyFbo_ = 0, historyTexture_ = 0;
   std::array<GLuint, 3> displayFbos_{};
   std::array<GLuint, 3> displayTextures_{};

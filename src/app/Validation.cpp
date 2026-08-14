@@ -96,6 +96,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         !evaluation::compileDocument(*typedRoundTrip.document).valid())
       fail("typed document round-trip validation failed");
     document::Document workingSignals = document::makeDefaultDocument();
+    workingSignals.renderDefaults.renderer.output.width = 384;
+    workingSignals.renderDefaults.renderer.output.height = 216;
     const document::SignalRef color = document::primaryOutput(workingSignals.operations.front());
     const document::SignalRef depth{document::operationSignal(workingSignals.operations.front().id, "depth"), 0};
     document::Operation remap = document::makeRemapOperation({2}, "Depth Remap", depth);
@@ -133,6 +135,19 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         workingResources.displayTexture(edgeDirection.id) == 0 ||
         workingResources.displayTexture(document::primaryOutput(workingSignals.operations[7]).id) == 0)
       fail("working-signal operation graph failed GPU evaluation");
+    const evaluation::SignalResource* finalWorkingResource = workingResources.find(
+      workingSignals.presentation.input.id);
+    GLint finalWorkingWidth = 0;
+    GLint finalWorkingHeight = 0;
+    if (finalWorkingResource != nullptr && finalWorkingResource->textureCount > 0) {
+      glBindTexture(GL_TEXTURE_2D, finalWorkingResource->textures[0]);
+      glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &finalWorkingWidth);
+      glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &finalWorkingHeight);
+    }
+    if (finalWorkingResource == nullptr || finalWorkingResource->extent != glm::ivec3(384, 216, 1) ||
+        finalWorkingResource->descriptor.metadata.extent != glm::ivec3(384, 216, 1) ||
+        finalWorkingWidth != 384 || finalWorkingHeight != 216)
+      fail("working-signal graph did not preserve runtime image extent");
     const auto previewResource = [&](const document::SignalRef signal, const std::size_t slot) {
       const evaluation::SignalResource* resource = workingResources.find(signal.id);
       if (resource == nullptr || resource->textureCount == 0) return 0U;

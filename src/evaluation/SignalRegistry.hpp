@@ -12,6 +12,7 @@ struct SignalResource {
   document::SignalDescriptor descriptor;
   std::array<unsigned int, 4> textures{};
   int textureCount = 0;
+  glm::ivec3 extent{0};
   std::optional<float> scalar;
   std::uint64_t revision = 0;
 };
