@@ -489,6 +489,30 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         binocularDocument.document->renderStack.passes()[2].stereoAnalysis !=
           StereoAnalysisMode::AbsoluteDisparity)
       fail("binocular disparity example failed document loading validation");
+    const StackDocumentLoadResult detonationDocument =
+      loadStackDocumentFile("examples/interference-detonation.json");
+    if (!detonationDocument || detonationDocument.document->scene != TestScene::FieldInterference ||
+        detonationDocument.document->renderStack.passes().size() != 5 ||
+        detonationDocument.document->renderStack.passes()[0].animation.tracks.size() != 4 ||
+        detonationDocument.document->renderStack.passes()[3].composite.sourceB !=
+          CompositeSource::PreviousFrame ||
+        detonationDocument.document->renderStack.passes()[4].kind != StackOperationKind::Measure ||
+        !detonationDocument.document->renderStack.passes()[4].measurementModulationEnabled ||
+        detonationDocument.document->renderStack.passes()[4].measurementTargetProperty !=
+          AnimationProperty::FieldEmissionInfluence)
+      fail("interference detonation example failed document loading validation");
+    const StackDocumentLoadResult apparitionDocument =
+      loadStackDocumentFile("examples/field-apparition.json");
+    if (!apparitionDocument || apparitionDocument.document->scene != TestScene::SdfIsoSurface ||
+        apparitionDocument.document->renderStack.passes().size() != 5 ||
+        apparitionDocument.document->renderStack.passes()[0].animation.tracks.size() != 5 ||
+        apparitionDocument.document->renderStack.passes()[4].kind != StackOperationKind::Measure ||
+        apparitionDocument.document->renderStack.passes()[4].composite.sourceA !=
+          CompositeSource::RenderPassField ||
+        !apparitionDocument.document->renderStack.passes()[4].measurementModulationEnabled ||
+        apparitionDocument.document->renderStack.passes()[4].measurementTargetProperty !=
+          AnimationProperty::IsoLevel)
+      fail("field apparition example failed document loading validation");
     CameraOrbit stereoCamera;
     stereoCamera.yaw = 0.0f;
     stereoCamera.pitch = 0.0f;

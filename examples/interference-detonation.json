@@ -1,0 +1,274 @@
+{
+  "schema": "graphics-lab.render-stack.v8",
+  "hardware_target": "unrestricted",
+  "test_scene": "field_interference",
+  "view": {
+    "orbit_yaw_radians": 0.72,
+    "orbit_pitch_radians": 0.56,
+    "distance_units": 7.4,
+    "target": [0.0, -0.35, 0.0]
+  },
+  "display_reconstruction": {
+    "enabled": false,
+    "signal": "direct_rgb",
+    "chroma_bleed": 0.0,
+    "luma_chroma_crosstalk": 0.0,
+    "scanline_strength": 0.0,
+    "phosphor_mask_strength": 0.0,
+    "bloom_strength": 0.0,
+    "bloom_radius_pixels": 3.0
+  },
+  "animation_timeline": {
+    "duration_seconds": 6.0,
+    "playback_rate": 1.0,
+    "loop": true,
+    "auto_key": false,
+    "show_all_passes": true,
+    "snap_to_frames": true,
+    "frames_per_second": 24,
+    "current_time_seconds": 0.0
+  },
+  "global_base": {
+    "properties": {
+      "field_enabled": [1.0],
+      "field_producer_kind": [0.0],
+      "field_source_a": [-0.15, 0.0, 0.0],
+      "field_source_b": [0.15, 0.0, 0.0],
+      "field_wavelength": [0.78],
+      "field_phase_offset": [0.0],
+      "field_amplitude_a": [1.25],
+      "field_amplitude_b": [1.25],
+      "field_falloff": [0.14],
+      "field_band_sharpness": [1.65],
+      "field_visualization": [3.0],
+      "field_low_color": [0.004, 0.008, 0.025],
+      "field_high_color": [1.0, 0.32, 0.06],
+      "field_vertex_displacement": [0.08],
+      "field_signed_displacement": [1.0],
+      "field_surface_color_influence": [0.62],
+      "field_emission_influence": [0.75],
+      "smooth_shading": [1.0],
+      "lighting_model": [0.0],
+      "ambient": [0.07],
+      "bits_per_channel": [6.0],
+      "dithering_enabled": [1.0],
+      "linear_light": [1.0],
+      "internal_resolution": [640.0, 480.0],
+      "nearest_upscaling": [0.0]
+    },
+    "property_tracks": []
+  },
+  "passes": [
+    {
+      "id": 1,
+      "name": "Outward impulse",
+      "enabled": true,
+      "operation_kind": "render",
+      "output_buffer": "color",
+      "overrides": [],
+      "animation": {
+        "enabled": true,
+        "property_tracks": [
+          {
+            "property": "field_source_a",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [-0.15, 0.0, 0.0]},
+              {"time_seconds": 1.6, "value": [-2.75, 0.1, 0.0]},
+              {"time_seconds": 5.2, "value": [-3.35, 0.3, 0.0]},
+              {"time_seconds": 6.0, "value": [-0.15, 0.0, 0.0]}
+            ]
+          },
+          {
+            "property": "field_source_b",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [0.15, 0.0, 0.0]},
+              {"time_seconds": 1.6, "value": [2.75, -0.1, 0.0]},
+              {"time_seconds": 5.2, "value": [3.35, -0.3, 0.0]},
+              {"time_seconds": 6.0, "value": [0.15, 0.0, 0.0]}
+            ]
+          },
+          {
+            "property": "field_wavelength",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [1.25]},
+              {"time_seconds": 0.7, "value": [0.22]},
+              {"time_seconds": 3.8, "value": [0.58]},
+              {"time_seconds": 6.0, "value": [1.25]}
+            ]
+          },
+          {
+            "property": "field_vertex_displacement",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [0.02]},
+              {"time_seconds": 0.55, "value": [0.46]},
+              {"time_seconds": 2.4, "value": [0.14]},
+              {"time_seconds": 6.0, "value": [0.02]}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "name": "Phase-lagged impulse",
+      "enabled": true,
+      "operation_kind": "render",
+      "output_buffer": "color",
+      "overrides": [
+        {"property": "field_high_color", "value": [0.12, 0.68, 1.0]},
+        {"property": "field_wavelength", "value": [0.64]},
+        {"property": "field_phase_offset", "value": [1.1]},
+        {"property": "field_emission_influence", "value": [0.55]}
+      ],
+      "animation": {
+        "enabled": true,
+        "property_tracks": [
+          {
+            "property": "field_source_a",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [0.0, 0.0, -0.1]},
+              {"time_seconds": 2.0, "value": [-2.25, 0.65, -0.7]},
+              {"time_seconds": 5.2, "value": [-3.0, -0.2, 0.35]},
+              {"time_seconds": 6.0, "value": [0.0, 0.0, -0.1]}
+            ]
+          },
+          {
+            "property": "field_source_b",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [0.0, 0.0, 0.1]},
+              {"time_seconds": 2.0, "value": [2.25, -0.65, 0.7]},
+              {"time_seconds": 5.2, "value": [3.0, 0.2, -0.35]},
+              {"time_seconds": 6.0, "value": [0.0, 0.0, 0.1]}
+            ]
+          },
+          {
+            "property": "field_phase_offset",
+            "interpolation": "linear",
+            "keys": [
+              {"time_seconds": 0.0, "value": [-3.0]},
+              {"time_seconds": 3.0, "value": [3.0]},
+              {"time_seconds": 6.0, "value": [-3.0]}
+            ]
+          },
+          {
+            "property": "field_vertex_displacement",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [0.01]},
+              {"time_seconds": 0.9, "value": [0.34]},
+              {"time_seconds": 3.0, "value": [0.08]},
+              {"time_seconds": 6.0, "value": [0.01]}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "name": "Impulse disagreement",
+      "enabled": true,
+      "operation_kind": "composite",
+      "output_buffer": "color",
+      "overrides": [],
+      "composite_into_previous": {
+        "operation": "absolute_difference",
+        "source_a": {"type": "render_pass", "pass_id": 1},
+        "source_b": {"type": "render_pass", "pass_id": 2},
+        "interpretation_a": "raw_rgb",
+        "interpretation_b": "raw_rgb",
+        "gain": 4.5,
+        "bias": 0.0,
+        "opacity": 1.0,
+        "arithmetic_color_space": "linear_light",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "animation": {
+        "enabled": true,
+        "property_tracks": [
+          {
+            "property": "composite_gain",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [1.25]},
+              {"time_seconds": 0.55, "value": [7.0]},
+              {"time_seconds": 3.0, "value": [3.2]},
+              {"time_seconds": 6.0, "value": [1.25]}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "name": "Persistent corona",
+      "enabled": true,
+      "operation_kind": "composite",
+      "output_buffer": "color",
+      "overrides": [],
+      "composite_into_previous": {
+        "operation": "screen",
+        "source_a": {"type": "render_pass", "pass_id": 3},
+        "source_b": {"type": "previous_frame", "pass_id": 3},
+        "interpretation_a": "raw_rgb",
+        "interpretation_b": "raw_rgb",
+        "previous_frame": {
+          "decay": 0.91,
+          "uv_offset": [0.0, 0.0015],
+          "uv_scale": [0.997, 0.997]
+        },
+        "gain": 1.0,
+        "bias": 0.0,
+        "opacity": 0.72,
+        "arithmetic_color_space": "linear_light",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    },
+    {
+      "id": 5,
+      "name": "Disagreement drives blue emission",
+      "enabled": true,
+      "operation_kind": "measure",
+      "output_buffer": "color",
+      "overrides": [],
+      "composite_into_previous": {
+        "operation": "absolute_difference",
+        "source_a": {"type": "render_pass", "pass_id": 3},
+        "source_b": {"type": "fixed_color", "pass_id": 3},
+        "fixed_color_rgba": [0.0, 0.0, 0.0, 1.0],
+        "gain": 1.0,
+        "bias": 0.0,
+        "opacity": 1.0,
+        "arithmetic_color_space": "linear_light",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "measurement": {
+        "threshold": 0.12,
+        "absolute_magnitude": true,
+        "metric": "coverage_above_threshold",
+        "modulation": {
+          "enabled": true,
+          "target_pass_id": 2,
+          "target_property": "field_emission_influence",
+          "input_range": [0.02, 0.48],
+          "output_range": [0.15, 4.5],
+          "clamp": true,
+          "smoothing_seconds": 0.18
+        }
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    }
+  ]
+}

@@ -1,0 +1,257 @@
+{
+  "schema": "graphics-lab.render-stack.v8",
+  "hardware_target": "unrestricted",
+  "test_scene": "sdf_iso_surface",
+  "view": {
+    "orbit_yaw_radians": 0.78,
+    "orbit_pitch_radians": 0.28,
+    "distance_units": 6.2,
+    "target": [0.0, 0.05, 0.0]
+  },
+  "display_reconstruction": {
+    "enabled": true,
+    "signal": "composite_ntsc",
+    "chroma_bleed": 0.18,
+    "luma_chroma_crosstalk": 0.08,
+    "scanline_strength": 0.08,
+    "phosphor_mask_strength": 0.0,
+    "bloom_strength": 0.38,
+    "bloom_radius_pixels": 3.5
+  },
+  "animation_timeline": {
+    "duration_seconds": 7.0,
+    "playback_rate": 1.0,
+    "loop": true,
+    "auto_key": false,
+    "show_all_passes": true,
+    "snap_to_frames": true,
+    "frames_per_second": 24,
+    "current_time_seconds": 0.0
+  },
+  "global_base": {
+    "properties": {
+      "field_enabled": [1.0],
+      "field_producer_kind": [1.0],
+      "sdf_a_type": [0.0],
+      "sdf_a_position": [-0.85, 0.0, 0.0],
+      "sdf_a_parameters": [1.05, 0.4, 0.4],
+      "sdf_b_type": [2.0],
+      "sdf_b_position": [0.85, 0.0, 0.0],
+      "sdf_b_parameters": [0.9, 0.3, 0.3],
+      "sdf_operation": [3.0],
+      "sdf_smoothness": [0.52],
+      "sdf_preview_range": [0.72],
+      "iso_surface_enabled": [1.0],
+      "iso_level": [-0.45],
+      "iso_color": [0.09, 0.2, 0.38],
+      "iso_maximum_steps": [160.0],
+      "iso_hit_epsilon": [0.0015],
+      "iso_maximum_distance": [30.0],
+      "lighting_model": [2.0],
+      "ambient": [0.08],
+      "light_azimuth": [-38.0],
+      "light_elevation": [61.0],
+      "bits_per_channel": [7.0],
+      "dithering_enabled": [1.0],
+      "linear_light": [1.0],
+      "internal_resolution": [640.0, 480.0],
+      "nearest_upscaling": [0.0]
+    },
+    "property_tracks": []
+  },
+  "passes": [
+    {
+      "id": 1,
+      "name": "Breathing implicit body",
+      "enabled": true,
+      "operation_kind": "render",
+      "output_buffer": "color",
+      "overrides": [],
+      "animation": {
+        "enabled": true,
+        "property_tracks": [
+          {
+            "property": "iso_level",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [-0.48]},
+              {"time_seconds": 1.7, "value": [0.18]},
+              {"time_seconds": 4.7, "value": [0.34]},
+              {"time_seconds": 6.4, "value": [-0.18]},
+              {"time_seconds": 7.0, "value": [-0.48]}
+            ]
+          },
+          {
+            "property": "sdf_a_position",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [-0.85, -0.25, 0.0]},
+              {"time_seconds": 3.5, "value": [-0.45, 0.42, 0.18]},
+              {"time_seconds": 7.0, "value": [-0.85, -0.25, 0.0]}
+            ]
+          },
+          {
+            "property": "sdf_b_position",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [0.85, 0.25, 0.0]},
+              {"time_seconds": 3.5, "value": [0.45, -0.42, -0.18]},
+              {"time_seconds": 7.0, "value": [0.85, 0.25, 0.0]}
+            ]
+          },
+          {
+            "property": "sdf_smoothness",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [0.18]},
+              {"time_seconds": 2.5, "value": [1.05]},
+              {"time_seconds": 5.4, "value": [0.42]},
+              {"time_seconds": 7.0, "value": [0.18]}
+            ]
+          },
+          {
+            "property": "iso_color",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [0.025, 0.07, 0.16]},
+              {"time_seconds": 2.2, "value": [0.18, 0.58, 0.92]},
+              {"time_seconds": 4.7, "value": [0.76, 0.2, 0.92]},
+              {"time_seconds": 7.0, "value": [0.025, 0.07, 0.16]}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "name": "Measured outer skin",
+      "enabled": true,
+      "operation_kind": "render",
+      "output_buffer": "color",
+      "overrides": [
+        {"property": "iso_level", "value": [0.12]},
+        {"property": "iso_color", "value": [1.0, 0.64, 0.22]},
+        {"property": "ambient", "value": [0.16]}
+      ],
+      "animation": {
+        "enabled": true,
+        "property_tracks": [
+          {
+            "property": "sdf_a_position",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [-0.78, -0.18, 0.06]},
+              {"time_seconds": 3.5, "value": [-0.38, 0.5, 0.24]},
+              {"time_seconds": 7.0, "value": [-0.78, -0.18, 0.06]}
+            ]
+          },
+          {
+            "property": "sdf_b_position",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [0.78, 0.18, -0.06]},
+              {"time_seconds": 3.5, "value": [0.38, -0.5, -0.24]},
+              {"time_seconds": 7.0, "value": [0.78, 0.18, -0.06]}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "name": "Visible boundary",
+      "enabled": true,
+      "operation_kind": "composite",
+      "output_buffer": "color",
+      "overrides": [],
+      "composite_into_previous": {
+        "operation": "absolute_difference",
+        "source_a": {"type": "render_pass", "pass_id": 1},
+        "source_b": {"type": "render_pass", "pass_id": 2},
+        "interpretation_a": "raw_rgb",
+        "interpretation_b": "raw_rgb",
+        "gain": 5.2,
+        "bias": 0.0,
+        "opacity": 1.0,
+        "arithmetic_color_space": "linear_light",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "animation": {
+        "enabled": true,
+        "property_tracks": [
+          {
+            "property": "composite_gain",
+            "interpolation": "smooth_step",
+            "keys": [
+              {"time_seconds": 0.0, "value": [2.5]},
+              {"time_seconds": 2.0, "value": [7.5]},
+              {"time_seconds": 5.5, "value": [4.0]},
+              {"time_seconds": 7.0, "value": [2.5]}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "name": "Body plus spectral shell",
+      "enabled": true,
+      "operation_kind": "composite",
+      "output_buffer": "color",
+      "overrides": [],
+      "composite_into_previous": {
+        "operation": "screen",
+        "source_a": {"type": "render_pass", "pass_id": 1},
+        "source_b": {"type": "render_pass", "pass_id": 3},
+        "interpretation_a": "raw_rgb",
+        "interpretation_b": "raw_rgb",
+        "gain": 1.0,
+        "bias": 0.0,
+        "opacity": 0.92,
+        "arithmetic_color_space": "linear_light",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    },
+    {
+      "id": 5,
+      "name": "Body coverage drives skin radius",
+      "enabled": true,
+      "operation_kind": "measure",
+      "output_buffer": "field_signal",
+      "overrides": [],
+      "composite_into_previous": {
+        "operation": "absolute_difference",
+        "source_a": {"type": "render_pass_field", "pass_id": 1},
+        "source_b": {"type": "fixed_color", "pass_id": 1},
+        "fixed_color_rgba": [0.0, 0.0, 0.0, 1.0],
+        "gain": 1.0,
+        "bias": 0.0,
+        "opacity": 1.0,
+        "arithmetic_color_space": "linear_light",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "measurement": {
+        "threshold": 0.55,
+        "absolute_magnitude": true,
+        "metric": "coverage_above_threshold",
+        "modulation": {
+          "enabled": true,
+          "target_pass_id": 2,
+          "target_property": "iso_level",
+          "input_range": [0.015, 0.28],
+          "output_range": [-0.08, 0.42],
+          "clamp": true,
+          "smoothing_seconds": 0.3
+        }
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    }
+  ]
+}
