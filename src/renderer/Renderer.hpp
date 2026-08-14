@@ -27,6 +27,8 @@ public:
   [[nodiscard]] unsigned int stackOperationResult(std::size_t operationIndex) const;
   unsigned int reconstructDisplay(unsigned int sourceTexture, const DisplayReconstructionState& state,
     std::size_t targetIndex);
+  void updateElementalSimulation(float deltaSeconds, const RendererState& state, TestScene scene);
+  void resetElementalSimulation();
   void resetFrameHistory();
   unsigned int texturePreview(const TextureAsset* texture);
   void setImportedModel(const ModelAsset& asset);

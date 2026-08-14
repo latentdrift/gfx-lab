@@ -112,7 +112,7 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   CONT("depth_cue_end", "Depth cue end", "Lighting", 1, K::Float, 0, 100),
   CONT("far_color", "Depth cue far color", "Lighting", 3, K::Color3, 0, 1),
   STEP("field_enabled", "Field enabled", "Field", K::Boolean, 0, 1),
-  STEP("field_producer_kind", "Field producer kind", "Field", K::Enumeration, 0, 1),
+  STEP("field_producer_kind", "Field producer kind", "Field", K::Enumeration, 0, 2),
   CONT("field_source_a", "Field source A", "Field sources", 3, K::Vec3, -8, 8),
   CONT("field_source_b", "Field source B", "Field sources", 3, K::Vec3, -8, 8),
   CONT("field_wavelength", "Field wavelength", "Field waves", 1, K::Float, 0.05f, 8),
@@ -121,7 +121,7 @@ constexpr std::array<AnimationPropertyInfo, static_cast<std::size_t>(AnimationPr
   CONT("field_amplitude_b", "Source B amplitude", "Field sources", 1, K::Float, 0, 4),
   CONT("field_falloff", "Field distance falloff", "Field waves", 1, K::Float, 0, 2),
   CONT("field_band_sharpness", "Field band sharpness", "Field display", 1, K::Float, 0.1f, 8),
-  STEP("field_visualization", "Field visualization", "Field display", K::Enumeration, 0, 5),
+  STEP("field_visualization", "Field visualization", "Field display", K::Enumeration, 0, 6),
   CONT("field_low_color", "Field low color", "Field display", 3, K::Color3, 0, 1),
   CONT("field_high_color", "Field high color", "Field display", 3, K::Color3, 0, 1),
   CONT("field_vertex_displacement", "Field vertex displacement", "Field consumers", 1, K::Float, -2, 2),
@@ -274,8 +274,12 @@ const char* animationPropertyDiscreteValueLabel(const AnimationProperty property
   case AnimationProperty::TransparencyOperation: { constexpr std::array labels = {"Opaque", "Alpha test", "Straight alpha", "Premultiplied alpha", "Additive", "Multiply", "PS1 average", "PS1 additive", "PS1 subtractive", "PS1 quarter-add"}; return label(labels); }
   case AnimationProperty::TextureColorStorage: { constexpr std::array labels = {"Direct color", "Indexed 8-bit", "Indexed 4-bit"}; return label(labels); }
   case AnimationProperty::LightingModel: { constexpr std::array labels = {"Unlit", "Gouraud Lambert", "Phong-shaded Lambert", "Phong reflection", "Blinn-Phong reflection"}; return label(labels); }
-  case AnimationProperty::FieldVisualization: { constexpr std::array labels = {"Source A phase", "Source B phase", "Phase difference", "Interference intensity", "Absolute distance difference", "Distance-difference contours"}; return label(labels); }
-  case AnimationProperty::FieldProducerKind: { constexpr std::array labels = {"Wave interference", "Signed distance field"}; return label(labels); }
+  case AnimationProperty::FieldVisualization: { constexpr std::array labels = {
+    "Channel 0: source A / temperature", "Channel 1: source B / smoke", "Channel 2: phase / fuel",
+    "Channel 3: interference / pressure", "Channel 4: distance / flow speed",
+    "Channel 5: contours / moisture", "Channel 6: combustion rate"}; return label(labels); }
+  case AnimationProperty::FieldProducerKind: { constexpr std::array labels = {
+    "Wave interference", "Signed distance field", "Persistent elemental simulation"}; return label(labels); }
   case AnimationProperty::SdfAType:
   case AnimationProperty::SdfBType: { constexpr std::array labels = {"Sphere", "Box", "Torus"}; return label(labels); }
   case AnimationProperty::SdfOperation: { constexpr std::array labels = {"Union", "Intersection", "A subtract B", "Smooth union"}; return label(labels); }

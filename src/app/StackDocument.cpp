@@ -76,7 +76,8 @@ void parseTracks(const Json& tracks, PassAnimation& animation) {
 
 TestScene sceneFromId(const std::string& id) {
   constexpr std::array sceneIds = {"torus", "texture_minification", "depth_precision", "transparency",
-    "lighting_comparison", "stencil_mask", "field_interference", "sdf_iso_surface", "spectral_metamers", "imported_model"};
+    "lighting_comparison", "stencil_mask", "field_interference", "sdf_iso_surface", "spectral_metamers",
+    "elemental_chamber", "imported_model"};
   return enumFromId(id, sceneIds, TestScene::Torus);
 }
 

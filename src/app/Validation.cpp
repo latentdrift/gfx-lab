@@ -12,6 +12,7 @@
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
 #include "renderer/TextureReadback.hpp"
+#include "simulation/ElementalSimulation.hpp"
 
 #include <GL/glew.h>
 
@@ -513,6 +514,37 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         apparitionDocument.document->renderStack.passes()[4].measurementTargetProperty !=
           AnimationProperty::IsoLevel)
       fail("field apparition example failed document loading validation");
+    const StackDocumentLoadResult elementalDocument =
+      loadStackDocumentFile("examples/elemental-combustion-chamber.json");
+    if (!elementalDocument || elementalDocument.document->scene != TestScene::ElementalChamber ||
+        elementalDocument.document->renderStack.passes().size() != 6 ||
+        elementalDocument.document->renderStack.global().animation.tracks.size() != 3 ||
+        elementalDocument.document->renderStack.passes()[0].output != PassOutput::FieldSignal ||
+        elementalDocument.document->renderStack.passes()[5].kind != StackOperationKind::Measure ||
+        elementalDocument.document->renderStack.passes()[5].composite.sourceA !=
+          CompositeSource::RenderPassField ||
+        elementalDocument.document->renderStack.passes()[5].measurementTargetProperty !=
+          AnimationProperty::CompositeGain)
+      fail("elemental combustion chamber example failed document loading validation");
+    ElementalSimulation elementalSimulation;
+    RendererState::Field elementalControls;
+    elementalControls.producerKind = 2;
+    elementalControls.sourceA = {-2.6f, 0.0f, -1.7f};
+    elementalControls.wavelength = 0.8f;
+    elementalControls.amplitudeA = 2.5f;
+    elementalControls.amplitudeB = 2.0f;
+    elementalControls.falloff = 1.0f;
+    for (int step = 0; step < 180; ++step) elementalSimulation.update(1.0f / 60.0f, elementalControls);
+    if (elementalSimulation.revision() < 100 || elementalSimulation.totalCombustion() <= 0.0f ||
+        elementalSimulation.matterPixels().size() !=
+          static_cast<std::size_t>(ElementalSimulation::width * ElementalSimulation::height))
+      fail("persistent elemental simulation failed validation");
+    renderer.resetElementalSimulation();
+    renderer.updateElementalSimulation(1.0f / 30.0f,
+      elementalDocument.document->renderStack.global().renderer, TestScene::ElementalChamber);
+    if (renderer.renderPass(elementalDocument.document->renderStack.passes()[0],
+        elementalDocument.document->camera, TestScene::ElementalChamber, 0) == 0)
+      fail("elemental chamber field rendering failed validation");
     CameraOrbit stereoCamera;
     stereoCamera.yaw = 0.0f;
     stereoCamera.pitch = 0.0f;

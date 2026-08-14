@@ -123,7 +123,7 @@ WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, c
         ImGui::EndMenu();
       }
       ImGui::Separator();
-      if (ImGui::MenuItem("Reset Frame History")) actions.resetFrameHistory = true;
+      if (ImGui::MenuItem("Reset Persistent State")) actions.resetFrameHistory = true;
       ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Window")) {
@@ -185,11 +185,11 @@ SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStac
   keepCurrentWindowVisible();
 
   ImGui::TextDisabled("SCENE");
-  constexpr std::array<const char*, 9> sceneLabels = {"Torus", "Texture minification", "Depth precision",
+  constexpr std::array<const char*, 10> sceneLabels = {"Torus", "Texture minification", "Depth precision",
     "Transparency", "Lighting comparison", "Stencil mask", "Field interference", "SDF iso-surface",
-    "Spectral metamers"};
+    "Spectral metamers", "Elemental chamber"};
   const char* currentLabel = scene == TestScene::ImportedModel && importedModel != nullptr
-    ? importedModel->name.c_str() : sceneLabels[std::clamp(static_cast<int>(scene), 0, 8)];
+    ? importedModel->name.c_str() : sceneLabels[std::clamp(static_cast<int>(scene), 0, 9)];
   ImGui::SetNextItemWidth(-1.0f);
   if (ImGui::BeginCombo("##scene", currentLabel)) {
     for (int option = 0; option < 5; ++option) {
@@ -208,6 +208,9 @@ SceneWindowResult drawDocumentNavigator(bool& open, TestScene& scene, RenderStac
     if (profile == HardwareProfile::Unrestricted &&
         ImGui::Selectable(sceneLabels[8], scene == TestScene::SpectralMetamers))
       scene = TestScene::SpectralMetamers;
+    if (profile == HardwareProfile::Unrestricted &&
+        ImGui::Selectable(sceneLabels[9], scene == TestScene::ElementalChamber))
+      scene = TestScene::ElementalChamber;
     if (importedModel != nullptr) {
       ImGui::PushID("imported-model-scene");
       if (ImGui::Selectable(importedModel->name.c_str(), scene == TestScene::ImportedModel))

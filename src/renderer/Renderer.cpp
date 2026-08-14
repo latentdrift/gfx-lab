@@ -1,6 +1,7 @@
 #include "renderer/Renderer.hpp"
 #include "renderer/Shaders.hpp"
 #include "renderer/TestGeometry.hpp"
+#include "simulation/ElementalSimulation.hpp"
 #include "assets/ModelAsset.hpp"
 
 #include <GL/glew.h>
@@ -272,6 +273,19 @@ public:
     glEnableVertexAttribArray(5);
     glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, tangent)));
     glGenVertexArrays(1, &fullscreenVao_);
+    glGenTextures(1, &simulationMatterTexture_);
+    glGenTextures(1, &simulationDynamicsTexture_);
+    const auto initializeSimulationTexture = [](const GLuint texture) {
+      glBindTexture(GL_TEXTURE_2D, texture);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, ElementalSimulation::width,
+        ElementalSimulation::height, 0, GL_RGBA, GL_FLOAT, nullptr);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    };
+    initializeSimulationTexture(simulationMatterTexture_);
+    initializeSimulationTexture(simulationDynamicsTexture_);
     glGenFramebuffers(static_cast<GLsizei>(relationFbos_.size()), relationFbos_.data());
     glGenTextures(static_cast<GLsizei>(relationTextures_.size()), relationTextures_.data());
     for (std::size_t index = 0; index < relationTextures_.size(); ++index) {
@@ -353,6 +367,8 @@ public:
     glDeleteTextures(1, &normalTexture_);
     glDeleteTextures(1, &detailTexture_);
     glDeleteTextures(1, &whiteTexture_);
+    glDeleteTextures(1, &simulationMatterTexture_);
+    glDeleteTextures(1, &simulationDynamicsTexture_);
     glDeleteFramebuffers(1, &shadowFbo_);
     glDeleteTextures(1, &shadowTexture_);
     glDeleteBuffers(1, &vbo_);
@@ -397,6 +413,25 @@ public:
   void clearImportedModel() {
     clearImportedMaterialResources();
     uploadGeometry(nullptr);
+  }
+
+  void updateElementalSimulation(const float deltaSeconds, const RendererState& state,
+      const TestScene scene) {
+    if (scene != TestScene::ElementalChamber) return;
+    elementalSimulation_.update(deltaSeconds, state.field);
+    if (uploadedSimulationRevision_ == elementalSimulation_.revision()) return;
+    glBindTexture(GL_TEXTURE_2D, simulationMatterTexture_);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, ElementalSimulation::width,
+      ElementalSimulation::height, GL_RGBA, GL_FLOAT, elementalSimulation_.matterPixels().data());
+    glBindTexture(GL_TEXTURE_2D, simulationDynamicsTexture_);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, ElementalSimulation::width,
+      ElementalSimulation::height, GL_RGBA, GL_FLOAT, elementalSimulation_.dynamicsPixels().data());
+    uploadedSimulationRevision_ = elementalSimulation_.revision();
+  }
+
+  void resetElementalSimulation() {
+    elementalSimulation_.reset();
+    uploadedSimulationRevision_ = 0;
   }
 
   GLuint render(const RendererState& state, const CameraOrbit& camera, TestScene scene, const std::size_t targetIndex,
@@ -621,6 +656,13 @@ public:
     glUniform1f(location("uFieldVertexDisplacement"), state.field.vertexDisplacement);
     glUniform1i(location("uFieldSignedDisplacement"), state.field.signedDisplacement);
     glUniform1i(location("uFieldProducerKind"), state.field.producerKind);
+    glActiveTexture(GL_TEXTURE9);
+    glBindTexture(GL_TEXTURE_2D, simulationMatterTexture_);
+    glUniform1i(location("uSimulationMatter"), 9);
+    glActiveTexture(GL_TEXTURE10);
+    glBindTexture(GL_TEXTURE_2D, simulationDynamicsTexture_);
+    glUniform1i(location("uSimulationDynamics"), 10);
+    glUniform1i(location("uSimulationChannel"), state.field.visualization);
     glUniform1i(location("uFieldSdfAType"), state.field.sdfA.type);
     glUniform3fv(location("uFieldSdfAPosition"), 1, glm::value_ptr(state.field.sdfA.position));
     glUniform3fv(location("uFieldSdfAParameters"), 1, glm::value_ptr(state.field.sdfA.parameters));
@@ -782,6 +824,21 @@ public:
         break;
       case TestScene::SpectralMetamers:
         break;
+      case TestScene::ElementalChamber: {
+        drawMesh(plane_, glm::scale(identity, glm::vec3(1.70f, 1.0f, 0.50f)), glm::vec3(1.0f));
+        bindSurfaceTexture(whiteTexture_, false, false);
+        const auto drawMarker = [this](const glm::vec3& position, const glm::vec3& tint, const float scale) {
+          matrix("uModel", glm::translate(glm::mat4(1.0f), position) *
+            glm::scale(glm::mat4(1.0f), glm::vec3(scale)));
+          glUniform4fv(location("uObjectTint"), 1, glm::value_ptr(glm::vec4(tint, 1.0f)));
+          glUniform1i(location("uFieldGeometryAffects"), false);
+          glDrawArrays(GL_TRIANGLES, smoothSphere_.first, smoothSphere_.count);
+        };
+        drawMarker({state.field.sourceA.x, 0.16f, state.field.sourceA.z},
+          {1.0f, 0.22f, 0.04f}, 0.14f);
+        drawMarker({2.8f, 0.16f, 1.42f}, {0.35f, 0.75f, 1.0f}, 0.18f);
+        break;
+      }
       case TestScene::ImportedModel:
         for (const ImportedSubmeshGpu& submesh : importedSubmeshes_) {
           const ImportedMaterialGpu* material = submesh.materialIndex < importedMaterials_.size()
@@ -961,6 +1018,13 @@ public:
     glUniform1f(glGetUniformLocation(fieldProgram_, "uBandSharpness"), state.field.bandSharpness);
     glUniform1i(glGetUniformLocation(fieldProgram_, "uVisualization"), state.field.visualization);
     glUniform1i(glGetUniformLocation(fieldProgram_, "uProducerKind"), state.field.producerKind);
+    glActiveTexture(GL_TEXTURE9);
+    glBindTexture(GL_TEXTURE_2D, simulationMatterTexture_);
+    glUniform1i(glGetUniformLocation(fieldProgram_, "uSimulationMatter"), 9);
+    glActiveTexture(GL_TEXTURE10);
+    glBindTexture(GL_TEXTURE_2D, simulationDynamicsTexture_);
+    glUniform1i(glGetUniformLocation(fieldProgram_, "uSimulationDynamics"), 10);
+    glUniform1i(glGetUniformLocation(fieldProgram_, "uSimulationChannel"), state.field.visualization);
     glUniform1i(glGetUniformLocation(fieldProgram_, "uSdfAType"), state.field.sdfA.type);
     glUniform3fv(glGetUniformLocation(fieldProgram_, "uSdfAPosition"), 1,
       glm::value_ptr(state.field.sdfA.position));
@@ -1045,6 +1109,9 @@ public:
         case TestScene::SpectralMetamers:
           countMesh(smoothSphere_, glm::translate(identity, glm::vec3(-1.25f, 0.0f, 0.0f)));
           countMesh(smoothSphere_, glm::translate(identity, glm::vec3(1.25f, 0.0f, 0.0f)));
+          break;
+        case TestScene::ElementalChamber:
+          countMesh(plane_, glm::scale(identity, glm::vec3(1.70f, 1.0f, 0.50f)));
           break;
         case TestScene::ImportedModel:
           countMesh(imported_, identity);
@@ -1431,6 +1498,9 @@ private:
     shadowProgram_ = 0, overdrawProgram_ = 0;
   GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, indexedTexture_ = 0,
     clutTexture_ = 0, normalTexture_ = 0, detailTexture_ = 0, whiteTexture_ = 0;
+  ElementalSimulation elementalSimulation_;
+  GLuint simulationMatterTexture_ = 0, simulationDynamicsTexture_ = 0;
+  unsigned long long uploadedSimulationRevision_ = 0;
   GLint maxSamples_ = 1;
   GLfloat maxAnisotropy_ = 1.0f;
   std::vector<Vertex> baseVertices_;
@@ -1607,6 +1677,9 @@ unsigned int Renderer::reconstructDisplay(const unsigned int sourceTexture,
     const DisplayReconstructionState& state, const std::size_t targetIndex) {
   return impl_->reconstructDisplay(sourceTexture, state, targetIndex);
 }
+void Renderer::updateElementalSimulation(const float deltaSeconds, const RendererState& state,
+    const TestScene scene) { impl_->updateElementalSimulation(deltaSeconds, state, scene); }
+void Renderer::resetElementalSimulation() { impl_->resetElementalSimulation(); }
 void Renderer::resetFrameHistory() { impl_->resetFrameHistory(); }
 
 void Renderer::setImportedModel(const ModelAsset& asset) { impl_->setImportedModel(asset); }

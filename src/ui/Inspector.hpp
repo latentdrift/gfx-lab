@@ -9,7 +9,8 @@ namespace gfxlab::ui {
 
 void setStyle();
 void drawInspector(Category category, RenderPass& pass, HardwareProfile profile, AnimationTimeline& timeline,
-  const ModelAsset* importedModel, TestScene scene, bool textureSamplingOnly = false);
+  const ModelAsset* importedModel, TestScene scene, bool textureSamplingOnly = false,
+  bool editingSceneDefaults = false);
 const char* categoryName(Category category);
 
 } // namespace gfxlab::ui

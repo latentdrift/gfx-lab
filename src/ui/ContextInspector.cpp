@@ -90,7 +90,7 @@ void drawRenderSettings(RenderStack& stack, AnimationTimeline& timeline, const b
   beginInheritanceContext(stack, sceneDefaults, timeSeconds);
   const auto drawCategory = [&](const Category category) {
     if (categoryAvailableForHardwareProfile(profile, category))
-      drawInspector(category, edited, profile, timeline, importedModel, scene);
+      drawInspector(category, edited, profile, timeline, importedModel, scene, false, sceneDefaults);
   };
   switch (section) {
     case Section::TransformCamera:
@@ -159,7 +159,7 @@ void drawTextureSettings(RenderStack& stack, AnimationTimeline& timeline, const 
   }
   drawTextureMappingEditorContents(edited, timeline, importedModel, scene, texturePreview);
   ImGui::SeparatorText("SAMPLING & STORAGE");
-  drawInspector(Category::Texture, edited, profile, timeline, importedModel, scene, true);
+  drawInspector(Category::Texture, edited, profile, timeline, importedModel, scene, true, sceneDefaults);
   clearPropertyInheritanceContext();
   applyInspectorEdit(stack, sceneDefaults, before, edited, timeSeconds);
 }

@@ -369,6 +369,7 @@ int runApplication() {
           if (importedModel != nullptr) renderer.setImportedModel(*importedModel);
           else renderer.clearImportedModel();
           renderer.resetFrameHistory();
+          renderer.resetElementalSimulation();
           editorSelection = {};
           compare = CompareMode::Relation;
           documentMessage = "Loaded stack document:\n" + *dialog.path;
@@ -421,7 +422,10 @@ int runApplication() {
         }
       }
     }
-    if (workspaceActions.resetFrameHistory) renderer.resetFrameHistory();
+    if (workspaceActions.resetFrameHistory) {
+      renderer.resetFrameHistory();
+      renderer.resetElementalSimulation();
+    }
     if (workspaceActions.handbook) graphicsHandbook.open();
     if (workspaceActions.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
 
@@ -438,7 +442,8 @@ int runApplication() {
       if (!categoryAvailableForHardwareProfile(hardwareProfile, category)) category = Category::Geometry;
       if (hardwareProfile != HardwareProfile::Unrestricted &&
           (scene == TestScene::StencilMask || scene == TestScene::FieldInterference ||
-           scene == TestScene::SdfIsoSurface || scene == TestScene::SpectralMetamers))
+           scene == TestScene::SdfIsoSurface || scene == TestScene::SpectralMetamers ||
+           scene == TestScene::ElementalChamber))
         scene = TestScene::Torus;
     }
     if (!modelImportError.empty()) ImGui::OpenPopup("Model import failed");
@@ -467,6 +472,7 @@ int runApplication() {
 
     if (scene != historyScene || hardwareProfile != historyProfile || importedModel.get() != historyModel) {
       renderer.resetFrameHistory();
+      renderer.resetElementalSimulation();
       historyScene = scene;
       historyProfile = hardwareProfile;
       historyModel = importedModel.get();
@@ -490,6 +496,7 @@ int runApplication() {
     RenderStack evaluatedStack = evaluateRenderStack(renderStack,
       evaluateAnimation ? animationTimeline.timeSeconds : 0.0f);
     applyMeasurementModulations(evaluatedStack, measurementRuntime, deltaSeconds);
+    renderer.updateElementalSimulation(deltaSeconds, evaluatedStack.global().renderer, scene);
     for (RenderPass& pass : evaluatedStack.passes())
       normalizeForHardwareProfile(hardwareProfile, pass.renderer);
     std::array<GLuint, RenderStack::maximumPasses> passTextures{};

@@ -94,7 +94,8 @@ int n64TextureBytes(const RendererState::N64& state) {
 }
 
 void drawInspector(Category category, RenderPass& pass, HardwareProfile profile, AnimationTimeline& timeline,
-    const ModelAsset* importedModel, const TestScene scene, const bool textureSamplingOnly) {
+    const ModelAsset* importedModel, const TestScene scene, const bool textureSamplingOnly,
+    const bool editingSceneDefaults) {
   RendererState& state = pass.renderer;
   const ProfileCapabilities& capabilities = hardwareProfileCapabilities(profile);
   switch (category) {
@@ -553,9 +554,9 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       ImGui::TextUnformatted("FIELD"); ImGui::Separator();
       animationKeyControl(pass, AnimationProperty::FieldEnabled, timeline,
         ImGui::Checkbox("Evaluate world-space field", &state.field.enabled));
-      const char* producerKinds[] = {"Wave interference", "Signed distance field"};
+      const char* producerKinds[] = {"Wave interference", "Signed distance field", "Persistent elemental simulation"};
       bool producerKindChanged = ImGui::Combo("Producer family", &state.field.producerKind,
-        producerKinds, 2);
+        producerKinds, 3);
       animationKeyControl(pass, AnimationProperty::FieldProducerKind, timeline, producerKindChanged);
       description("Selects what scalar quantity the pass field buffer stores. SDF mode preserves signed distance in world units.");
       ImGui::BeginDisabled(!state.field.enabled);
@@ -605,6 +606,31 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       animationKeyControl(pass, AnimationProperty::FieldBandSharpness, timeline,
         ImGui::DragFloat("Band sharpness", &state.field.bandSharpness, 0.01f, 0.1f, 8.0f, "%.2f"));
       description("Interference intensity evaluates |E_A + E_B| squared.");
+      ImGui::EndDisabled();
+      ImGui::SeparatorText("PERSISTENT ELEMENTAL MEDIUM");
+      ImGui::BeginDisabled(state.field.producerKind != 2);
+      if (!editingSceneDefaults)
+        description("The medium is shared by the whole scene. Edit its injector under Scene Defaults; passes independently choose which persistent channel they expose.");
+      ImGui::BeginDisabled(!editingSceneDefaults);
+      animationKeyControl(pass, AnimationProperty::FieldSourceA, timeline,
+        ImGui::DragFloat3("Injector position XYZ", &state.field.sourceA.x, 0.01f, -8.0f, 8.0f, "%.2f"));
+      animationKeyControl(pass, AnimationProperty::FieldWavelength, timeline,
+        ImGui::DragFloat("Injector radius", &state.field.wavelength, 0.01f, 0.08f, 4.0f, "%.2f units"));
+      animationKeyControl(pass, AnimationProperty::FieldAmplitudeA, timeline,
+        ImGui::DragFloat("Heat injection rate", &state.field.amplitudeA, 0.01f, 0.0f, 4.0f, "%.2f"));
+      animationKeyControl(pass, AnimationProperty::FieldAmplitudeB, timeline,
+        ImGui::DragFloat("Fuel injection rate", &state.field.amplitudeB, 0.01f, 0.0f, 4.0f, "%.2f"));
+      animationKeyControl(pass, AnimationProperty::FieldPhaseOffset, timeline,
+        ImGui::SliderAngle("Jet direction", &state.field.phaseOffset, -180.0f, 180.0f, "%.1f deg"));
+      animationKeyControl(pass, AnimationProperty::FieldFalloff, timeline,
+        ImGui::DragFloat("Jet strength", &state.field.falloff, 0.01f, 0.0f, 2.0f, "%.2f"));
+      ImGui::EndDisabled();
+      constexpr const char* simulationChannels[] = {"Temperature", "Smoke density", "Fuel", "Pressure",
+        "Flow speed", "Moisture", "Combustion rate"};
+      bool simulationChannelChanged = ImGui::Combo("Exposed field channel", &state.field.visualization,
+        simulationChannels, 7);
+      animationKeyControl(pass, AnimationProperty::FieldVisualization, timeline, simulationChannelChanged);
+      description("The chamber retains these quantities between frames. This pass selects one channel for surface consumers and its named R16F field output.");
       ImGui::EndDisabled();
       ImGui::SeparatorText("SIGNED DISTANCE PRODUCERS");
       ImGui::BeginDisabled(state.field.producerKind != 1);

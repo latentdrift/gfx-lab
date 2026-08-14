@@ -50,6 +50,9 @@ uniform int uFieldSdfOperation;
 uniform float uFieldSdfSmoothness;
 uniform float uFieldSdfPreviewRange;
 uniform float uFieldIsoLevel;
+uniform sampler2D uSimulationMatter;
+uniform sampler2D uSimulationDynamics;
+uniform int uSimulationChannel;
 
 out vec3 vWorldPosition;
 out vec3 vNormal;
@@ -86,6 +89,20 @@ float sdfScene(vec3 p) {
 }
 
 float evaluateField(vec3 worldPosition) {
+  if (uFieldProducerKind == 2) {
+    vec2 uv = worldPosition.xz / vec2(12.0, 8.0) + 0.5;
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 0.0;
+    vec4 matter = texture(uSimulationMatter, uv);
+    vec4 dynamics = texture(uSimulationDynamics, uv);
+    if (dynamics.a < 0.0) return 0.0;
+    if (uSimulationChannel == 0) return clamp(matter.r / 2.0, 0.0, 1.0);
+    if (uSimulationChannel == 1) return clamp(matter.g, 0.0, 1.0);
+    if (uSimulationChannel == 2) return clamp(matter.b, 0.0, 1.0);
+    if (uSimulationChannel == 3) return clamp(abs(dynamics.b) * 2.0, 0.0, 1.0);
+    if (uSimulationChannel == 4) return clamp(length(dynamics.rg), 0.0, 1.0);
+    if (uSimulationChannel == 5) return clamp(matter.a, 0.0, 1.0);
+    return clamp(dynamics.a, 0.0, 1.0);
+  }
   if (uFieldProducerKind == 1) {
     float distanceToSurface = sdfScene(worldPosition) - uFieldIsoLevel;
     return clamp(1.0 - abs(distanceToSurface) / max(uFieldSdfPreviewRange, 0.001), 0.0, 1.0);
@@ -860,6 +877,9 @@ uniform vec3 uSdfBPosition;
 uniform vec3 uSdfBParameters;
 uniform int uSdfOperation;
 uniform float uSdfSmoothness;
+uniform sampler2D uSimulationMatter;
+uniform sampler2D uSimulationDynamics;
+uniform int uSimulationChannel;
 out float fieldSignal;
 
 float sdfPrimitive(vec3 p, int type, vec3 parameters) {
@@ -888,6 +908,23 @@ void main() {
   if (!uEnabled || depth >= 0.999999) { fieldSignal = 0.0; return; }
   vec4 world = uInverseViewProjection * vec4(vUv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
   vec3 position = world.xyz / max(abs(world.w), 0.000001);
+  if (uProducerKind == 2) {
+    vec2 uv = position.xz / vec2(12.0, 8.0) + 0.5;
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
+      fieldSignal = 0.0; return;
+    }
+    vec4 matter = texture(uSimulationMatter, uv);
+    vec4 dynamics = texture(uSimulationDynamics, uv);
+    if (dynamics.a < 0.0) { fieldSignal = 0.0; return; }
+    if (uSimulationChannel == 0) fieldSignal = clamp(matter.r / 2.0, 0.0, 1.0);
+    else if (uSimulationChannel == 1) fieldSignal = clamp(matter.g, 0.0, 1.0);
+    else if (uSimulationChannel == 2) fieldSignal = clamp(matter.b, 0.0, 1.0);
+    else if (uSimulationChannel == 3) fieldSignal = clamp(abs(dynamics.b) * 2.0, 0.0, 1.0);
+    else if (uSimulationChannel == 4) fieldSignal = clamp(length(dynamics.rg), 0.0, 1.0);
+    else if (uSimulationChannel == 5) fieldSignal = clamp(matter.a, 0.0, 1.0);
+    else fieldSignal = clamp(dynamics.a, 0.0, 1.0);
+    return;
+  }
   if (uProducerKind == 1) { fieldSignal = sdfScene(position); return; }
   float distanceA = length(position - uSourceA);
   float distanceB = length(position - uSourceB);

@@ -29,6 +29,7 @@ const char* testSceneName(TestScene scene) {
     case TestScene::FieldInterference: return "field_interference";
     case TestScene::SdfIsoSurface: return "sdf_iso_surface";
     case TestScene::SpectralMetamers: return "spectral_metamers";
+    case TestScene::ElementalChamber: return "elemental_chamber";
     case TestScene::ImportedModel: return "imported_model";
   }
   return "unknown";
@@ -134,6 +135,29 @@ void applyRecommendedSetup(TestScene scene, RendererState& state, CameraOrbit& c
       camera.pitch = 0.18f;
       camera.distance = 6.0f;
       camera.target = glm::vec3(0.0f, 0.0f, 0.0f);
+      break;
+    case TestScene::ElementalChamber:
+      state.field.enabled = true;
+      state.field.producerKind = 2;
+      state.field.sourceA = {-2.6f, 0.0f, -1.7f};
+      state.field.wavelength = 0.72f;
+      state.field.amplitudeA = 1.25f;
+      state.field.amplitudeB = 0.82f;
+      state.field.phaseOffset = 0.28f;
+      state.field.falloff = 1.2f;
+      state.field.visualization = 6;
+      state.field.lowColor = {0.006f, 0.012f, 0.028f};
+      state.field.highColor = {1.0f, 0.28f, 0.025f};
+      state.field.surfaceColorInfluence = 0.72f;
+      state.field.emissionInfluence = 1.8f;
+      state.lighting.model = 0;
+      state.lighting.ambient = 0.07f;
+      state.output.width = 640;
+      state.output.height = 480;
+      camera.yaw = 0.52f;
+      camera.pitch = 0.82f;
+      camera.distance = 9.2f;
+      camera.target = {0.0f, 0.0f, 0.0f};
       break;
     case TestScene::ImportedModel:
       camera.distance = 5.2f;

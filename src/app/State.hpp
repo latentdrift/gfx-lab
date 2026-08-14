@@ -113,7 +113,8 @@ enum class RelationOperator {
   SignedColorOffset,
   BitwiseXor,
 };
-enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask, FieldInterference, SdfIsoSurface, SpectralMetamers, ImportedModel };
+enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask,
+  FieldInterference, SdfIsoSurface, SpectralMetamers, ElementalChamber, ImportedModel };
 
 struct CameraOrbit {
   float yaw = 0.72f;

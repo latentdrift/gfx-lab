@@ -1,0 +1,212 @@
+{
+  "schema": "graphics-lab.render-stack.v8",
+  "hardware_target": "unrestricted",
+  "test_scene": "elemental_chamber",
+  "view": {
+    "orbit_yaw_radians": 0.52,
+    "orbit_pitch_radians": 0.82,
+    "distance_units": 9.2,
+    "target": [0.0, 0.0, 0.0]
+  },
+  "display_reconstruction": {
+    "enabled": true,
+    "signal": "composite_ntsc",
+    "chroma_bleed": 0.12,
+    "luma_chroma_crosstalk": 0.04,
+    "scanline_strength": 0.06,
+    "phosphor_mask_strength": 0.0,
+    "bloom_strength": 0.32,
+    "bloom_radius_pixels": 3.0
+  },
+  "animation_timeline": {
+    "duration_seconds": 8.0,
+    "playback_rate": 1.0,
+    "loop": true,
+    "auto_key": false,
+    "show_all_passes": true,
+    "snap_to_frames": true,
+    "frames_per_second": 24,
+    "current_time_seconds": 0.0
+  },
+  "global_base": {
+    "properties": {
+      "field_enabled": [1.0],
+      "field_producer_kind": [2.0],
+      "field_source_a": [-2.6, 0.0, -1.7],
+      "field_wavelength": [0.82],
+      "field_phase_offset": [0.28],
+      "field_amplitude_a": [0.0],
+      "field_amplitude_b": [0.0],
+      "field_falloff": [1.2],
+      "field_visualization": [6.0],
+      "field_low_color": [0.004, 0.008, 0.022],
+      "field_high_color": [1.0, 0.28, 0.025],
+      "field_surface_color_influence": [0.74],
+      "field_emission_influence": [1.8],
+      "lighting_model": [0.0],
+      "ambient": [0.07],
+      "bits_per_channel": [7.0],
+      "dithering_enabled": [1.0],
+      "linear_light": [1.0],
+      "internal_resolution": [640.0, 480.0],
+      "nearest_upscaling": [0.0]
+    },
+    "property_tracks": [
+      {
+        "property": "field_amplitude_a",
+        "interpolation": "smooth_step",
+        "keys": [
+          {"time_seconds": 0.0, "value": [0.0]},
+          {"time_seconds": 0.35, "value": [2.8]},
+          {"time_seconds": 1.65, "value": [1.15]},
+          {"time_seconds": 3.2, "value": [0.0]},
+          {"time_seconds": 5.0, "value": [1.8]},
+          {"time_seconds": 6.1, "value": [0.0]},
+          {"time_seconds": 8.0, "value": [0.0]}
+        ]
+      },
+      {
+        "property": "field_amplitude_b",
+        "interpolation": "smooth_step",
+        "keys": [
+          {"time_seconds": 0.0, "value": [0.0]},
+          {"time_seconds": 0.22, "value": [2.2]},
+          {"time_seconds": 2.4, "value": [0.65]},
+          {"time_seconds": 3.2, "value": [0.0]},
+          {"time_seconds": 4.75, "value": [1.35]},
+          {"time_seconds": 6.2, "value": [0.0]},
+          {"time_seconds": 8.0, "value": [0.0]}
+        ]
+      },
+      {
+        "property": "field_phase_offset",
+        "interpolation": "smooth_step",
+        "keys": [
+          {"time_seconds": 0.0, "value": [0.18]},
+          {"time_seconds": 3.0, "value": [0.72]},
+          {"time_seconds": 5.0, "value": [-0.35]},
+          {"time_seconds": 8.0, "value": [0.18]}
+        ]
+      }
+    ]
+  },
+  "passes": [
+    {
+      "id": 1,
+      "name": "Temperature field",
+      "enabled": true,
+      "operation_kind": "render",
+      "output_buffer": "field_signal",
+      "overrides": [
+        {"property": "field_visualization", "value": [0.0]},
+        {"property": "field_low_color", "value": [0.004, 0.012, 0.04]},
+        {"property": "field_high_color", "value": [1.0, 0.12, 0.01]}
+      ],
+      "animation": {"enabled": true, "property_tracks": []}
+    },
+    {
+      "id": 2,
+      "name": "Smoke field",
+      "enabled": true,
+      "operation_kind": "render",
+      "output_buffer": "field_signal",
+      "overrides": [
+        {"property": "field_visualization", "value": [1.0]},
+        {"property": "field_low_color", "value": [0.0, 0.0, 0.0]},
+        {"property": "field_high_color", "value": [0.28, 0.42, 0.58]}
+      ],
+      "animation": {"enabled": true, "property_tracks": []}
+    },
+    {
+      "id": 3,
+      "name": "Combustion field",
+      "enabled": true,
+      "operation_kind": "render",
+      "output_buffer": "field_signal",
+      "overrides": [
+        {"property": "field_visualization", "value": [6.0]},
+        {"property": "field_low_color", "value": [0.0, 0.0, 0.0]},
+        {"property": "field_high_color", "value": [1.0, 0.82, 0.22]}
+      ],
+      "animation": {"enabled": true, "property_tracks": []}
+    },
+    {
+      "id": 4,
+      "name": "Fire carried by smoke",
+      "enabled": true,
+      "operation_kind": "composite",
+      "output_buffer": "color",
+      "overrides": [],
+      "composite_into_previous": {
+        "operation": "screen",
+        "source_a": {"type": "render_pass", "pass_id": 1},
+        "source_b": {"type": "render_pass", "pass_id": 3},
+        "gain": 1.35,
+        "bias": 0.0,
+        "opacity": 1.0,
+        "arithmetic_color_space": "linear_light",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    },
+    {
+      "id": 5,
+      "name": "Smoke encloses the fire",
+      "enabled": true,
+      "operation_kind": "composite",
+      "output_buffer": "color",
+      "overrides": [],
+      "composite_into_previous": {
+        "operation": "screen",
+        "source_a": {"type": "render_pass", "pass_id": 4},
+        "source_b": {"type": "render_pass", "pass_id": 2},
+        "gain": 1.0,
+        "bias": 0.0,
+        "opacity": 0.58,
+        "arithmetic_color_space": "linear_light",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    },
+    {
+      "id": 6,
+      "name": "Combustion drives heat contrast",
+      "enabled": true,
+      "operation_kind": "measure",
+      "output_buffer": "field_signal",
+      "overrides": [],
+      "composite_into_previous": {
+        "operation": "absolute_difference",
+        "source_a": {"type": "render_pass_field", "pass_id": 3},
+        "source_b": {"type": "fixed_color", "pass_id": 3},
+        "fixed_color_rgba": [0.0, 0.0, 0.0, 1.0],
+        "gain": 1.0,
+        "bias": 0.0,
+        "opacity": 1.0,
+        "arithmetic_color_space": "linear_light",
+        "range_behavior": "clamp_0_to_1",
+        "mask": "none",
+        "invert_mask": false
+      },
+      "measurement": {
+        "threshold": 0.08,
+        "absolute_magnitude": true,
+        "metric": "coverage_above_threshold",
+        "modulation": {
+          "enabled": true,
+          "target_pass_id": 4,
+          "target_property": "composite_gain",
+          "input_range": [0.0, 0.12],
+          "output_range": [0.75, 3.5],
+          "clamp": true,
+          "smoothing_seconds": 0.22
+        }
+      },
+      "animation": {"enabled": true, "property_tracks": []}
+    }
+  ]
+}
