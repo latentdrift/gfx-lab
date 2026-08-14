@@ -1514,8 +1514,7 @@ public:
           release = std::max(release, found->second);
       if (std::holds_alternative<document::RenderOperation>(operation->data)) {
         renderSlots.emplace(operation->id, allocateSlot(renderSlotRelease, index, release));
-      } else if (!std::holds_alternative<document::ConstantOperation>(operation->data) &&
-          !std::holds_alternative<document::SdfPrimitiveOperation>(operation->data) &&
+      } else if (!std::holds_alternative<document::SdfPrimitiveOperation>(operation->data) &&
           !std::holds_alternative<document::SdfCombineOperation>(operation->data) &&
           !std::holds_alternative<document::WaveFieldOperation>(operation->data) &&
           !std::holds_alternative<document::ElementalFieldOperation>(operation->data) &&
@@ -1845,8 +1844,19 @@ public:
           pass.importedTexture.get(), pass.importedTextureSrgb, time.apply(timeSeconds),
           !data->field || data->fieldMode != document::RenderFieldMode::SurfaceOnly, sdfProgram);
         outputExtent = {passTargets_[renderSlot].width, passTargets_[renderSlot].height};
-      } else if (std::holds_alternative<document::ConstantOperation>(operation->data) ||
-          std::holds_alternative<document::SdfPrimitiveOperation>(operation->data) ||
+      } else if (const auto* data = std::get_if<document::ConstantOperation>(&operation->data)) {
+        outputExtent = {document.renderDefaults.renderer.output.width,
+          document.renderDefaults.renderer.output.height};
+        const std::size_t target = relationSlot % relationFbos_.size();
+        prepareGraphTarget(false, target, outputExtent.x, outputExtent.y);
+        glViewport(0, 0, outputExtent.x, outputExtent.y);
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
+        glDisable(GL_BLEND);
+        glClearBufferfv(GL_COLOR, 0, glm::value_ptr(data->value));
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        output = relationTextures_[target];
+      } else if (std::holds_alternative<document::SdfPrimitiveOperation>(operation->data) ||
           std::holds_alternative<document::SdfCombineOperation>(operation->data) ||
           std::holds_alternative<document::WaveFieldOperation>(operation->data) ||
           std::holds_alternative<document::ElementalFieldOperation>(operation->data)) {

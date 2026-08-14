@@ -161,6 +161,20 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         document::documentJson(*sdfRoundTrip.document).find("field_producer_kind") != std::string::npos ||
         !evaluation::compileDocument(*sdfRoundTrip.document).valid())
       fail("world-space SDF graph typing, connection, or persistence failed validation");
+    document::Document constantGraph = document::makeDefaultDocument();
+    document::Operation constant = document::makeConstantOperation({2}, "Presented constant",
+      {0.9f, 0.05f, 0.7f, 1.0f});
+    const document::SignalRef constantSignal = document::primaryOutput(constant);
+    constantGraph.operations.push_back(std::move(constant));
+    constantGraph.nextOperationIdentity = 3;
+    constantGraph.presentation.input = constantSignal;
+    evaluation::SignalRegistry constantSignals;
+    const evaluation::EvaluationPlan constantPlan = evaluation::compileDocument(constantGraph);
+    const GLuint constantTexture = renderer.evaluate(constantGraph, constantPlan, constantSignals, 1, 0.0f);
+    const evaluation::SignalResource* constantResource = constantSignals.find(constantSignal.id);
+    if (!constantPlan.valid() || constantTexture == 0 || constantResource == nullptr ||
+        constantResource->textureCount != 1 || constantResource->textures[0] != constantTexture)
+      fail("directly presented Constant did not publish a displayable GPU signal");
     document::Document workingSignals = document::makeDefaultDocument();
     workingSignals.renderDefaults.renderer.output.width = 384;
     workingSignals.renderDefaults.renderer.output.height = 216;
