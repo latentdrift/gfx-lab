@@ -43,4 +43,36 @@ const char* signalDomainLabel(const SignalDomain domain) {
   return "Unknown";
 }
 
+const char* signalSpaceLabel(const SignalSpace space) {
+  switch (space) {
+    case SignalSpace::Unspecified: return "Unspecified";
+    case SignalSpace::Object: return "Object";
+    case SignalSpace::World: return "World";
+    case SignalSpace::View: return "View";
+    case SignalSpace::Screen: return "Screen";
+    case SignalSpace::UV: return "UV";
+  }
+  return "Unknown";
+}
+
+const char* signalEncodingLabel(const SignalEncoding encoding) {
+  switch (encoding) {
+    case SignalEncoding::Unspecified: return "Unspecified";
+    case SignalEncoding::Linear: return "Linear";
+    case SignalEncoding::EncodedRgb: return "Encoded RGB";
+    case SignalEncoding::Signed: return "Signed";
+    case SignalEncoding::UnsignedNormalized: return "Normalized 0..1";
+    case SignalEncoding::SignedUnitVectorPacked: return "Signed unit vector packed as 0..1";
+  }
+  return "Unknown";
+}
+
+std::string signalDescriptorSummary(const SignalDescriptor& signal) {
+  std::string result = std::string(signalDomainLabel(signal.metadata.domain)) + " · " +
+    signalShapeLabel(signal.shape) + " · " + signalSemanticLabel(signal.metadata.semantic);
+  if (signal.metadata.space != SignalSpace::Unspecified)
+    result += std::string(" · ") + signalSpaceLabel(signal.metadata.space) + " space";
+  return result;
+}
+
 } // namespace gfxlab::document

@@ -144,6 +144,21 @@ const document::SignalDescriptor* descriptor(const document::Document& document,
   return document::findSignal(document, signal.id);
 }
 
+void drawSignalDescriptor(const document::SignalDescriptor& signal) {
+  ImGui::PushID(signal.key.c_str());
+  ImGui::TextUnformatted(signal.name.c_str());
+  ImGui::TextDisabled("%s", document::signalDescriptorSummary(signal).c_str());
+  ImGui::TextDisabled("Encoding: %s", document::signalEncodingLabel(signal.metadata.encoding));
+  if (!signal.metadata.units.empty()) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("· %s", signal.metadata.units.c_str());
+  }
+  if (signal.metadata.hasKnownRange)
+    ImGui::TextDisabled("Range: %.3g .. %.3g", signal.metadata.knownRange.x,
+      signal.metadata.knownRange.y);
+  ImGui::PopID();
+}
+
 bool signalPicker(const char* label, document::Document& document,
     const document::OperationId consumer, document::SignalRef& selected,
     const std::optional<document::SignalShape> requiredShape = std::nullopt,
@@ -442,6 +457,15 @@ void drawDocumentInspector(bool& open, document::Document& document,
     document::Operation* operation = document::findOperation(edited,
       editorState.selection.operation);
     if (operation != nullptr) changed = drawOperation(edited, *operation, measurement);
+  }
+  if (editorState.selection.kind == editor::SelectionKind::Operation) {
+    document::Operation* selected = document::findOperation(edited, editorState.selection.operation);
+    if (selected != nullptr) {
+      if (changed) document::synchronizeOperationSignalMetadata(*selected);
+      ImGui::SeparatorText("OUTPUT SIGNALS");
+      for (const document::SignalDescriptor& output : selected->outputs)
+        drawSignalDescriptor(output);
+    }
   }
   if (changed) {
     const editor::ReplaceDocument replacement{std::move(edited)};

@@ -6,8 +6,7 @@
 namespace gfxlab::document {
 namespace {
 
-SignalDescriptor signal(const OperationId producer, std::string key,
-    const SignalShape shape, const SignalSemantic semantic, std::string name) {
+SignalMetadata metadataFor(const SignalSemantic semantic) {
   SignalMetadata metadata;
   metadata.domain = semantic == SignalSemantic::Measurement ? SignalDomain::Document : SignalDomain::Screen2D;
   metadata.semantic = semantic;
@@ -17,27 +16,36 @@ SignalDescriptor signal(const OperationId producer, std::string key,
   if (semantic == SignalSemantic::Normal) {
     metadata.space = SignalSpace::World;
     metadata.encoding = SignalEncoding::Signed;
+    metadata.units = "unit direction";
     metadata.hasKnownRange = true;
     metadata.knownRange = {-1.0f, 1.0f};
   }
   if (semantic == SignalSemantic::EdgeDirection) {
     metadata.space = SignalSpace::Screen;
-    metadata.encoding = SignalEncoding::UnsignedNormalized;
+    metadata.encoding = SignalEncoding::SignedUnitVectorPacked;
+    metadata.units = "unit direction";
     metadata.hasKnownRange = true;
-    metadata.knownRange = {0.0f, 1.0f};
+    metadata.knownRange = {-1.0f, 1.0f};
   }
   if (semantic == SignalSemantic::DeviceDepth || semantic == SignalSemantic::MaskCoverage ||
       semantic == SignalSemantic::EdgeStrength)
     metadata.encoding = SignalEncoding::UnsignedNormalized;
   if (semantic == SignalSemantic::DeviceDepth) metadata.units = "device depth";
   if (semantic == SignalSemantic::SignedDistance) metadata.units = "world units";
+  if (semantic == SignalSemantic::Luminance || semantic == SignalSemantic::EdgeStrength ||
+      semantic == SignalSemantic::MaskCoverage) metadata.units = "unitless";
   if (semantic == SignalSemantic::DeviceDepth || semantic == SignalSemantic::MaskCoverage ||
       semantic == SignalSemantic::Luminance || semantic == SignalSemantic::EdgeStrength) {
     metadata.hasKnownRange = true;
     metadata.knownRange = {0.0f, 1.0f};
   }
+  return metadata;
+}
+
+SignalDescriptor signal(const OperationId producer, std::string key,
+    const SignalShape shape, const SignalSemantic semantic, std::string name) {
   return {operationSignal(producer, key), producer, std::move(key), shape,
-    std::move(name), std::move(metadata)};
+    std::move(name), metadataFor(semantic)};
 }
 
 Operation operation(OperationId id, std::string name, OperationData data,
@@ -48,6 +56,7 @@ Operation operation(OperationId id, std::string name, OperationData data,
   result.data = std::move(data);
   for (const auto& [key, shape, semantic, outputName] : outputs)
     result.outputs.push_back(signal(id, key, shape, semantic, outputName));
+  synchronizeOperationSignalMetadata(result);
   return result;
 }
 
@@ -75,6 +84,35 @@ const char* operationTypeLabel(const Operation& operation) {
 
 SignalRef primaryOutput(const Operation& operation) {
   return operation.outputs.empty() ? SignalRef{} : SignalRef{operation.outputs.front().id, 0};
+}
+
+void synchronizeOperationSignalMetadata(Operation& operation) {
+  for (SignalDescriptor& output : operation.outputs) {
+    const glm::ivec3 extent = output.metadata.extent;
+    output.metadata = metadataFor(output.metadata.semantic);
+    output.metadata.extent = extent;
+  }
+  if (const auto* constant = std::get_if<ConstantOperation>(&operation.data)) {
+    if (!operation.outputs.empty()) {
+      operation.outputs.front().shape = constant->shape;
+      operation.outputs.front().metadata = metadataFor(constant->semantic);
+    }
+  } else if (const auto* remap = std::get_if<RemapOperation>(&operation.data)) {
+    if (!operation.outputs.empty()) {
+      SignalMetadata& metadata = operation.outputs.front().metadata;
+      metadata = metadataFor(SignalSemantic::Generic);
+      metadata.encoding = SignalEncoding::Linear;
+      metadata.units = "unitless";
+      metadata.hasKnownRange = remap->clamp;
+      metadata.knownRange = {std::min(remap->outputLow, remap->outputHigh),
+        std::max(remap->outputLow, remap->outputHigh)};
+    }
+  } else if (const auto* blur = std::get_if<BlurOperation>(&operation.data)) {
+    if (!operation.outputs.empty()) {
+      operation.outputs.front().shape = blur->outputShape;
+      operation.outputs.front().metadata = metadataFor(blur->outputSemantic);
+    }
+  }
 }
 
 Operation makeRenderOperation(const OperationId id, std::string name) {

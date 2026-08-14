@@ -420,6 +420,7 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
       result.outputs.push_back(std::move(descriptor));
     }
   }
+  synchronizeOperationSignalMetadata(result);
   return result;
 }
 

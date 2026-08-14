@@ -73,6 +73,22 @@ ImU32 signalColor(const document::SignalDescriptor& signal) {
   }
 }
 
+void signalTooltip(const document::SignalDescriptor& signal) {
+  if (!ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) return;
+  ImGui::BeginTooltip();
+  ImGui::TextUnformatted(signal.name.c_str());
+  ImGui::Separator();
+  ImGui::TextUnformatted(document::signalDescriptorSummary(signal).c_str());
+  ImGui::Text("Encoding: %s", document::signalEncodingLabel(signal.metadata.encoding));
+  if (!signal.metadata.units.empty()) ImGui::Text("Units: %s", signal.metadata.units.c_str());
+  if (signal.metadata.hasKnownRange)
+    ImGui::Text("Meaningful range: %.3g .. %.3g", signal.metadata.knownRange.x,
+      signal.metadata.knownRange.y);
+  if (signal.metadata.extent.x > 0 && signal.metadata.extent.y > 0)
+    ImGui::Text("Authored extent: %d x %d", signal.metadata.extent.x, signal.metadata.extent.y);
+  ImGui::EndTooltip();
+}
+
 const char* executionClass(const document::Operation& operation) {
   return std::visit([](const auto& data) -> const char* {
     using Type = std::decay_t<decltype(data)>;
@@ -447,6 +463,7 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
       ImNodes::PushAttributeFlag(ImNodesAttributeFlags_EnableLinkDetachWithDragClick);
       ImNodes::BeginInputAttribute(input.pin);
       ImGui::TextUnformatted(input.label.c_str());
+      if (descriptor != nullptr) signalTooltip(*descriptor);
       ImNodes::EndInputAttribute();
       ImNodes::PopAttributeFlag();
       ImNodes::PopColorStyle();
@@ -464,6 +481,7 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
         if (ImGui::GetIO().KeyShift) editorState.viewer.comparison = signal;
         else editorState.viewer.viewed = signal;
       }
+      signalTooltip(output);
       if (viewed) ImGui::PopStyleColor();
       ImNodes::EndOutputAttribute();
       ImNodes::PopColorStyle();

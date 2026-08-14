@@ -156,6 +156,7 @@ struct Operation {
 
 [[nodiscard]] const char* operationTypeLabel(const Operation& operation);
 [[nodiscard]] SignalRef primaryOutput(const Operation& operation);
+void synchronizeOperationSignalMetadata(Operation& operation);
 [[nodiscard]] Operation makeRenderOperation(OperationId id, std::string name);
 [[nodiscard]] Operation makeInterpretOperation(OperationId id, std::string name, SignalRef spectrum);
 [[nodiscard]] Operation makeCompositeOperation(OperationId id, std::string name,

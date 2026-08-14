@@ -94,6 +94,10 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       document::primaryOutput(threshold));
     document::Operation luminance = document::makeLuminanceOperation({7}, "Luminance", color);
     const document::SignalRef edgeDirection{document::operationSignal(edge.id, "direction"), 0};
+    const document::SignalDescriptor* edgeDirectionDescriptor = document::findSignal(
+      workingSignals, edgeDirection.id);
+    if (edgeDirectionDescriptor != nullptr)
+      fail("edge direction descriptor resolved before its operation entered the document");
     document::Operation warp = document::makeWarpOperation({8}, "Edge Warp", color, edgeDirection);
     document::Operation composite = document::makeCompositeOperation({9}, "Masked Composite",
       document::primaryOutput(warp), document::primaryOutput(gradient));
@@ -109,6 +113,18 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     workingSignals.operations.push_back(std::move(composite));
     workingSignals.presentation.input = document::primaryOutput(workingSignals.operations.back());
     workingSignals.nextOperationIdentity = 10;
+    edgeDirectionDescriptor = document::findSignal(workingSignals, edgeDirection.id);
+    const document::SignalDescriptor* remapDescriptor = document::findSignal(workingSignals,
+      document::primaryOutput(workingSignals.operations[1]).id);
+    if (edgeDirectionDescriptor == nullptr || remapDescriptor == nullptr ||
+        edgeDirectionDescriptor->shape != document::SignalShape::Vector2 ||
+        edgeDirectionDescriptor->metadata.semantic != document::SignalSemantic::EdgeDirection ||
+        edgeDirectionDescriptor->metadata.encoding != document::SignalEncoding::SignedUnitVectorPacked ||
+        !edgeDirectionDescriptor->metadata.hasKnownRange ||
+        edgeDirectionDescriptor->metadata.knownRange != glm::vec2(-1.0f, 1.0f) ||
+        !remapDescriptor->metadata.hasKnownRange ||
+        remapDescriptor->metadata.knownRange != glm::vec2(0.0f, 1.0f))
+      fail("working-signal descriptors did not preserve shape, meaning, encoding, or range");
     const evaluation::EvaluationPlan workingPlan = evaluation::compileDocument(workingSignals);
     evaluation::SignalRegistry workingResources;
     if (!workingPlan.valid() || renderer.evaluate(workingSignals, workingPlan,

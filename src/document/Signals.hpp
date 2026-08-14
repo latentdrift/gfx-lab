@@ -26,7 +26,14 @@ enum class SignalSemantic {
   Spectrum
 };
 enum class SignalSpace { Unspecified, Object, World, View, Screen, UV };
-enum class SignalEncoding { Unspecified, Linear, EncodedRgb, Signed, UnsignedNormalized };
+enum class SignalEncoding {
+  Unspecified,
+  Linear,
+  EncodedRgb,
+  Signed,
+  UnsignedNormalized,
+  SignedUnitVectorPacked
+};
 
 struct SignalMetadata {
   SignalDomain domain = SignalDomain::Screen2D;
@@ -59,6 +66,9 @@ struct SignalRef {
 [[nodiscard]] const char* signalShapeLabel(SignalShape shape);
 [[nodiscard]] const char* signalSemanticLabel(SignalSemantic semantic);
 [[nodiscard]] const char* signalDomainLabel(SignalDomain domain);
+[[nodiscard]] const char* signalSpaceLabel(SignalSpace space);
+[[nodiscard]] const char* signalEncodingLabel(SignalEncoding encoding);
+[[nodiscard]] std::string signalDescriptorSummary(const SignalDescriptor& signal);
 
 [[nodiscard]] inline bool isScreenImage(const SignalDescriptor& signal) {
   return signal.metadata.domain == SignalDomain::Screen2D;

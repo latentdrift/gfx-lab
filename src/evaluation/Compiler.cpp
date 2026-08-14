@@ -149,6 +149,10 @@ EvaluationPlan compileDocument(const document::Document& document) {
       if (input != nullptr && !document::isScreenScalar(*input))
         result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
           "Remap requires a Scalar image, Depth, or Field input."});
+      else if (input != nullptr && (!input->metadata.units.empty() ||
+          input->metadata.semantic == document::SignalSemantic::SignedDistance))
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Warning,
+          "Remap intentionally produces a unitless Scalar and does not preserve the input semantic."});
     }
     if (const auto* edge = std::get_if<document::EdgeOperation>(&operation.data)) {
       requireInput(edge->input, "Edge input");
@@ -194,6 +198,10 @@ EvaluationPlan compileDocument(const document::Document& document) {
           displacement->shape != document::SignalShape::Vector2))
         result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
           "Warp displacement requires a screen-space Vector2."});
+      else if (displacement != nullptr &&
+          displacement->metadata.semantic != document::SignalSemantic::EdgeDirection)
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Warning,
+          "Warp interprets this Vector2 as a signed direction packed into 0..1."});
     }
     if (const auto* measure = std::get_if<document::MeasureOperation>(&operation.data)) {
       const auto descriptor = descriptors.find(measure->input.id);

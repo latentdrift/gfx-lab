@@ -11,17 +11,6 @@
 namespace gfxlab::ui {
 namespace {
 
-const char* encodingLabel(const document::SignalEncoding encoding) {
-  switch (encoding) {
-    case document::SignalEncoding::Unspecified: return "unspecified";
-    case document::SignalEncoding::Linear: return "linear";
-    case document::SignalEncoding::EncodedRgb: return "encoded RGB";
-    case document::SignalEncoding::Signed: return "signed";
-    case document::SignalEncoding::UnsignedNormalized: return "normalized";
-  }
-  return "unknown";
-}
-
 const char* severityLabel(const evaluation::DiagnosticSeverity severity) {
   switch (severity) {
     case evaluation::DiagnosticSeverity::Information: return "INFO";
@@ -87,7 +76,8 @@ void drawScopePanel(bool& open, const document::Document& document,
           ImGui::Text("%s · %s", document::signalShapeLabel(descriptor.shape),
             document::signalSemanticLabel(descriptor.metadata.semantic));
           ImGui::TableNextColumn(); ImGui::TextUnformatted(document::signalDomainLabel(descriptor.metadata.domain));
-          ImGui::TableNextColumn(); ImGui::TextUnformatted(encodingLabel(descriptor.metadata.encoding));
+          ImGui::TableNextColumn();
+          ImGui::TextUnformatted(document::signalEncodingLabel(descriptor.metadata.encoding));
           ImGui::TableNextColumn();
           if (ImGui::SmallButton("View")) editorState.viewer.viewed = signal;
           ImGui::SameLine();
