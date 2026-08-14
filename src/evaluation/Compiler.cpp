@@ -34,6 +34,10 @@ std::vector<document::SignalRef> operationInputs(const document::Operation& oper
         std::is_same_v<Type, document::BlurOperation> ||
         std::is_same_v<Type, document::ThresholdOperation> ||
         std::is_same_v<Type, document::GradientMapOperation>) addInput(result, data.input);
+    if constexpr (std::is_same_v<Type, document::WarpOperation>) {
+      addInput(result, data.image);
+      addInput(result, data.displacement);
+    }
   }, operation.data);
   return result;
 }
@@ -177,6 +181,19 @@ EvaluationPlan compileDocument(const document::Document& document) {
           input != nullptr && !document::isScreenScalar(*input))
         result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
           "Gradient Map requires a Scalar image input."});
+    }
+    if (const auto* warp = std::get_if<document::WarpOperation>(&operation.data)) {
+      requireInput(warp->image, "Warp image");
+      requireInput(warp->displacement, "Warp displacement");
+      const auto* image = descriptorOf(warp->image);
+      const auto* displacement = descriptorOf(warp->displacement);
+      if (image != nullptr && !document::isColor(*image))
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+          "Warp requires a Color image."});
+      if (displacement != nullptr && (!document::isScreenImage(*displacement) ||
+          displacement->shape != document::SignalShape::Vector2))
+        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+          "Warp displacement requires a screen-space Vector2."});
     }
     if (const auto* measure = std::get_if<document::MeasureOperation>(&operation.data)) {
       const auto descriptor = descriptors.find(measure->input.id);

@@ -268,6 +268,10 @@ Json operation(const Operation& value) {
     } else if constexpr (std::is_same_v<Type, GradientMapOperation>) {
       result["type"] = "gradient_map"; result["input"] = signal(data.input);
       result["low_color"] = vector(data.lowColor, 4); result["high_color"] = vector(data.highColor, 4);
+    } else if constexpr (std::is_same_v<Type, WarpOperation>) {
+      result["type"] = "warp"; result["image"] = signal(data.image);
+      result["displacement"] = signal(data.displacement);
+      result["strength_pixels"] = data.strengthPixels;
     }
   }, value.data);
   result["outputs"] = Json::array();
@@ -385,6 +389,10 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
     auto& data = std::get<GradientMapOperation>(result.data);
     if (source.contains("low_color")) data.lowColor = vector(source.at("low_color"), 4);
     if (source.contains("high_color")) data.highColor = vector(source.at("high_color"), 4);
+  } else if (type == "warp") {
+    result = makeWarpOperation(id, name, signal(source.at("image")),
+      signal(source.at("displacement")));
+    std::get<WarpOperation>(result.data).strengthPixels = source.value("strength_pixels", 12.0f);
   } else throw std::runtime_error("Unknown typed operation: " + type);
   result.enabled = source.value("enabled", true);
   if (source.contains("outputs")) {

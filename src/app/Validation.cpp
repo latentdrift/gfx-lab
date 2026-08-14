@@ -100,8 +100,10 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     document::Operation gradient = document::makeGradientMapOperation({6}, "Edge Color",
       document::primaryOutput(threshold));
     document::Operation luminance = document::makeLuminanceOperation({7}, "Luminance", color);
-    document::Operation composite = document::makeCompositeOperation({8}, "Masked Composite",
-      color, document::primaryOutput(gradient));
+    const document::SignalRef edgeDirection{document::operationSignal(edge.id, "direction"), 0};
+    document::Operation warp = document::makeWarpOperation({8}, "Edge Warp", color, edgeDirection);
+    document::Operation composite = document::makeCompositeOperation({9}, "Masked Composite",
+      document::primaryOutput(warp), document::primaryOutput(gradient));
     auto& compositeData = std::get<document::CompositeOperation>(composite.data);
     compositeData.mask = document::primaryOutput(threshold);
     workingSignals.operations.push_back(std::move(remap));
@@ -110,16 +112,34 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     workingSignals.operations.push_back(std::move(threshold));
     workingSignals.operations.push_back(std::move(gradient));
     workingSignals.operations.push_back(std::move(luminance));
+    workingSignals.operations.push_back(std::move(warp));
     workingSignals.operations.push_back(std::move(composite));
     workingSignals.presentation.input = document::primaryOutput(workingSignals.operations.back());
-    workingSignals.nextOperationIdentity = 9;
+    workingSignals.nextOperationIdentity = 10;
     const evaluation::EvaluationPlan workingPlan = evaluation::compileDocument(workingSignals);
     evaluation::SignalRegistry workingResources;
     if (!workingPlan.valid() || renderer.evaluate(workingSignals, workingPlan,
         workingResources, 99, 0.0f) == 0 ||
         workingResources.displayTexture(document::primaryOutput(workingSignals.operations[4]).id) == 0 ||
-        workingResources.displayTexture(document::primaryOutput(workingSignals.operations[5]).id) == 0)
+        workingResources.displayTexture(document::primaryOutput(workingSignals.operations[5]).id) == 0 ||
+        workingResources.displayTexture(edgeDirection.id) == 0 ||
+        workingResources.displayTexture(document::primaryOutput(workingSignals.operations[7]).id) == 0)
       fail("working-signal operation graph failed GPU evaluation");
+    const auto previewResource = [&](const document::SignalRef signal, const std::size_t slot) {
+      const evaluation::SignalResource* resource = workingResources.find(signal.id);
+      if (resource == nullptr || resource->textureCount == 0) return 0U;
+      return renderer.previewSignal(*resource, workingSignals.renderDefaults.renderer, slot);
+    };
+    const document::SignalRef normal{document::operationSignal(workingSignals.operations.front().id,
+      "normal"), 0};
+    const document::SignalRef field{document::operationSignal(workingSignals.operations.front().id,
+      "field"), 0};
+    const document::SignalRef spectrum{document::operationSignal(workingSignals.operations.front().id,
+      "spectrum16"), 0};
+    if (previewResource(depth, 0) == 0 || previewResource(normal, 0) == 0 ||
+        previewResource(field, 1) == 0 || previewResource(edgeDirection, 1) == 0 ||
+        previewResource(spectrum, 2) == 0)
+      fail("semantic signal preview adapter failed validation");
     const std::filesystem::path workingSignalsPath =
       "graphics-lab-working-signals-validation.json";
     std::string workingSignalsIoError;
@@ -134,8 +154,8 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       fail("working-signal document reload failed: " + restoredWorkingSignals.error);
     const evaluation::EvaluationPlan restoredWorkingPlan =
       evaluation::compileDocument(*restoredWorkingSignals.document);
-    if (!restoredWorkingPlan.valid() || restoredWorkingSignals.document->operations.size() != 8 ||
-        restoredWorkingSignals.document->nextOperationIdentity != 9 ||
+    if (!restoredWorkingPlan.valid() || restoredWorkingSignals.document->operations.size() != 9 ||
+        restoredWorkingSignals.document->nextOperationIdentity != 10 ||
         restoredWorkingSignals.document->presentation.input != workingSignals.presentation.input)
       fail("working-signal document did not preserve stable operation and port identities");
     const auto referenceA = spectral::humanResponse(spectral::reflectanceA, spectral::daylight);

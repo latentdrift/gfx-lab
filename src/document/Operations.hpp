@@ -115,6 +115,12 @@ struct GradientMapOperation {
   glm::vec4 highColor{1.0f, 0.55f, 0.08f, 1.0f};
 };
 
+struct WarpOperation {
+  SignalRef image;
+  SignalRef displacement;
+  float strengthPixels = 12.0f;
+};
+
 struct ConstantOperation {
   glm::vec4 value{1.0f};
   SignalShape shape = SignalShape::Vector4;
@@ -138,7 +144,7 @@ struct MeasureOperation {
 
 using OperationData = std::variant<RenderOperation, InterpretOperation, CompositeOperation,
   ConstantOperation, StereoOperation, MeasureOperation, LuminanceOperation, RemapOperation,
-  EdgeOperation, BlurOperation, ThresholdOperation, GradientMapOperation>;
+  EdgeOperation, BlurOperation, ThresholdOperation, GradientMapOperation, WarpOperation>;
 
 struct Operation {
   OperationId id;
@@ -167,5 +173,7 @@ struct Operation {
   SignalShape outputShape, SignalSemantic outputSemantic);
 [[nodiscard]] Operation makeThresholdOperation(OperationId id, std::string name, SignalRef input);
 [[nodiscard]] Operation makeGradientMapOperation(OperationId id, std::string name, SignalRef input);
+[[nodiscard]] Operation makeWarpOperation(OperationId id, std::string name, SignalRef image,
+  SignalRef displacement);
 
 } // namespace gfxlab::document

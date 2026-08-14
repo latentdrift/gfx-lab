@@ -333,6 +333,13 @@ bool drawOperation(document::Document& document, document::Operation& operation,
       document::SignalShape::Scalar);
     changed |= ImGui::ColorEdit4("Low color", &gradient->lowColor.x, ImGuiColorEditFlags_Float);
     changed |= ImGui::ColorEdit4("High color", &gradient->highColor.x, ImGuiColorEditFlags_Float);
+  } else if (auto* warp = std::get_if<document::WarpOperation>(&operation.data)) {
+    changed |= signalPicker("Image", document, operation.id, warp->image,
+      document::SignalShape::Vector4, document::SignalSemantic::Color);
+    changed |= signalPicker("Displacement", document, operation.id, warp->displacement,
+      document::SignalShape::Vector2);
+    changed |= ImGui::DragFloat("Strength", &warp->strengthPixels, 0.1f, -512.0f, 512.0f, "%.1f px");
+    ImGui::TextWrapped("Samples the image along the screen-space Vector2 direction.");
   }
   return changed;
 }

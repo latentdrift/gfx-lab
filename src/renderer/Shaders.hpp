@@ -472,7 +472,7 @@ void main() {
   }
   color = mix(color, uFarColor, vDepthCue);
   fragColor = vec4(uPremultiplyAlpha ? color * alpha : color, alpha);
-  normalData = vec4(normal * 0.5 + 0.5, 1.0);
+  normalData = vec4(normal, 1.0);
 }
 )GLSL";
 
@@ -808,6 +808,7 @@ inline constexpr const char* imageOperationFragmentShader = R"GLSL(
 #version 410 core
 in vec2 vUv;
 uniform sampler2D uInput;
+uniform sampler2D uVectorInput;
 uniform int uMode;
 uniform bool uScalarInput;
 uniform vec4 uParameters;
@@ -863,9 +864,35 @@ void main() {
     float mask = smoothstep(uParameters.x - uParameters.y,
       uParameters.x + uParameters.y, value);
     fragColor = vec4(mask, mask, mask, 1.0);
-  } else {
+  } else if (uMode == 5) {
     float value = clamp(scalarAt(vUv), 0.0, 1.0);
     fragColor = mix(uLowColor, uHighColor, value);
+  } else if (uMode == 6) {
+    vec3 tl = texture(uInput, vUv + texel * vec2(-1, 1)).rgb;
+    vec3 tc = texture(uInput, vUv + texel * vec2(0, 1)).rgb;
+    vec3 tr = texture(uInput, vUv + texel * vec2(1, 1)).rgb;
+    vec3 ml = texture(uInput, vUv + texel * vec2(-1, 0)).rgb;
+    vec3 mr = texture(uInput, vUv + texel * vec2(1, 0)).rgb;
+    vec3 bl = texture(uInput, vUv + texel * vec2(-1, -1)).rgb;
+    vec3 bc = texture(uInput, vUv + texel * vec2(0, -1)).rgb;
+    vec3 br = texture(uInput, vUv + texel * vec2(1, -1)).rgb;
+    vec3 gx = -tl - 2.0 * ml - bl + tr + 2.0 * mr + br;
+    vec3 gy = -bl - 2.0 * bc - br + tl + 2.0 * tc + tr;
+    vec2 direction;
+    if (uScalarInput) {
+      vec2 gradient = vec2(gx.r, gy.r);
+      direction = length(gradient) > 0.000001 ? normalize(gradient) : vec2(0.0);
+    } else {
+      float jxx = dot(gx, gx), jyy = dot(gy, gy), jxy = dot(gx, gy);
+      float energy = jxx + jyy;
+      float angle = 0.5 * atan(2.0 * jxy, jxx - jyy);
+      direction = energy > 0.000001 ? vec2(cos(angle), sin(angle)) : vec2(0.0);
+    }
+    fragColor = vec4(direction * 0.5 + 0.5, 0.0, 1.0);
+  } else {
+    vec2 direction = texture(uVectorInput, vUv).rg * 2.0 - 1.0;
+    vec2 sampleUv = vUv + direction * uParameters.x / vec2(textureSize(uInput, 0));
+    fragColor = texture(uInput, sampleUv);
   }
 }
 )GLSL";
@@ -1156,7 +1183,7 @@ void main() {
   float lighting = uAmbient + (1.0 - uAmbient) * diffuse;
   float rim = pow(1.0 - max(dot(normal, -direction), 0.0), 3.0);
   fragColor = vec4(uSurfaceColor * lighting + uSurfaceColor * rim * 0.35, 1.0);
-  normalData = vec4(normal * 0.5 + 0.5, 1.0);
+  normalData = vec4(normal, 1.0);
 }
 )GLSL";
 
@@ -1166,6 +1193,79 @@ in vec2 vUv;
 uniform sampler2D uImage;
 out vec4 fragColor;
 void main() { fragColor = texture(uImage, vUv); }
+)GLSL";
+
+inline constexpr const char* signalPreviewFragmentShader = R"GLSL(
+#version 410 core
+in vec2 vUv;
+uniform sampler2D uImage0;
+uniform sampler2D uImage1;
+uniform sampler2D uImage2;
+uniform sampler2D uImage3;
+uniform int uMode;
+uniform float uNearPlane;
+uniform float uFarPlane;
+uniform bool uOrthographic;
+uniform vec2 uRange;
+out vec4 fragColor;
+
+const float spectralL[16] = float[](0.001204,0.005564,0.021110,0.065729,0.167973,0.352322,0.606531,0.856997,0.993846,0.945959,0.738991,0.473827,0.249352,0.107701,0.038180,0.011109);
+const float spectralM[16] = float[](0.003362,0.016038,0.059587,0.172422,0.388558,0.681941,0.932102,0.992218,0.822578,0.531096,0.267052,0.104579,0.031895,0.007576,0.001401,0.000202);
+const float spectralS[16] = float[](0.324652,0.706648,0.986207,0.882497,0.506336,0.186270,0.043937,0.006645,0.000644,0.000040,0.000002,0,0,0,0,0);
+
+float spectrumBand(int band) {
+  vec4 group = band < 4 ? texture(uImage0, vUv) : band < 8 ? texture(uImage1, vUv)
+    : band < 12 ? texture(uImage2, vUv) : texture(uImage3, vUv);
+  return group[band & 3];
+}
+
+vec3 spectrumPreview() {
+  vec3 response = vec3(0.0), white = vec3(0.0);
+  for (int band = 0; band < 16; ++band) {
+    vec3 sensitivity = vec3(spectralL[band], spectralM[band], spectralS[band]);
+    response += spectrumBand(band) * sensitivity;
+    white += sensitivity;
+  }
+  vec3 lms = response / max(white, vec3(0.0001));
+  vec3 rgb = max(vec3(dot(lms,vec3(5.47221206,-4.64196010,0.16963708)),
+    dot(lms,vec3(-1.12524190,2.29317094,-0.16789520)),
+    dot(lms,vec3(0.02980165,-0.19318073,1.16364789))), vec3(0.0));
+  return pow(rgb, vec3(1.0 / 2.2));
+}
+
+vec3 vectorPreview(vec2 vector) {
+  float magnitude = clamp(length(vector), 0.0, 1.0);
+  float angle = atan(vector.y, vector.x) / 6.28318530718 + 0.5;
+  vec3 phase = fract(angle + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0));
+  vec3 hue = clamp(abs(phase * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+  return mix(vec3(0.08), hue, magnitude);
+}
+
+void main() {
+  vec4 stored = texture(uImage0, vUv);
+  vec3 color = stored.rgb;
+  if (uMode == 1) {
+    float raw = stored.r;
+    float linearDepth = uOrthographic ? mix(uNearPlane, uFarPlane, raw) :
+      (2.0 * uNearPlane * uFarPlane) /
+      (uFarPlane + uNearPlane - (raw * 2.0 - 1.0) * (uFarPlane - uNearPlane));
+    color = vec3(clamp(linearDepth / 10.0, 0.0, 1.0));
+  } else if (uMode == 2) {
+    float extent = max(max(abs(uRange.x), abs(uRange.y)), 0.0001);
+    float signedValue = clamp(stored.r / extent, -1.0, 1.0);
+    vec3 negative = vec3(0.05, 0.30, 0.95);
+    vec3 positive = vec3(1.00, 0.32, 0.05);
+    color = signedValue < 0.0 ? mix(vec3(0.94), negative, -signedValue)
+      : mix(vec3(0.94), positive, signedValue);
+  } else if (uMode == 3) {
+    color = vectorPreview(stored.rg * 2.0 - 1.0);
+  } else if (uMode == 4) {
+    color = spectrumPreview();
+  } else if (uMode == 5) {
+    color = stored.rgb * 0.5 + 0.5;
+  }
+  fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+}
 )GLSL";
 
 inline constexpr const char* displayReconstructionFragmentShader = R"GLSL(

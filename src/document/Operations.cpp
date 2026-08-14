@@ -16,7 +16,15 @@ SignalDescriptor signal(const OperationId producer, std::string key,
       semantic == SignalSemantic::FieldStrength ? SignalEncoding::Signed : SignalEncoding::Unspecified;
   if (semantic == SignalSemantic::Normal) {
     metadata.space = SignalSpace::World;
+    metadata.encoding = SignalEncoding::Signed;
+    metadata.hasKnownRange = true;
+    metadata.knownRange = {-1.0f, 1.0f};
+  }
+  if (semantic == SignalSemantic::EdgeDirection) {
+    metadata.space = SignalSpace::Screen;
     metadata.encoding = SignalEncoding::UnsignedNormalized;
+    metadata.hasKnownRange = true;
+    metadata.knownRange = {0.0f, 1.0f};
   }
   if (semantic == SignalSemantic::DeviceDepth || semantic == SignalSemantic::MaskCoverage ||
       semantic == SignalSemantic::EdgeStrength)
@@ -60,6 +68,7 @@ const char* operationTypeLabel(const Operation& operation) {
     if constexpr (std::is_same_v<Type, BlurOperation>) return "Blur";
     if constexpr (std::is_same_v<Type, ThresholdOperation>) return "Threshold";
     if constexpr (std::is_same_v<Type, GradientMapOperation>) return "Gradient Map";
+    if constexpr (std::is_same_v<Type, WarpOperation>) return "Warp";
     return "Unknown";
   }, operation.data);
 }
@@ -122,7 +131,8 @@ Operation makeRemapOperation(const OperationId id, std::string name, const Signa
 
 Operation makeEdgeOperation(const OperationId id, std::string name, const SignalRef input) {
   return operation(id, std::move(name), EdgeOperation{input},
-    {{"strength", SignalShape::Scalar, SignalSemantic::EdgeStrength, "Edge strength"}});
+    {{"strength", SignalShape::Scalar, SignalSemantic::EdgeStrength, "Edge strength"},
+      {"direction", SignalShape::Vector2, SignalSemantic::EdgeDirection, "Edge direction"}});
 }
 
 Operation makeBlurOperation(const OperationId id, std::string name, const SignalRef input,
@@ -139,6 +149,12 @@ Operation makeThresholdOperation(const OperationId id, std::string name, const S
 Operation makeGradientMapOperation(const OperationId id, std::string name, const SignalRef input) {
   return operation(id, std::move(name), GradientMapOperation{input},
     {{"color", SignalShape::Vector4, SignalSemantic::Color, "Mapped color"}});
+}
+
+Operation makeWarpOperation(const OperationId id, std::string name, const SignalRef image,
+    const SignalRef displacement) {
+  return operation(id, std::move(name), WarpOperation{image, displacement},
+    {{"color", SignalShape::Vector4, SignalSemantic::Color, "Warped color"}});
 }
 
 } // namespace gfxlab::document

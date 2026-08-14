@@ -73,6 +73,7 @@ const char* executionClass(const document::Operation& operation) {
     if constexpr (std::is_same_v<Type, document::RenderOperation>) return "SCENE RENDER";
     if constexpr (std::is_same_v<Type, document::MeasureOperation>) return "GPU READBACK";
     if constexpr (std::is_same_v<Type, document::ConstantOperation>) return "VALUE";
+    if constexpr (std::is_same_v<Type, document::EdgeOperation>) return "2 FULLSCREEN PASSES · 2 OUTPUTS";
     return "FULLSCREEN PASS";
   }, operation.data);
 }
@@ -104,6 +105,10 @@ std::vector<InputPort> inputsFor(const document::Operation& operation) {
         std::is_same_v<Type, document::ThresholdOperation> ||
         std::is_same_v<Type, document::GradientMapOperation>)
       add(editor::InputSocket::Primary, "Input", data.input);
+    else if constexpr (std::is_same_v<Type, document::WarpOperation>) {
+      add(editor::InputSocket::Image, "Image", data.image);
+      add(editor::InputSocket::Displacement, "Displacement", data.displacement);
+    }
   }, operation.data);
   return result;
 }
@@ -137,6 +142,11 @@ bool accepts(const document::Document& document, const InputPort& input,
   if (std::holds_alternative<document::ThresholdOperation>(target->data) ||
       std::holds_alternative<document::GradientMapOperation>(target->data))
     return document::isScreenScalar(descriptor);
+  if (std::holds_alternative<document::WarpOperation>(target->data)) {
+    if (input.socket == editor::InputSocket::Image) return document::isColor(descriptor);
+    return input.socket == editor::InputSocket::Displacement &&
+      document::isScreenImage(descriptor) && descriptor.shape == document::SignalShape::Vector2;
+  }
   return false;
 }
 
@@ -284,6 +294,27 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
     if (ImGui::MenuItem("Gradient Map")) {
       const document::OperationId id = document::nextOperationId(document);
       add(document::makeGradientMapOperation(id, "Gradient Map", selected), true);
+    }
+    ImGui::EndDisabled();
+    document::SignalRef warpImage;
+    const document::SignalDescriptor* finalDescriptor = document::findSignal(document,
+      document.presentation.input.id);
+    if (finalDescriptor != nullptr && document::isColor(*finalDescriptor))
+      warpImage = document.presentation.input;
+    if (!warpImage) {
+      for (const document::Operation& candidate : document.operations) {
+        const auto found = std::find_if(candidate.outputs.begin(), candidate.outputs.end(),
+          [](const document::SignalDescriptor& output) { return document::isColor(output); });
+        if (found != candidate.outputs.end()) { warpImage = {found->id, 0}; break; }
+      }
+    }
+    const bool vectorSelected = selectedDescriptor != nullptr &&
+      selectedDescriptor->shape == document::SignalShape::Vector2 &&
+      selectedDescriptor->metadata.domain == document::SignalDomain::Screen2D;
+    ImGui::BeginDisabled(!vectorSelected || !warpImage);
+    if (ImGui::MenuItem("Warp")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeWarpOperation(id, "Warp", warpImage, selected), true);
     }
     ImGui::EndDisabled();
     ImGui::EndPopup();

@@ -261,6 +261,7 @@ public:
     sdfIsoProgram_ = makeProgram(outputVertexShader, sdfIsoSurfaceFragmentShader);
     spectralProgram_ = makeProgram(spectralVertexShader, spectralFragmentShader);
     copyProgram_ = makeProgram(outputVertexShader, copyFragmentShader);
+    previewProgram_ = makeProgram(outputVertexShader, signalPreviewFragmentShader);
     displayProgram_ = makeProgram(outputVertexShader, displayReconstructionFragmentShader);
     shadowProgram_ = makeProgram(shadowVertexShader, shadowFragmentShader);
     overdrawProgram_ = makeProgram(overdrawVertexShader, overdrawFragmentShader);
@@ -321,6 +322,22 @@ public:
       if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         failRenderer("could not create render-algebra target");
     }
+    glGenFramebuffers(static_cast<GLsizei>(directionFbos_.size()), directionFbos_.data());
+    glGenTextures(static_cast<GLsizei>(directionTextures_.size()), directionTextures_.data());
+    for (std::size_t index = 0; index < directionTextures_.size(); ++index) {
+      glBindTexture(GL_TEXTURE_2D, directionTextures_[index]);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, relationWidth_, relationHeight_, 0, GL_RG,
+        GL_FLOAT, nullptr);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      glBindFramebuffer(GL_FRAMEBUFFER, directionFbos_[index]);
+      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+        directionTextures_[index], 0);
+      if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        failRenderer("could not create edge-direction target");
+    }
     glGenFramebuffers(1, &historyFbo_);
     glGenTextures(1, &historyTexture_);
     glBindTexture(GL_TEXTURE_2D, historyTexture_);
@@ -349,6 +366,22 @@ public:
       glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, displayTextures_[index], 0);
       if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         failRenderer("could not create display-reconstruction target");
+    }
+    glGenFramebuffers(static_cast<GLsizei>(previewFbos_.size()), previewFbos_.data());
+    glGenTextures(static_cast<GLsizei>(previewTextures_.size()), previewTextures_.data());
+    for (std::size_t index = 0; index < previewTextures_.size(); ++index) {
+      glBindTexture(GL_TEXTURE_2D, previewTextures_[index]);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, relationWidth_, relationHeight_, 0, GL_RGBA,
+        GL_UNSIGNED_BYTE, nullptr);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      glBindFramebuffer(GL_FRAMEBUFFER, previewFbos_[index]);
+      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+        previewTextures_[index], 0);
+      if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        failRenderer("could not create signal-preview target");
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glGetIntegerv(GL_MAX_SAMPLES, &maxSamples_);
@@ -396,10 +429,14 @@ public:
     glDeleteVertexArrays(1, &fullscreenVao_);
     glDeleteFramebuffers(static_cast<GLsizei>(relationFbos_.size()), relationFbos_.data());
     glDeleteTextures(static_cast<GLsizei>(relationTextures_.size()), relationTextures_.data());
+    glDeleteFramebuffers(static_cast<GLsizei>(directionFbos_.size()), directionFbos_.data());
+    glDeleteTextures(static_cast<GLsizei>(directionTextures_.size()), directionTextures_.data());
     glDeleteFramebuffers(1, &historyFbo_);
     glDeleteTextures(1, &historyTexture_);
     glDeleteFramebuffers(static_cast<GLsizei>(displayFbos_.size()), displayFbos_.data());
     glDeleteTextures(static_cast<GLsizei>(displayTextures_.size()), displayTextures_.data());
+    glDeleteFramebuffers(static_cast<GLsizei>(previewFbos_.size()), previewFbos_.data());
+    glDeleteTextures(static_cast<GLsizei>(previewTextures_.size()), previewTextures_.data());
     glDeleteProgram(sceneProgram_);
     glDeleteProgram(outputProgram_);
     glDeleteProgram(relationProgram_);
@@ -409,6 +446,7 @@ public:
     glDeleteProgram(sdfIsoProgram_);
     glDeleteProgram(spectralProgram_);
     glDeleteProgram(copyProgram_);
+    glDeleteProgram(previewProgram_);
     glDeleteProgram(displayProgram_);
     glDeleteProgram(shadowProgram_);
     glDeleteProgram(overdrawProgram_);
@@ -1315,10 +1353,11 @@ public:
 
   GLuint processImage(const GLuint input, const int mode, const bool scalarInput,
       const glm::vec4 parameters, const glm::vec4 lowColor, const glm::vec4 highColor,
-      const std::size_t outputIndex) {
+      const std::size_t outputIndex, const bool directionTarget = false,
+      const GLuint vectorInput = 0) {
     if (input == 0) return 0;
-    const std::size_t target = outputIndex % relationFbos_.size();
-    glBindFramebuffer(GL_FRAMEBUFFER, relationFbos_[target]);
+    const std::size_t target = outputIndex % (directionTarget ? directionFbos_.size() : relationFbos_.size());
+    glBindFramebuffer(GL_FRAMEBUFFER, directionTarget ? directionFbos_[target] : relationFbos_[target]);
     glViewport(0, 0, relationWidth_, relationHeight_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -1327,6 +1366,9 @@ public:
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, input);
     glUniform1i(glGetUniformLocation(imageOperationProgram_, "uInput"), 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, vectorInput);
+    glUniform1i(glGetUniformLocation(imageOperationProgram_, "uVectorInput"), 1);
     glUniform1i(glGetUniformLocation(imageOperationProgram_, "uMode"), mode);
     glUniform1i(glGetUniformLocation(imageOperationProgram_, "uScalarInput"), scalarInput);
     glUniform4fv(glGetUniformLocation(imageOperationProgram_, "uParameters"), 1,
@@ -1338,7 +1380,7 @@ public:
     glBindVertexArray(fullscreenVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    return relationTextures_[target];
+    return directionTarget ? directionTextures_[target] : relationTextures_[target];
   }
 
   GLuint analyzeStereo(const RenderTarget& left, const RenderTarget& right, const RenderPass& operation,
@@ -1449,7 +1491,7 @@ public:
       return constant == nullptr ? std::nullopt : std::optional{constant->value};
     };
     const auto publish = [&](const document::Operation& operation,
-        const std::size_t targetIndex, const GLuint primaryTexture) {
+        const std::size_t targetIndex, const GLuint primaryTexture, const GLuint auxiliaryTexture) {
       for (const document::SignalDescriptor& descriptor : operation.outputs) {
         evaluation::SignalResource resource;
         resource.descriptor = descriptor;
@@ -1468,6 +1510,9 @@ public:
         } else if (descriptor.shape == document::SignalShape::Spectrum16) {
             resource.textures = passTargets_[targetIndex].spectralTextures;
             resource.textureCount = resource.textures[0] == 0 ? 0 : 4;
+        } else if (descriptor.metadata.semantic == document::SignalSemantic::EdgeDirection) {
+            resource.textures[0] = auxiliaryTexture;
+            resource.textureCount = auxiliaryTexture == 0 ? 0 : 1;
         } else {
             resource.textures[0] = primaryTexture;
             resource.textureCount = primaryTexture == 0 ? 0 : 1;
@@ -1544,6 +1589,7 @@ public:
       if (!operation->enabled) continue;
       targetByOperation[operation->id] = nodeIndex;
       GLuint output = 0;
+      GLuint auxiliaryOutput = 0;
       if (const auto* data = std::get_if<document::RenderOperation>(&operation->data)) {
         RenderPass pass = renderState(*operation, *data);
         document::TimeTransform time = data->time;
@@ -1642,6 +1688,8 @@ public:
       } else if (const auto* data = std::get_if<document::EdgeOperation>(&operation->data)) {
         output = processImage(signalTexture(data->input), 2, isScalarImage(data->input),
           glm::vec4(data->strength, 0.0f, 0.0f, 0.0f), {}, {}, nodeIndex);
+        auxiliaryOutput = processImage(signalTexture(data->input), 6, isScalarImage(data->input),
+          {}, {}, {}, nodeIndex, true);
       } else if (const auto* data = std::get_if<document::BlurOperation>(&operation->data)) {
         output = processImage(signalTexture(data->input), 3,
           data->outputShape == document::SignalShape::Scalar,
@@ -1652,9 +1700,13 @@ public:
       } else if (const auto* data = std::get_if<document::GradientMapOperation>(&operation->data)) {
         output = processImage(signalTexture(data->input), 5, true, {},
           data->lowColor, data->highColor, nodeIndex);
+      } else if (const auto* data = std::get_if<document::WarpOperation>(&operation->data)) {
+        output = processImage(signalTexture(data->image), 7, false,
+          glm::vec4(data->strengthPixels, 0.0f, 0.0f, 0.0f), {}, {}, nodeIndex, false,
+          signalTexture(data->displacement));
       }
       operationTextures_[nodeIndex] = output;
-      publish(*operation, nodeIndex, output);
+      publish(*operation, nodeIndex, output, auxiliaryOutput);
     }
     const GLuint finalTexture = signals.displayTexture(document.presentation.input.id);
     if (finalTexture != 0) copyToFrameHistory(finalTexture);
@@ -1670,6 +1722,44 @@ public:
   }
 
   GLuint texturePreview(const TextureAsset* texture) { return overrideTexture(texture); }
+
+  GLuint previewSignal(const evaluation::SignalResource& resource, const RendererState& state,
+      const std::size_t targetIndex) {
+    if (resource.textureCount == 0) return 0;
+    const document::SignalDescriptor& descriptor = resource.descriptor;
+    int mode = 0;
+    if (descriptor.metadata.semantic == document::SignalSemantic::DeviceDepth) mode = 1;
+    else if (descriptor.metadata.encoding == document::SignalEncoding::Signed &&
+        descriptor.shape == document::SignalShape::Scalar) mode = 2;
+    else if (descriptor.shape == document::SignalShape::Vector2) mode = 3;
+    else if (descriptor.shape == document::SignalShape::Spectrum16) mode = 4;
+    else if (descriptor.metadata.semantic == document::SignalSemantic::Normal) mode = 5;
+    if (mode == 0) return resource.textures[0];
+    const std::size_t index = std::min(targetIndex, previewFbos_.size() - 1);
+    glBindFramebuffer(GL_FRAMEBUFFER, previewFbos_[index]);
+    glViewport(0, 0, relationWidth_, relationHeight_);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glUseProgram(previewProgram_);
+    for (int texture = 0; texture < 4; ++texture) {
+      glActiveTexture(GL_TEXTURE0 + texture);
+      glBindTexture(GL_TEXTURE_2D, resource.textures[static_cast<std::size_t>(texture)]);
+      const std::string name = "uImage" + std::to_string(texture);
+      glUniform1i(glGetUniformLocation(previewProgram_, name.c_str()), texture);
+    }
+    glUniform1i(glGetUniformLocation(previewProgram_, "uMode"), mode);
+    glUniform1f(glGetUniformLocation(previewProgram_, "uNearPlane"), state.camera.nearPlane);
+    glUniform1f(glGetUniformLocation(previewProgram_, "uFarPlane"), 100.0f);
+    glUniform1i(glGetUniformLocation(previewProgram_, "uOrthographic"), state.camera.orthographic);
+    const glm::vec2 range = descriptor.metadata.hasKnownRange
+      ? descriptor.metadata.knownRange : glm::vec2(-1.0f, 1.0f);
+    glUniform2fv(glGetUniformLocation(previewProgram_, "uRange"), 1, glm::value_ptr(range));
+    glBindVertexArray(fullscreenVao_);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return previewTextures_[index];
+  }
 
   GLuint reconstructDisplay(const GLuint sourceTexture, const DisplayReconstructionState& state,
       const std::size_t targetIndex) {
@@ -1774,7 +1864,7 @@ private:
   GLuint sceneProgram_ = 0, outputProgram_ = 0, relationProgram_ = 0,
     imageOperationProgram_ = 0, stereoAnalysisProgram_ = 0, fieldProgram_ = 0,
     sdfIsoProgram_ = 0, spectralProgram_ = 0,
-    copyProgram_ = 0, displayProgram_ = 0,
+    copyProgram_ = 0, previewProgram_ = 0, displayProgram_ = 0,
     shadowProgram_ = 0, overdrawProgram_ = 0;
   GLuint vao_ = 0, vbo_ = 0, fullscreenVao_ = 0, checkerTexture_ = 0, indexedTexture_ = 0,
     clutTexture_ = 0, normalTexture_ = 0, detailTexture_ = 0, whiteTexture_ = 0;
@@ -1794,10 +1884,14 @@ private:
   std::array<RenderTarget, RenderStack::maximumPasses> passTargets_;
   std::array<GLuint, RenderStack::maximumPasses + 1> relationFbos_{};
   std::array<GLuint, RenderStack::maximumPasses + 1> relationTextures_{};
+  std::array<GLuint, RenderStack::maximumPasses> directionFbos_{};
+  std::array<GLuint, RenderStack::maximumPasses> directionTextures_{};
   std::array<GLuint, RenderStack::maximumPasses> operationTextures_{};
   GLuint historyFbo_ = 0, historyTexture_ = 0;
   std::array<GLuint, 3> displayFbos_{};
   std::array<GLuint, 3> displayTextures_{};
+  std::array<GLuint, 3> previewFbos_{};
+  std::array<GLuint, 3> previewTextures_{};
   static constexpr int relationWidth_ = 960;
   static constexpr int relationHeight_ = 720;
 
@@ -1956,6 +2050,10 @@ unsigned int Renderer::evaluate(const document::Document& document,
     const evaluation::EvaluationPlan& plan, evaluation::SignalRegistry& signals,
     const std::uint64_t revision, const float timeSeconds) {
   return impl_->evaluate(document, plan, signals, revision, timeSeconds);
+}
+unsigned int Renderer::previewSignal(const evaluation::SignalResource& resource,
+    const RendererState& state, const std::size_t targetIndex) {
+  return impl_->previewSignal(resource, state, targetIndex);
 }
 unsigned int Renderer::texturePreview(const TextureAsset* texture) { return impl_->texturePreview(texture); }
 unsigned int Renderer::reconstructDisplay(const unsigned int sourceTexture,

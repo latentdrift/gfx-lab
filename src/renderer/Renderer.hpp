@@ -32,6 +32,8 @@ public:
   unsigned int evaluate(const document::Document& document,
     const evaluation::EvaluationPlan& plan, evaluation::SignalRegistry& signals,
     std::uint64_t revision, float timeSeconds);
+  unsigned int previewSignal(const evaluation::SignalResource& resource,
+    const RendererState& state, std::size_t targetIndex);
   unsigned int reconstructDisplay(unsigned int sourceTexture, const DisplayReconstructionState& state,
     std::size_t targetIndex);
   void updateElementalSimulation(float deltaSeconds, const RendererState& state, TestScene scene);

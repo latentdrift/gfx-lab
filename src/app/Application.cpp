@@ -635,13 +635,30 @@ int runApplication() {
     GLuint comparisonTexture = editorState.viewer.comparison.has_value()
       ? signalRegistry.displayTexture(editorState.viewer.comparison->id) : 0;
     if (comparisonTexture == 0) comparisonTexture = viewedTexture;
+    const evaluation::SignalResource* viewedResource = signalRegistry.find(editorState.viewer.viewed.id);
+    const evaluation::SignalResource* comparisonResource = editorState.viewer.comparison.has_value()
+      ? signalRegistry.find(editorState.viewer.comparison->id) : viewedResource;
+    const evaluation::SignalResource* finalResource = signalRegistry.find(
+      authoredDocument.presentation.input.id);
+    const GLuint previewedViewed = viewedResource != nullptr
+      ? renderer.previewSignal(*viewedResource, evaluatedDocument.renderDefaults.renderer, 0)
+      : viewedTexture;
+    const GLuint previewedComparison = comparisonResource != nullptr
+      ? renderer.previewSignal(*comparisonResource, evaluatedDocument.renderDefaults.renderer, 1)
+      : comparisonTexture;
+    const GLuint previewedFinal = finalResource != nullptr
+      ? renderer.previewSignal(*finalResource, evaluatedDocument.renderDefaults.renderer, 2)
+      : finalTexture;
     const bool applyPresentation = editorState.viewer.applyPresentation;
     const GLuint displayedViewed = applyPresentation
-      ? renderer.reconstructDisplay(viewedTexture, authoredDocument.presentation.reconstruction, 0) : viewedTexture;
+      ? renderer.reconstructDisplay(previewedViewed, authoredDocument.presentation.reconstruction, 0)
+      : previewedViewed;
     const GLuint displayedComparison = applyPresentation
-      ? renderer.reconstructDisplay(comparisonTexture, authoredDocument.presentation.reconstruction, 1) : comparisonTexture;
+      ? renderer.reconstructDisplay(previewedComparison, authoredDocument.presentation.reconstruction, 1)
+      : previewedComparison;
     const GLuint displayedFinal = applyPresentation
-      ? renderer.reconstructDisplay(finalTexture, authoredDocument.presentation.reconstruction, 2) : finalTexture;
+      ? renderer.reconstructDisplay(previewedFinal, authoredDocument.presentation.reconstruction, 2)
+      : previewedFinal;
     const GLuint differenceTexture = renderer.compareSignals(displayedViewed, displayedComparison,
       RelationOperator::AbsoluteDifference, 1.0f, 0.0f);
     const CompareMode recordingMode = editorState.viewer.mode == editor::ViewerMode::Split

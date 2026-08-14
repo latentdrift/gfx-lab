@@ -32,7 +32,7 @@ struct MoveOperation { document::OperationId operation; std::size_t index = 0; }
 struct SetOperationEnabled { document::OperationId operation; bool enabled = true; };
 struct ReplaceDocument { document::Document document; };
 
-enum class InputSocket { Primary, A, B, Mask, Left, Right };
+enum class InputSocket { Primary, A, B, Mask, Left, Right, Image, Displacement };
 struct ConnectSignal {
   document::OperationId operation;
   InputSocket socket = InputSocket::Primary;

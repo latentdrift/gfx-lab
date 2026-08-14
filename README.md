@@ -120,11 +120,17 @@ Interpret, Composite, Stereo, Measure, and Final Output expose only the state th
 Render operations expose literal Color, Device depth, World normal, Field, and Spectrum16 outputs. Every signal
 separates where it lives (for example Screen2D), its storage shape (Scalar, Vector3, Spectrum16), and its semantic
 meaning (depth, normal, luminance, coverage, signed distance, and so on), with encoding, coordinate space, units,
-and known range carried as metadata. Luminance, Remap, Edge, Blur, Threshold, and Gradient Map transform those
+and known range carried as metadata. Luminance, Remap, Edge, Blur, Threshold, Gradient Map, and Warp transform those
 signals explicitly. A Composite mask is a screen-scalar socket role—not a nominal Mask type or hidden mask-mode
 preset. The graph shows each meaningful GPU allocation and execution boundary while the Add menu automatically
 connects a new operation to the selected output. Numerically legal operations may strip a semantic they cannot
 preserve; the compiler reports that as a warning rather than banning experimental math.
+
+Canvas previews are view adapters, not graph operations: device depth is linearized, signed fields receive a
+divergent palette, raw signed normals are encoded for display, Vector2 fields use direction hue and magnitude,
+and Spectrum16 is reconstructed to RGB. None of those mappings modify the resource consumed by another node.
+Edge publishes separate scalar strength and RG direction textures; Warp consumes a screen-space Vector2 direction
+and samples a Color image along it.
 
 The renderer implementation catalog remains available under **All Properties** without dictating workspace
 navigation. **Changes** stays beside a variant so inherited state and local deviations do not require touring

@@ -55,6 +55,10 @@ std::string duplicateOperation(document::Document& document,
         std::is_same_v<OperationType, document::ThresholdOperation> ||
         std::is_same_v<OperationType, document::GradientMapOperation>)
       remapSelf(operationData.input);
+    else if constexpr (std::is_same_v<OperationType, document::WarpOperation>) {
+      remapSelf(operationData.image);
+      remapSelf(operationData.displacement);
+    }
   }, duplicate.data);
   const std::size_t index = std::min(requestedIndex, document.operations.size());
   document.operations.insert(document.operations.begin() + static_cast<std::ptrdiff_t>(index),
@@ -178,6 +182,11 @@ std::string mutate(document::Document& document, const Command& command) {
             std::is_same_v<OperationType, document::ThresholdOperation> ||
             std::is_same_v<OperationType, document::GradientMapOperation>) {
           if (data.socket == InputSocket::Primary) { operationData.input = data.signal; connected = true; }
+        } else if constexpr (std::is_same_v<OperationType, document::WarpOperation>) {
+          if (data.socket == InputSocket::Image) { operationData.image = data.signal; connected = true; }
+          if (data.socket == InputSocket::Displacement) {
+            operationData.displacement = data.signal; connected = true;
+          }
         }
       }, operation->data);
       if (!connected) return "That input socket does not exist on the target operation.";
