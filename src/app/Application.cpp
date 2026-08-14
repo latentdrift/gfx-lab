@@ -7,6 +7,7 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <ImGuizmo.h>
+#include <imnodes.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -29,6 +30,7 @@
 #include "ui/DocumentInspector.hpp"
 #include "ui/DocumentTimeline.hpp"
 #include "ui/Inspector.hpp"
+#include "ui/OperationGraph.hpp"
 #include "ui/ScopePanel.hpp"
 #include "ui/TextureInspector.hpp"
 #include "ui/Workspace.hpp"
@@ -236,6 +238,7 @@ int runApplication() {
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
+  ImNodes::CreateContext();
   ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   if (shouldEnableNativeViewports())
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
@@ -506,7 +509,7 @@ int runApplication() {
     if (workspaceActions.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
 
     editor::synchronizeEditorState(editorState, authoredDocument);
-    const SceneWindowResult sceneResult = drawDocumentNavigator(workspaceWindows.document,
+    const SceneWindowResult sceneResult = drawOperationGraph(workspaceWindows.document,
       authoredDocument, editorState, editorHistory);
     if (sceneResult.importModel) importModelFromDialog();
     if (sceneResult.unloadModel) {
@@ -735,6 +738,13 @@ int runApplication() {
       }
     } else if (handbookAction.type == handbook::ActionType::LoadComparison) {
       document::Document edited = document::makeDefaultDocument();
+      document::Operation comparisonRender = document::makeRenderOperation({2}, "Render copy");
+      document::Operation comparisonComposite = document::makeCompositeOperation({3}, "Composite",
+        document::primaryOutput(edited.operations.front()), document::primaryOutput(comparisonRender));
+      edited.operations.push_back(std::move(comparisonRender));
+      edited.operations.push_back(std::move(comparisonComposite));
+      edited.presentation.input = document::primaryOutput(edited.operations.back());
+      edited.nextOperationIdentity = 4;
       if (isNintendo64Example(handbookAction.example))
         edited.hardwareProfile = HardwareProfile::Nintendo64;
       applyHandbookExample(handbookAction.example, false, edited.renderDefaults.renderer,
@@ -802,6 +812,7 @@ int runApplication() {
 
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplGlfw_Shutdown();
+  ImNodes::DestroyContext();
   ImGui::DestroyContext();
   glfwDestroyWindow(window);
   glfwTerminate();

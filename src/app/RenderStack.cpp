@@ -285,23 +285,25 @@ void RenderStack::replacePasses(std::vector<RenderPass> passes) {
 }
 
 namespace {
-constexpr std::array<const char*, 19> labels = {
+constexpr std::array<const char*, 20> labels = {
   "Absolute difference", "Signed A - B", "Positive A - B", "Positive B - A", "Multiply", "Screen",
   "Exclusion", "Minimum", "Maximum", "A x (1 - B)", "Centered sum", "Relative A / B",
   "Add", "Average (add + half)", "Subtract", "Reverse subtract", "Quarter-add B", "Signed color offset",
-  "Bitwise XOR"
+  "Bitwise XOR", "Normal"
 };
-constexpr std::array<const char*, 19> ids = {
+constexpr std::array<const char*, 20> ids = {
   "absolute_difference", "signed_a_minus_b", "positive_a_minus_b", "positive_b_minus_a", "multiply", "screen",
   "exclusion", "minimum", "maximum", "a_times_one_minus_b", "centered_sum", "relative_a_over_b",
-  "add", "average", "subtract", "reverse_subtract", "quarter_add_b", "signed_color_offset", "bitwise_xor"
+  "add", "average", "subtract", "reverse_subtract", "quarter_add_b", "signed_color_offset", "bitwise_xor",
+  "normal"
 };
-constexpr std::array<const char*, 19> equations = {
+constexpr std::array<const char*, 20> equations = {
   "|A - B|", "A - B", "max(A - B, 0)", "max(B - A, 0)", "A x B", "1 - (1 - A)(1 - B)",
   "A + B - 2AB", "min(A, B)", "max(A, B)", "A(1 - B)", "A + B - 1", "A / max(B, 1/255) - 1",
-  "A + B", "(A + B) / 2", "A - B", "B - A", "A + B / 4", "A + B - 1/2", "quantize(A) XOR quantize(B)"
+  "A + B", "(A + B) / 2", "A - B", "B - A", "A + B / 4", "A + B - 1/2", "quantize(A) XOR quantize(B)",
+  "B"
 };
-constexpr std::array<const char*, 19> meanings = {
+constexpr std::array<const char*, 20> meanings = {
   "Black means agreement; RGB stores disagreement magnitude.",
   "Middle gray means agreement; direction says which input has more channel energy.",
   "Keeps only channel energy present in the accumulated image beyond this pass.",
@@ -319,7 +321,8 @@ constexpr std::array<const char*, 19> meanings = {
   "Subtracts A from B before the selected range behavior.",
   "Adds one quarter of B to A, matching the PS1 quarter-add equation.",
   "Treats B around middle gray as a signed offset: dark subtracts and bright adds.",
-  "Quantizes both inputs to an integer channel depth, applies bitwise XOR, then normalizes the result."
+  "Quantizes both inputs to an integer channel depth, applies bitwise XOR, then normalizes the result.",
+  "Places B over A using the Composite opacity and mask."
 };
 std::size_t relationIndex(const RelationOperator operation) {
   return static_cast<std::size_t>(std::clamp(static_cast<int>(operation), 0,

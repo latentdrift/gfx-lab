@@ -1,6 +1,6 @@
 # Graphics Lab
 
-A native, layer-based 3D compositing instrument. Render operations create different live views of a scene;
+A native, graph-based 3D compositing instrument. Render operations create different live views of a scene;
 typed effect, analysis, mask, and composite operations reinterpret and combine their signals.
 
 ## Run
@@ -79,11 +79,11 @@ src/
 - Redo: Ctrl+Shift+Z or Ctrl+Y
 - Play/pause animation: Space
 
-Use **File → Save Stack JSON…** (`Ctrl+S`) to save the complete `graphics-lab.document.v10` document, and
-**File → Open Stack JSON…** (`Ctrl+O`) to restore it. Stable operations and signal references, sparse overrides,
+Use **File → Save Document…** (`Ctrl+S`) to save the complete `graphics-lab.document.v10` document, and
+**File → Open Document…** (`Ctrl+O`) to restore it. Stable operations and signal references, sparse overrides,
 animation and modulation, camera, scene, hardware target, presentation, and asset references are preserved.
 
-The [`examples`](examples) directory contains loadable stack documents. Start with
+The [`examples`](examples) directory contains loadable graph documents. Start with
 [`rod-cone-xor-sdf.json`](examples/rod-cone-xor-sdf.json): it XORs two related SDF render passes, then sends
 the result through the quantized rod/cone observer comparison. Its parameters remain ordinary editable lab
 state after loading.
@@ -111,9 +111,10 @@ under the reference daylight/human condition. Its Composite operation reads the 
 and displays human-versus-shifted-observer disagreement. Disable that pass to see the reference match; use the
 Spectral section in Render Settings to switch to tungsten or tri-band illumination and watch the metameric match fail.
 
-Graphics Lab uses one persistent document-editing workspace: the typed operation stack on the left, an
-always-visible signal canvas in the center, and contextual **Properties** on the right. Selecting an operation
-does not change the viewed signal. Render properties use **Essentials**, **Changes**, and **All Properties**;
+Graphics Lab uses one persistent document-editing workspace: a typed operation graph on the left, an
+always-visible canvas in the center, and contextual **Properties** on the right. Selecting an operation does not
+change the viewed output. Drag typed ports to make unusual connections; contextual add commands connect routine
+operations automatically. Render properties use **Essentials**, **Changes**, and **All Properties**;
 Interpret, Composite, Stereo, Measure, and Final Output expose only the state they own.
 
 The renderer implementation catalog remains available under **All Properties** without dictating workspace
@@ -130,7 +131,7 @@ Floating tools are checked against the current monitor work areas. If a saved po
 or rearranged display, the tool is resized if necessary and recovered to the center of the main display. The
 Timeline also changes between side-by-side and stacked panes as its available width changes.
 
-Use **File > Import Model** or the Document navigator to load OBJ, glTF, or GLB geometry through the native file chooser. The importer applies scene-node transforms, triangulates faces, generates missing smooth normals and usable tangents, preserves UV0, vertex color 0, submesh material assignments, base-color factors, and external or embedded base-color images. It centers the result and scales its longest bounds extent to exactly 3.0 lab units so camera distance, fog, quantization, and pass perturbations remain comparable between unrelated assets. The navigator reports geometry, material, texture, and attribute facts; missing image references appear as explicit warnings. **Use Model** and **Unload Model** are undoable.
+Use **File > Import Model** or **Scene** in the Operation Graph to load OBJ, glTF, or GLB geometry through the native file chooser. The importer applies scene-node transforms, triangulates faces, generates missing smooth normals and usable tangents, preserves UV0, vertex color 0, submesh material assignments, base-color factors, and external or embedded base-color images. It centers the result and scales its longest bounds extent to exactly 3.0 units so camera distance, fog, quantization, and operation perturbations remain comparable between unrelated assets. Missing image references remain explicit warnings. Unloading a model is undoable.
 
 The **Texture source** control can be authored on the global base and inherited by every pass. A selected pass stores a local override only when it differs. **Scene material** uses imported submesh materials, **Built-in checker** substitutes the diagnostic texture, **White texel** removes image variation while retaining material factors, and **Imported override** applies a separately imported PNG, JPEG, TGA, or BMP to any scene. A locally overridden texture is copied when its pass is duplicated, so correlated renders can perturb its UVs, sampling, color precision, and compositing independently. The inspector reports dimensions and alpha and exposes sRGB-color versus linear-data interpretation.
 
@@ -144,11 +145,11 @@ Undo and redo operate on typed document commands, covering renderer and composit
 names, animation tracks, scene state, hardware target, and presentation. Continuous property and gizmo edits
 collapse into one history entry; selection, comparison view, and open windows remain workspace state.
 
-The document has explicit **Scene Defaults** followed by a top-to-bottom operation stack and **Final Output**. A **Render** operation applies inherited renderer state plus sparse local overrides and produces named Color, Depth, Field, and Spectrum16 resources. An **Interpret** operation converts one spectral resource through a selected observer without rerendering the scene. A **Composite** operation combines two named signals with explicit arithmetic. A **Measure** operation reduces an upstream image or field to a scalar—mean, RMS, peak, threshold coverage, or one mean color channel—and maps that signal onto a continuous property of another operation. Input/output endpoints, clamping, and temporal smoothing make the relationship explicit; the preceding frame's measurement is used so feedback loops remain finite. Diagnostic statistics remain available but do not replace the image flowing through the stack. The Inspector shows only controls owned by the selected object. Editing a local Render value creates an override, and returning it to the scene-default value restores inheritance.
+The document is a validated dependency graph ending at **Output**. A new document begins as `Render → Output`. A **Render** applies inherited renderer state plus sparse local overrides and produces named Color, Depth, Normal, Field, and Spectrum16 resources. An **Interpret** converts a spectral resource through a selected observer without rerendering the scene. A **Composite** combines two named signals with explicit arithmetic. A **Measure** reduces an upstream image or field to a scalar—mean, RMS, peak, threshold coverage, or one mean color channel—and maps that signal onto a continuous property. The compiler performs a stable topological sort, so canvas position and document display order do not dictate execution; invalid cycles are rejected before mutation. The Inspector shows only controls owned by the selected object.
 
-Use **Add operation** to add a Render, spectrum Interpret, or two-input Composite stage. Duplicate a Render to preserve its authored state, animation tracks, and modulation targets, then change only what should disagree. Named operands use stable operation/port addresses, so reordering the stack does not silently redirect them. Per-channel operations include difference, multiply, screen, exclusion, minimum/maximum, additive and subtractive hardware color math, half-add, quarter-add, signed color offset, and quantized bitwise XOR. Previous-frame inputs expose decay and UV transformation for controlled feedback; reset their persistent buffer with **View → Reset Frame History**. Each Composite also exposes opacity, gain, bias, encoded-RGB versus linear-light arithmetic, clamp/preserve/wrap range behavior, and optional luminance/depth/edge masks.
+Use **+ Add** to create literal Render, Composite, Interpret, or Measure operations. The selected operation or final output supplies the obvious compatible input automatically. **Duplicate + Blend** atomically creates an exact copy and a Composite, wires both Color outputs, and makes the Composite the output in one undo step; the user explicitly chooses its blend mode. Named ports use stable operation/port addresses. Per-channel operations include Normal, difference, multiply, screen, exclusion, minimum/maximum, additive and subtractive hardware color math, half-add, quarter-add, signed color offset, and quantized bitwise XOR.
 
-**Final Output** is deliberately downstream of the render stack. Its Inspector can leave the final image as direct RGB or approximate composite-NTSC chroma bandwidth and luma/chroma crosstalk, then model scanlines, an aperture grille, and display bloom. These controls affect presentation only: raw pass textures and all A/B arithmetic remain unchanged and inspectable.
+**Output** is deliberately downstream of the operation graph. Its Inspector can leave the final image as direct RGB or approximate composite-NTSC chroma bandwidth and luma/chroma crosstalk, then model scanlines, an aperture grille, and display bloom. These controls affect presentation only: raw operation textures and all A/B arithmetic remain unchanged and inspectable.
 
 Its RGB observer modes reinterpret the completed image through approximate L, M, S cone and scotopic rod responses. Outputs include the LMS triplet, individual receptor channels, rod vision, a mesopic rod/cone mixture, L-minus-M and blue/yellow opponent channels, rod/cone absolute difference, and quantized rod/cone XOR. Exposure, dark adaptation, rod sensitivity, opponent gain, and XOR precision remain explicit. This is an RGB observer approximation rather than spectral rendering, so it cannot separate metameric spectra that already collapsed to the same RGB value.
 
@@ -175,7 +176,7 @@ modulation routes, texture mapping, perturbations, masks, scene, camera, and pre
 
 Use **Help > Graphics Handbook** to open the built-in technical reference. Start with **From mesh to pixel**, then follow its related-concept links or browse the knowledge map. Every article begins with a plain causal **Quick read** before preserving the precise definition, pipeline location, visible results, interactions, engine vocabulary, and technical diagram. The map groups the pipeline, shading, visibility and output, engine systems, animation, and ray tracing. Reading never changes renderer state; example buttons apply configurations deliberately.
 
-The Document navigator provides purpose-built scenes for texture minification, depth precision, transparency ordering, and lighting interpolation studies in addition to the default torus.
+The Operation Graph's **Scene** menu provides purpose-built scenes for texture minification, depth precision, transparency ordering, and lighting interpolation studies in addition to the default torus.
 
 Changing the selected scene preserves the current renderer state and camera. **Reset scene setup** explicitly applies that scene's recommended starting state and camera framing:
 

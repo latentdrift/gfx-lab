@@ -1,7 +1,5 @@
 #include "ui/Workspace.hpp"
 
-#include "assets/ModelAsset.hpp"
-#include "ui/AnimationControls.hpp"
 #include "ui/Inspector.hpp"
 #include "ui/Windowing.hpp"
 
@@ -16,7 +14,6 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
-#include <string>
 
 namespace gfxlab::ui {
 namespace {
@@ -25,7 +22,7 @@ namespace {
 // Dear ImGui otherwise restores the previous topology and leaves the unknown
 // tool as a detached platform window, which is especially fragile across DPI
 // scales and mixed-monitor coordinate spaces.
-constexpr const char* workspaceId = "Graphics Lab Workspace v12";
+constexpr const char* workspaceId = "Graphics Lab Workspace v13";
 
 void buildDefaultLayout(const ImGuiID dockspace, const WorkspaceLayout layout) {
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -36,19 +33,21 @@ void buildDefaultLayout(const ImGuiID dockspace, const WorkspaceLayout layout) {
   ImGuiID center = dockspace;
   ImGuiID left = 0;
   ImGuiID right = 0;
-  const float leftRatio = 0.20f;
+  const float leftRatio = 0.32f;
   const float rightRatio = layout == WorkspaceLayout::Analyze ? 0.31f : 0.28f;
   ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, leftRatio, &left, &center);
   ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, rightRatio, &right, &center);
 
-  ImGui::DockBuilderDockWindow("Document", left);
-  ImGuiID centerBottom = 0;
+  ImGui::DockBuilderDockWindow("Operation Graph", left);
   ImGuiID centerTop = center;
-  const float timelineRatio = layout == WorkspaceLayout::Animate ? 0.46f : 0.30f;
-  ImGui::DockBuilderSplitNode(centerTop, ImGuiDir_Down, timelineRatio, &centerBottom, &centerTop);
-  ImGui::DockBuilderDockWindow("Signal Viewer", centerTop);
-  ImGui::DockBuilderDockWindow("Scope", centerBottom);
-  ImGui::DockBuilderDockWindow("Timeline", centerBottom);
+  if (layout == WorkspaceLayout::Animate || layout == WorkspaceLayout::Analyze) {
+    ImGuiID centerBottom = 0;
+    const float bottomRatio = layout == WorkspaceLayout::Animate ? 0.46f : 0.30f;
+    ImGui::DockBuilderSplitNode(centerTop, ImGuiDir_Down, bottomRatio, &centerBottom, &centerTop);
+    if (layout == WorkspaceLayout::Animate) ImGui::DockBuilderDockWindow("Timeline", centerBottom);
+    else ImGui::DockBuilderDockWindow("Scope", centerBottom);
+  }
+  ImGui::DockBuilderDockWindow("Canvas", centerTop);
   ImGui::DockBuilderDockWindow("Properties", right);
   if (layout == WorkspaceLayout::Analyze) {
     ImGui::DockBuilderDockWindow("Signal Inspector", right);
@@ -75,8 +74,8 @@ void windowMenu(WorkspaceWindows& windows) {
     ImGui::EndMenu();
   }
   ImGui::Separator();
-  ImGui::MenuItem("Document", nullptr, &windows.document);
-  ImGui::MenuItem("Signal Viewer", nullptr, &windows.viewport);
+  ImGui::MenuItem("Operation Graph", nullptr, &windows.document);
+  ImGui::MenuItem("Canvas", nullptr, &windows.viewport);
   ImGui::MenuItem("Properties", nullptr, &windows.inspector);
   ImGui::MenuItem("Scope", nullptr, &windows.scope);
   ImGui::MenuItem("Timeline", nullptr, &windows.animation);
@@ -97,9 +96,9 @@ WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, c
   if (ImGui::BeginMainMenuBar()) {
     if (ImGui::BeginMenu("File")) {
       if (ImGui::MenuItem("Import Model...")) actions.importModel = true;
-      if (ImGui::MenuItem("Open Stack JSON...", "Ctrl+O")) actions.loadJson = true;
-      if (ImGui::MenuItem("Save Stack JSON...", "Ctrl+S")) actions.saveJson = true;
-      if (ImGui::MenuItem("Copy Stack JSON")) actions.copyJson = true;
+      if (ImGui::MenuItem("Open Document...", "Ctrl+O")) actions.loadJson = true;
+      if (ImGui::MenuItem("Save Document...", "Ctrl+S")) actions.saveJson = true;
+      if (ImGui::MenuItem("Copy Document JSON")) actions.copyJson = true;
       ImGui::Separator();
       if (ImGui::MenuItem("Quit")) actions.quit = true;
       ImGui::EndMenu();
@@ -133,18 +132,17 @@ WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, c
       if (ImGui::MenuItem("Graphics Handbook")) actions.handbook = true;
       ImGui::EndMenu();
     }
-    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("Target");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(150.0f);
-    int profileIndex = static_cast<int>(profile);
-    constexpr const char* profileLabels[] = {"Unrestricted", "PlayStation (PS1)", "Nintendo 64"};
-    if (ImGui::Combo("##hardware-profile", &profileIndex, profileLabels, 3)) {
-      profile = static_cast<HardwareProfile>(profileIndex);
-      actions.hardwareProfileChanged = true;
+    if (ImGui::BeginMenu("Advanced")) {
+      int profileIndex = static_cast<int>(profile);
+      constexpr const char* profileLabels[] = {"Unrestricted", "PlayStation (PS1)", "Nintendo 64"};
+      ImGui::SetNextItemWidth(180.0f);
+      if (ImGui::Combo("Hardware target", &profileIndex, profileLabels, 3)) {
+        profile = static_cast<HardwareProfile>(profileIndex);
+        actions.hardwareProfileChanged = true;
+      }
+      if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", hardwareProfileDescription(profile));
+      ImGui::EndMenu();
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", hardwareProfileDescription(profile));
     ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
     if (viewportRecording) {
       ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.48f, 0.12f, 0.10f, 1.0f));
@@ -172,285 +170,12 @@ WorkspaceActions beginWorkspace(WorkspaceWindows& windows, const bool canUndo, c
   return actions;
 }
 
-SceneWindowResult drawDocumentNavigator(bool& open, document::Document& document,
-    editor::EditorState& editorState, editor::CommandHistory& history) {
-  SceneWindowResult result;
-  if (!open) return result;
-  if (!ImGui::Begin("Document", &open)) {
-    ImGui::End();
-    return result;
-  }
-  keepCurrentWindowVisible();
-
-  const TestScene scene = document.scene.testScene;
-  const HardwareProfile profile = document.hardwareProfile;
-  const ModelAsset* importedModel = document.scene.importedModel.get();
-
-  ImGui::TextDisabled("SCENE");
-  constexpr std::array<const char*, 10> sceneLabels = {"Torus", "Texture minification", "Depth precision",
-    "Transparency", "Lighting comparison", "Stencil mask", "Field interference", "SDF iso-surface",
-    "Spectral metamers", "Elemental chamber"};
-  const char* currentLabel = scene == TestScene::ImportedModel && importedModel != nullptr
-    ? importedModel->name.c_str() : sceneLabels[std::clamp(static_cast<int>(scene), 0, 9)];
-  ImGui::SetNextItemWidth(-1.0f);
-  if (ImGui::BeginCombo("##scene", currentLabel)) {
-    for (int option = 0; option < 5; ++option) {
-      const TestScene candidate = static_cast<TestScene>(option);
-      if (ImGui::Selectable(sceneLabels[option], scene == candidate)) {
-        document::Document edited = document;
-        edited.scene.testScene = candidate;
-        static_cast<void>(history.execute(document,
-          editor::ReplaceDocument{std::move(edited)}));
-      }
-    }
-    if (profile == HardwareProfile::Unrestricted &&
-        ImGui::Selectable(sceneLabels[5], scene == TestScene::StencilMask))
-      {
-        document::Document edited = document;
-        edited.scene.testScene = TestScene::StencilMask;
-        static_cast<void>(history.execute(document,
-          editor::ReplaceDocument{std::move(edited)}));
-      }
-    if (profile == HardwareProfile::Unrestricted &&
-        ImGui::Selectable(sceneLabels[6], scene == TestScene::FieldInterference))
-      {
-        document::Document edited = document;
-        edited.scene.testScene = TestScene::FieldInterference;
-        static_cast<void>(history.execute(document,
-          editor::ReplaceDocument{std::move(edited)}));
-      }
-    if (profile == HardwareProfile::Unrestricted &&
-        ImGui::Selectable(sceneLabels[7], scene == TestScene::SdfIsoSurface))
-      {
-        document::Document edited = document;
-        edited.scene.testScene = TestScene::SdfIsoSurface;
-        static_cast<void>(history.execute(document,
-          editor::ReplaceDocument{std::move(edited)}));
-      }
-    if (profile == HardwareProfile::Unrestricted &&
-        ImGui::Selectable(sceneLabels[8], scene == TestScene::SpectralMetamers))
-      {
-        document::Document edited = document;
-        edited.scene.testScene = TestScene::SpectralMetamers;
-        static_cast<void>(history.execute(document,
-          editor::ReplaceDocument{std::move(edited)}));
-      }
-    if (profile == HardwareProfile::Unrestricted &&
-        ImGui::Selectable(sceneLabels[9], scene == TestScene::ElementalChamber))
-      {
-        document::Document edited = document;
-        edited.scene.testScene = TestScene::ElementalChamber;
-        static_cast<void>(history.execute(document,
-          editor::ReplaceDocument{std::move(edited)}));
-      }
-    if (importedModel != nullptr) {
-      ImGui::PushID("imported-model-scene");
-      if (ImGui::Selectable(importedModel->name.c_str(), scene == TestScene::ImportedModel))
-        {
-          document::Document edited = document;
-          edited.scene.testScene = TestScene::ImportedModel;
-          static_cast<void>(history.execute(document,
-            editor::ReplaceDocument{std::move(edited)}));
-        }
-      ImGui::PopID();
-    }
-    ImGui::EndCombo();
-  }
-  if (ImGui::Button("Import Model...", ImVec2(-1, 0))) result.importModel = true;
-
-  if (importedModel != nullptr) {
-    ImGui::Separator();
-    ImGui::TextDisabled("GLOBAL MODEL");
-    ImGui::TextWrapped("%s", importedModel->name.c_str());
-    ImGui::TextDisabled("%zu triangles   %zu meshes", importedModel->triangleCount,
-      importedModel->sourceMeshCount);
-    ImGui::TextDisabled("%zu materials   %zu textures", importedModel->materials.size(),
-      importedModel->textures.size());
-    ImGui::TextDisabled("UV0 %s   colors %s", importedModel->hasTextureCoordinates ? "yes" : "no",
-      importedModel->hasVertexColors ? "yes" : "no");
-    if (!importedModel->importWarnings.empty()) {
-      ImGui::TextColored(ImVec4(0.95f, 0.58f, 0.34f, 1.0f), "%zu texture warning%s",
-        importedModel->importWarnings.size(), importedModel->importWarnings.size() == 1 ? "" : "s");
-      if (ImGui::IsItemHovered()) {
-        ImGui::BeginTooltip();
-        for (const std::string& warning : importedModel->importWarnings) ImGui::TextWrapped("%s", warning.c_str());
-        ImGui::EndTooltip();
-      }
-    }
-    if (scene != TestScene::ImportedModel && ImGui::Button("Use Model", ImVec2(-1, 0))) {
-      document::Document edited = document;
-      edited.scene.testScene = TestScene::ImportedModel;
-      static_cast<void>(history.execute(document,
-        editor::ReplaceDocument{std::move(edited)}));
-    }
-    if (ImGui::Button("Unload Model", ImVec2(-1, 0))) result.unloadModel = true;
-  }
-  ImGui::Separator();
-  EditorSelection& selection = editorState.selection;
-  ImGui::TextDisabled("DOCUMENT OBJECTS");
-  if (ImGui::Selectable("Scene", selection.kind == EditorSelectionKind::Scene,
-      0, ImVec2(0.0f, 24.0f))) selection = {EditorSelectionKind::Scene, {}};
-  if (ImGui::Selectable("Render Defaults", selection.kind == EditorSelectionKind::RenderDefaults,
-      0, ImVec2(0.0f, 24.0f))) selection = {EditorSelectionKind::RenderDefaults, {}};
-  ImGui::TextDisabled("Inherited by every Render operation unless locally overridden.");
-  ImGui::Separator();
-  ImGui::TextDisabled("OPERATIONS — EXECUTION ORDER");
-  for (std::size_t index = 0; index < document.operations.size(); ++index) {
-    const document::Operation& operation = document.operations[index];
-    ImGui::PushID(static_cast<int>(operation.id.value));
-    const bool selected = selection.kind == EditorSelectionKind::Operation &&
-      selection.operation == operation.id;
-    if (ImGui::Selectable(operation.name.c_str(), selected, 0, ImVec2(0.0f, 22.0f))) {
-      selection = {EditorSelectionKind::Operation, operation.id};
-    }
-    const float rowTop = ImGui::GetItemRectMin().y;
-    ImGui::TextDisabled("%s", document::operationTypeLabel(operation));
-    if (const auto* render = std::get_if<document::RenderOperation>(&operation.data)) {
-      ImGui::SameLine();
-      const document::ObjectId owner = document::operationObject(operation.id);
-      const std::size_t tracks = static_cast<std::size_t>(std::count_if(
-        document.automation.animation.begin(), document.automation.animation.end(),
-        [owner](const document::AnimationTrack& track) { return track.target.owner == owner; }));
-      ImGui::TextDisabled("· %zu changes · %zu tracks", render->overrides.size(), tracks);
-    }
-    ImGui::TextDisabled("Outputs:");
-    ImGui::SameLine();
-    for (std::size_t outputIndex = 0; outputIndex < operation.outputs.size(); ++outputIndex) {
-      const document::SignalDescriptor& output = operation.outputs[outputIndex];
-      if (outputIndex > 0) ImGui::SameLine();
-      const document::SignalRef signal{output.id, 0};
-      const bool viewed = editorState.viewer.viewed.id == output.id;
-      const bool compared = editorState.viewer.comparison.has_value() &&
-        editorState.viewer.comparison->id == output.id;
-      if (viewed) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.48f, 1.0f));
-      else if (compared) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.48f, 0.34f, 0.14f, 1.0f));
-      if (ImGui::SmallButton(document::signalKindLabel(output.kind))) {
-        if (ImGui::GetIO().KeyShift) editorState.viewer.comparison = signal;
-        else editorState.viewer.viewed = signal;
-      }
-      if (viewed) ImGui::PopStyleColor();
-      else if (compared) ImGui::PopStyleColor();
-      if (ImGui::BeginPopupContextItem("signal-actions")) {
-        ImGui::TextDisabled("%s / %s", operation.name.c_str(), output.name.c_str());
-        if (ImGui::MenuItem("View signal")) editorState.viewer.viewed = signal;
-        if (ImGui::MenuItem("Use as comparison")) editorState.viewer.comparison = signal;
-        if (compared && ImGui::MenuItem("Clear comparison")) editorState.viewer.comparison.reset();
-        ImGui::EndPopup();
-      }
-      if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-        "Click: view %s / %s\nShift-click: use as comparison\nRight-click: signal actions",
-        operation.name.c_str(), output.name.c_str());
-    }
-    const float right = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
-    const ImVec2 restoreCursor = ImGui::GetCursorScreenPos();
-    ImGui::SetCursorScreenPos(ImVec2(right - 28.0f, rowTop + 2.0f));
-    bool enabled = operation.enabled;
-    if (ImGui::Checkbox("##enabled", &enabled))
-      static_cast<void>(history.execute(document,
-        editor::SetOperationEnabled{operation.id, enabled}));
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Operation enabled");
-    ImGui::SetCursorScreenPos(restoreCursor);
-    if (index + 1 < document.operations.size()) ImGui::Separator();
-    ImGui::PopID();
-  }
-  if (ImGui::Button("Add operation", ImVec2(-1, 0))) ImGui::OpenPopup("add-operation");
-  if (ImGui::BeginPopup("add-operation")) {
-    ImGui::TextDisabled("PRODUCE OR TRANSFORM A SIGNAL");
-    const auto add = [&](document::Operation operation) {
-      const document::OperationId id = operation.id;
-      const bool imageOutput = !operation.outputs.empty() &&
-        operation.outputs.front().kind != document::SignalKind::Scalar;
-      if (history.execute(document, editor::AddOperation{std::move(operation),
-          static_cast<std::size_t>(-1), imageOutput}).applied)
-        selection = {EditorSelectionKind::Operation, id};
-    };
-    const document::SignalRef previous = selection.kind == EditorSelectionKind::Operation
-      ? (document::findOperation(document, selection.operation) != nullptr
-          ? document::primaryOutput(*document::findOperation(document, selection.operation))
-          : document.presentation.input)
-      : document.presentation.input;
-    if (ImGui::Selectable("Render scene")) {
-      const document::OperationId id = document::nextOperationId(document);
-      add(document::makeRenderOperation(id, "Render " + std::to_string(id.value)));
-    }
-    if (ImGui::Selectable("Interpret spectrum")) {
-      document::SignalRef spectrum;
-      for (const document::Operation& candidate : document.operations)
-        for (const document::SignalDescriptor& output : candidate.outputs)
-          if (output.kind == document::SignalKind::Spectrum16) spectrum = {output.id, 0};
-      const document::OperationId id = document::nextOperationId(document);
-      add(document::makeInterpretOperation(id, "Interpret " + std::to_string(id.value), spectrum));
-    }
-    if (ImGui::Selectable("Composite two signals")) {
-      const document::OperationId id = document::nextOperationId(document);
-      add(document::makeCompositeOperation(id, "Composite " + std::to_string(id.value),
-        document.presentation.input, previous));
-    }
-    if (ImGui::Selectable("Analyze binocular views")) {
-      std::array<document::SignalRef, 2> renders{};
-      std::size_t count = 0;
-      for (const document::Operation& candidate : document.operations)
-        if (std::holds_alternative<document::RenderOperation>(candidate.data) && count < renders.size())
-          renders[count++] = document::primaryOutput(candidate);
-      const document::OperationId id = document::nextOperationId(document);
-      add(document::makeStereoOperation(id, "Stereo " + std::to_string(id.value),
-        renders[0], renders[count > 1 ? 1 : 0]));
-    }
-    if (ImGui::Selectable("Measure a signal")) {
-      const document::OperationId id = document::nextOperationId(document);
-      add(document::makeMeasureOperation(id, "Measure " + std::to_string(id.value), previous));
-    }
-    ImGui::EndPopup();
-  }
-  if (ImGui::Button("Duplicate selected", ImVec2(-1, 0))) {
-    const document::Operation* source = selection.kind == EditorSelectionKind::Operation
-      ? document::findOperation(document, selection.operation) : nullptr;
-    if (source != nullptr) {
-      const document::OperationId id = document::nextOperationId(document);
-      const auto found = std::find_if(document.operations.begin(), document.operations.end(),
-        [&](const document::Operation& candidate) { return candidate.id == source->id; });
-      const std::size_t index = static_cast<std::size_t>(std::distance(document.operations.begin(), found)) + 1;
-      if (history.execute(document, editor::DuplicateOperation{source->id, id, index}).applied)
-        selection = {EditorSelectionKind::Operation, id};
-    }
-  }
-  const auto selectedIndex = [&]() -> std::optional<std::size_t> {
-    if (selection.kind != EditorSelectionKind::Operation) return std::nullopt;
-    const auto found = std::find_if(document.operations.begin(), document.operations.end(),
-      [&](const document::Operation& operation) { return operation.id == selection.operation; });
-    return found == document.operations.end() ? std::nullopt
-      : std::optional{static_cast<std::size_t>(std::distance(document.operations.begin(), found))};
-  };
-  if (ImGui::Button("Up") && selectedIndex().has_value() && *selectedIndex() > 0)
-    static_cast<void>(history.execute(document,
-      editor::MoveOperation{selection.operation, *selectedIndex() - 1}));
-  ImGui::SameLine();
-  if (ImGui::Button("Down") && selectedIndex().has_value() && *selectedIndex() + 1 < document.operations.size())
-    static_cast<void>(history.execute(document,
-      editor::MoveOperation{selection.operation, *selectedIndex() + 1}));
-  ImGui::SameLine();
-  ImGui::BeginDisabled(document.operations.size() <= 1 || !selectedIndex().has_value());
-  if (ImGui::Button("Delete") && history.execute(document,
-      editor::RemoveOperation{selection.operation}).applied)
-    selection = {EditorSelectionKind::RenderDefaults, {}};
-  ImGui::EndDisabled();
-  ImGui::Separator();
-  ImGui::TextDisabled("PRESENTATION");
-  if (ImGui::Selectable("Presentation", selection.kind == EditorSelectionKind::Presentation,
-      0, ImVec2(0.0f, 26.0f))) selection = {EditorSelectionKind::Presentation, {}};
-  const document::SignalDescriptor* finalSignal = document::findSignal(document,
-    document.presentation.input.id);
-  ImGui::TextDisabled("Input: %s", finalSignal != nullptr ? finalSignal->name.c_str() : "invalid signal");
-  ImGui::End();
-  return result;
-}
-
 ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images,
     editor::SignalViewerState& viewer, document::Document& document,
     editor::EditorState& editorState, editor::CommandHistory& history) {
   ViewportWindowResult result;
   if (!open) return result;
-  if (!ImGui::Begin("Signal Viewer", &open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
+  if (!ImGui::Begin("Canvas", &open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
     ImGui::End();
     return result;
   }
@@ -459,7 +184,7 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   enum class Tool { Orbit, Translate, Scale };
   static Tool tool = Tool::Orbit;
 
-  if (ImGui::RadioButton("Signal", viewer.mode == editor::ViewerMode::Single))
+  if (ImGui::RadioButton("Single", viewer.mode == editor::ViewerMode::Single))
     viewer.mode = editor::ViewerMode::Single;
   ImGui::SameLine();
   const bool hasComparison = viewer.comparison.has_value() && images.comparison != 0;
@@ -477,10 +202,10 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
   ImGui::SameLine();
   ImGui::Checkbox("Presentation", &viewer.applyPresentation);
   ImGui::SameLine();
-  ImGui::TextDisabled("%s", images.viewedLabel);
+  ImGui::TextDisabled("Viewing: %s", images.viewedLabel);
   if (hasComparison) {
     ImGui::SameLine();
-    ImGui::TextDisabled("vs %s", images.comparisonLabel);
+    ImGui::TextDisabled("Compare: %s", images.comparisonLabel);
   }
   ImGui::SameLine();
   ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
@@ -529,15 +254,15 @@ ViewportWindowResult drawViewportWindow(bool& open, const ViewportImages& images
       ImVec2(0, 1), ImVec2(1, 0));
     draw->PopClipRect();
     draw->AddLine(ImVec2(middle, pairOrigin.y), ImVec2(middle, pairEnd.y), IM_COL32(225, 225, 225, 210));
-    draw->AddText(ImVec2(pairOrigin.x + 9, pairOrigin.y + 8), IM_COL32(240, 240, 240, 220), "COMPARISON");
-    draw->AddText(ImVec2(middle + 10, pairOrigin.y + 8), IM_COL32(240, 240, 240, 220), "VIEWED SIGNAL");
+    draw->AddText(ImVec2(pairOrigin.x + 9, pairOrigin.y + 8), IM_COL32(240, 240, 240, 220), "COMPARE");
+    draw->AddText(ImVec2(middle + 10, pairOrigin.y + 8), IM_COL32(240, 240, 240, 220), "VIEWING");
   } else {
     const unsigned int texture = viewer.mode == editor::ViewerMode::AbsoluteDifference ? images.difference
       : viewer.mode == editor::ViewerMode::Flicker && std::fmod(ImGui::GetTime(), 0.6) < 0.3
         ? images.comparison : images.viewed;
     draw->AddImage(static_cast<ImTextureID>(texture), origin, end, ImVec2(0, 1), ImVec2(1, 0));
     const char* label = viewer.mode == editor::ViewerMode::AbsoluteDifference ? "ABSOLUTE DIFFERENCE"
-      : viewer.mode == editor::ViewerMode::Flicker ? "FLICKER COMPARISON" : "VIEWED SIGNAL";
+      : viewer.mode == editor::ViewerMode::Flicker ? "FLICKER COMPARISON" : "VIEWING";
     draw->AddText(ImVec2(origin.x + 9, origin.y + 8), IM_COL32(240, 240, 240, 220), label);
   }
   // ImGuizmo deliberately refuses activation while a normal ImGui item is hovered. Keep the viewport

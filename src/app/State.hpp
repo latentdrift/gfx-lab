@@ -112,6 +112,7 @@ enum class RelationOperator {
   QuarterAdd,
   SignedColorOffset,
   BitwiseXor,
+  Normal,
 };
 enum class TestScene { Torus, TexturePlane, DepthPrecision, Transparency, Lighting, StencilMask,
   FieldInterference, SdfIsoSurface, SpectralMetamers, ElementalChamber, ImportedModel };

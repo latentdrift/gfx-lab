@@ -10,7 +10,7 @@ namespace gfxlab::editor {
 enum class SelectionKind { Scene, RenderDefaults, Operation, Presentation };
 
 struct ObjectSelection {
-  SelectionKind kind = SelectionKind::RenderDefaults;
+  SelectionKind kind = SelectionKind::Operation;
   document::OperationId operation;
 };
 

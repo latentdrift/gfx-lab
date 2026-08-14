@@ -1,6 +1,7 @@
 #include "evaluation/Compiler.hpp"
 
 #include <algorithm>
+#include <deque>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -70,6 +71,10 @@ EvaluationPlan compileDocument(const document::Document& document) {
     result.diagnostics.push_back({{}, DiagnosticSeverity::Error,
       "The persistent operation allocator would reuse an existing identity."});
 
+  std::vector<EvaluationNode> authoredNodes;
+  authoredNodes.reserve(document.operations.size());
+  std::vector<std::vector<std::size_t>> dependents(document.operations.size());
+  std::vector<std::size_t> dependencyCount(document.operations.size(), 0);
   for (std::size_t index = 0; index < document.operations.size(); ++index) {
     const document::Operation& operation = document.operations[index];
     EvaluationNode node;
@@ -84,9 +89,10 @@ EvaluationPlan compileDocument(const document::Document& document) {
           "Input references a signal that is not declared by the document."});
         continue;
       }
-      if (input.frameOffset == 0 && producer->second >= index)
-        result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
-          "Same-frame input must reference an earlier operation."});
+      if (input.frameOffset == 0) {
+        dependents[producer->second].push_back(index);
+        ++dependencyCount[index];
+      }
       if (input.frameOffset > 0)
         result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
           "A signal cannot reference a future frame."});
@@ -104,7 +110,24 @@ EvaluationPlan compileDocument(const document::Document& document) {
         result.diagnostics.push_back({operation.id, DiagnosticSeverity::Warning,
           "Measuring an existing scalar is redundant."});
     }
-    result.nodes.push_back(std::move(node));
+    authoredNodes.push_back(std::move(node));
+  }
+
+  std::deque<std::size_t> ready;
+  for (std::size_t index = 0; index < dependencyCount.size(); ++index)
+    if (dependencyCount[index] == 0) ready.push_back(index);
+  while (!ready.empty()) {
+    const std::size_t index = ready.front();
+    ready.pop_front();
+    result.nodes.push_back(std::move(authoredNodes[index]));
+    for (const std::size_t dependent : dependents[index]) {
+      if (--dependencyCount[dependent] == 0) ready.push_back(dependent);
+    }
+  }
+  if (result.nodes.size() != document.operations.size()) {
+    result.diagnostics.push_back({{}, DiagnosticSeverity::Error,
+      "Same-frame operation connections contain a dependency cycle."});
+    result.nodes.clear();
   }
 
   if (!result.finalSignal || descriptors.find(result.finalSignal.id) == descriptors.end())

@@ -757,12 +757,13 @@ void main() {
   else if (uOperator == 15) relation = b - a;
   else if (uOperator == 16) relation = a + b * 0.25;
   else if (uOperator == 17) relation = a + b - 0.5;
-  else {
+  else if (uOperator == 18) {
     float levels = exp2(float(uBitDepth)) - 1.0;
     uvec3 qa = uvec3(round(clamp(a, 0.0, 1.0) * levels));
     uvec3 qb = uvec3(round(clamp(b, 0.0, 1.0) * levels));
     relation = vec3(qa ^ qb) / levels;
   }
+  else relation = b;
   relation = relation * uGain + uBias;
   relation = finiteColor(relation);
   if (uRangeMode == 0) relation = clamp(relation, 0.0, 1.0);

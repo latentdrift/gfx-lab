@@ -274,7 +274,8 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
     data.observer.rodSensitivity = observer.value("rod_sensitivity", data.observer.rodSensitivity);
     data.observer.opponentGain = observer.value("opponent_gain", data.observer.opponentGain);
     const Json arithmetic = source.value("arithmetic", Json::object());
-    data.arithmetic.operation = static_cast<RelationOperator>(arithmetic.value("operation", 0));
+    data.arithmetic.operation = static_cast<RelationOperator>(arithmetic.value("operation",
+      static_cast<int>(data.arithmetic.operation)));
     data.arithmetic.gain = arithmetic.value("gain", data.arithmetic.gain);
     data.arithmetic.bias = arithmetic.value("bias", data.arithmetic.bias);
     data.arithmetic.opacity = arithmetic.value("opacity", data.arithmetic.opacity);

@@ -259,7 +259,7 @@ const char* animationPropertyDiscreteValueLabel(const AnimationProperty property
   case AnimationProperty::PassOutput: { constexpr std::array labels = {"Color", "Linear depth", "Normals", "Vertex colors", "Field signal preview"}; return label(labels); }
   case AnimationProperty::TextureSource: { constexpr std::array labels = {"Scene material", "Built-in checker", "Imported override", "White texel"}; return label(labels); }
   case AnimationProperty::UvMapping: { constexpr std::array labels = {"Mesh UV0", "Planar XY", "Planar XZ", "Planar YZ"}; return label(labels); }
-  case AnimationProperty::CompositeOperation: return value >= 0 && value <= 18 ? relationOperatorLabel(static_cast<RelationOperator>(value)) : nullptr;
+  case AnimationProperty::CompositeOperation: return value >= 0 && value <= 19 ? relationOperatorLabel(static_cast<RelationOperator>(value)) : nullptr;
   case AnimationProperty::CompositeSourceA:
   case AnimationProperty::CompositeSourceB: { constexpr std::array labels = {"Accumulated result", "Current pass", "Render pass", "Fixed color", "Previous frame", "Render-pass field", "Render-pass spectrum"}; return label(labels); }
   case AnimationProperty::CompositeInterpretationA:

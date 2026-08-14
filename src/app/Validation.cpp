@@ -57,6 +57,17 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     const std::filesystem::path typedPath = std::filesystem::temp_directory_path() /
       "graphics-lab-typed-validation.json";
     document::Document typedFixture = document::makeDefaultDocument();
+    const editor::CommandResult constructed = editor::applyCommand(typedFixture,
+      editor::DuplicateAndBlend{{1}, {2}, {3}, RelationOperator::Screen});
+    if (!constructed.applied || typedFixture.operations.size() != 3)
+      fail("Duplicate + Blend did not construct a valid operation graph");
+    const document::OperationId compositeId = typedFixture.operations.back().id;
+    const document::SignalRef compositeOutput = document::primaryOutput(typedFixture.operations.back());
+    const editor::CommandResult cycle = editor::applyCommand(typedFixture,
+      editor::ConnectSignal{compositeId, editor::InputSocket::A, compositeOutput});
+    if (cycle.applied || cycle.error.empty() ||
+        !evaluation::compileDocument(typedFixture).valid())
+      fail("typed graph accepted a same-frame dependency cycle");
     typedFixture.operations[1].name = "Round-trip variant";
     auto* typedVariant = std::get_if<document::RenderOperation>(&typedFixture.operations[1].data);
     typedVariant->time.scale = -0.75f;
@@ -111,6 +122,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       fail("typed document did not compile into a valid evaluation plan");
     document::Document commandedDocument = typedSpectral;
     editor::CommandHistory commandHistory;
+    const document::OperationId animatedOperation = commandedDocument.operations.front().id;
     const document::PropertyAddress ambientTarget{
       document::operationObject(commandedDocument.operations.front().id),
       document::propertyId(AnimationProperty::Ambient)};
@@ -120,15 +132,13 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         !commandHistory.undo(commandedDocument) || !commandedDocument.automation.animation.empty() ||
         !commandHistory.redo(commandedDocument) || commandedDocument.automation.animation.empty())
       fail("typed document command history did not preserve animation edits");
-    const document::Document validCommandedDocument = commandedDocument;
-    const editor::CommandResult invalidMove = commandHistory.execute(commandedDocument,
+    const editor::CommandResult graphReorder = commandHistory.execute(commandedDocument,
       editor::MoveOperation{commandedDocument.operations.back().id, 0});
-    if (invalidMove.applied || invalidMove.error.empty() ||
-        commandedDocument.operations.front().id != validCommandedDocument.operations.front().id)
-      fail("typed document command gate accepted an invalid dataflow reorder");
+    if (!graphReorder.applied || !evaluation::compileDocument(commandedDocument).valid())
+      fail("typed graph could not compile independently of its display order");
     const document::OperationId duplicateId = document::nextOperationId(commandedDocument);
     if (!commandHistory.execute(commandedDocument, editor::DuplicateOperation{
-          commandedDocument.operations.front().id, duplicateId, 1}).applied ||
+          animatedOperation, duplicateId, 1}).applied ||
         commandedDocument.nextOperationIdentity <= duplicateId.value ||
         std::count_if(commandedDocument.automation.animation.begin(),
           commandedDocument.automation.animation.end(), [duplicateId](const document::AnimationTrack& track) {
@@ -533,7 +543,7 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
       }
     }
     for (int operation = static_cast<int>(RelationOperator::AbsoluteDifference);
-         operation <= static_cast<int>(RelationOperator::BitwiseXor); ++operation)
+         operation <= static_cast<int>(RelationOperator::Normal); ++operation)
       renderer.renderRelation(static_cast<RelationOperator>(operation), 2.0f, 0.5f);
     const std::string relationConfig = relationConfigJson(current, reference, camera, scene,
       HardwareProfile::Unrestricted, RelationOperator::AbsoluteDifference, 4.0f, 0.0f);

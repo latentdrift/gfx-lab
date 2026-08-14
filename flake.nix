@@ -24,6 +24,7 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           imguiDocking = imguiDockingFor pkgs;
+          imnodesDocking = pkgs.imnodes.override { imgui = imguiDocking; };
         in {
           default = pkgs.stdenv.mkDerivation {
             pname = "graphics-lab";
@@ -44,6 +45,7 @@
               glfw
               glm
               imguiDocking
+              imnodesDocking
               assimp
               nativefiledialog-extended
               stb
@@ -70,6 +72,7 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           imguiDocking = imguiDockingFor pkgs;
+          imnodesDocking = pkgs.imnodes.override { imgui = imguiDocking; };
         in {
           default = pkgs.mkShell {
             GRAPHICS_LAB_IMGUIZMO_SOURCE = "${imguizmo}";
@@ -83,6 +86,7 @@
               glfw
               glm
               imguiDocking
+              imnodesDocking
               assimp
               nativefiledialog-extended
               stb

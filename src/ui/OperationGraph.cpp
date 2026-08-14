@@ -1,0 +1,402 @@
+#include "ui/OperationGraph.hpp"
+
+#include "evaluation/Compiler.hpp"
+#include "ui/Windowing.hpp"
+
+#include <imgui.h>
+#include <imnodes.h>
+
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+namespace gfxlab::ui {
+namespace {
+
+constexpr int outputNodeId = 1;
+constexpr int outputInputPinId = 3'000'001;
+
+struct InputPort {
+  document::OperationId operation;
+  editor::InputSocket socket = editor::InputSocket::Primary;
+  std::string label;
+  document::SignalRef signal;
+  int pin = 0;
+};
+
+struct OutputPort {
+  document::SignalRef signal;
+  document::SignalKind kind = document::SignalKind::Color;
+  int pin = 0;
+};
+
+int nodeId(const document::OperationId operation) {
+  static std::unordered_map<std::uint64_t, int> ids;
+  static int next = 10;
+  const auto [found, inserted] = ids.emplace(operation.value, next);
+  if (inserted) ++next;
+  return found->second;
+}
+
+int inputPin(const document::OperationId operation, const int index) {
+  return 1'000'000 + nodeId(operation) * 16 + index;
+}
+
+int outputPin(const document::OperationId operation, const int index) {
+  return 2'000'000 + nodeId(operation) * 16 + index;
+}
+
+ImU32 signalColor(const document::SignalKind kind) {
+  switch (kind) {
+    case document::SignalKind::Color: return IM_COL32(78, 190, 214, 255);
+    case document::SignalKind::Depth: return IM_COL32(120, 154, 220, 255);
+    case document::SignalKind::Normal: return IM_COL32(184, 127, 224, 255);
+    case document::SignalKind::Field: return IM_COL32(98, 202, 138, 255);
+    case document::SignalKind::Spectrum16: return IM_COL32(232, 146, 72, 255);
+    case document::SignalKind::Scalar: return IM_COL32(232, 202, 91, 255);
+    case document::SignalKind::Vector2: return IM_COL32(220, 117, 149, 255);
+  }
+  return IM_COL32(190, 190, 190, 255);
+}
+
+const char* executionClass(const document::Operation& operation) {
+  return std::visit([](const auto& data) -> const char* {
+    using Type = std::decay_t<decltype(data)>;
+    if constexpr (std::is_same_v<Type, document::RenderOperation>) return "SCENE RENDER";
+    if constexpr (std::is_same_v<Type, document::MeasureOperation>) return "GPU READBACK";
+    if constexpr (std::is_same_v<Type, document::ConstantOperation>) return "VALUE";
+    return "FULLSCREEN PASS";
+  }, operation.data);
+}
+
+std::vector<InputPort> inputsFor(const document::Operation& operation) {
+  std::vector<InputPort> result;
+  const auto add = [&](const editor::InputSocket socket, const char* label,
+      const document::SignalRef signal) {
+    result.push_back({operation.id, socket, label, signal,
+      inputPin(operation.id, static_cast<int>(result.size()))});
+  };
+  std::visit([&](const auto& data) {
+    using Type = std::decay_t<decltype(data)>;
+    if constexpr (std::is_same_v<Type, document::InterpretOperation>)
+      add(editor::InputSocket::Primary, "Spectrum", data.spectrum);
+    else if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
+      add(editor::InputSocket::A, "Input A", data.a);
+      add(editor::InputSocket::B, "Input B", data.b);
+    } else if constexpr (std::is_same_v<Type, document::StereoOperation>) {
+      add(editor::InputSocket::Left, "Left", data.left);
+      add(editor::InputSocket::Right, "Right", data.right);
+    } else if constexpr (std::is_same_v<Type, document::MeasureOperation>)
+      add(editor::InputSocket::Primary, "Input", data.input);
+  }, operation.data);
+  return result;
+}
+
+bool accepts(const document::Document& document, const InputPort& input,
+    const OutputPort& output) {
+  const document::Operation* target = document::findOperation(document, input.operation);
+  const document::Operation* producer = document::findOperation(document, output.signal.id.producer);
+  if (target == nullptr || producer == nullptr) return false;
+  if (std::holds_alternative<document::InterpretOperation>(target->data))
+    return output.kind == document::SignalKind::Spectrum16;
+  if (std::holds_alternative<document::CompositeOperation>(target->data))
+    return output.kind != document::SignalKind::Scalar && output.kind != document::SignalKind::Vector2;
+  if (std::holds_alternative<document::StereoOperation>(target->data))
+    return output.kind == document::SignalKind::Color &&
+      std::holds_alternative<document::RenderOperation>(producer->data);
+  if (std::holds_alternative<document::MeasureOperation>(target->data))
+    return output.kind != document::SignalKind::Scalar;
+  return false;
+}
+
+document::SignalRef selectedSignal(const document::Document& document,
+    const editor::EditorState& state) {
+  if (state.selection.kind == editor::SelectionKind::Operation) {
+    if (const document::Operation* operation = document::findOperation(
+        document, state.selection.operation)) return document::primaryOutput(*operation);
+  }
+  return document.presentation.input;
+}
+
+document::SignalRef spectrumFromSelection(const document::Document& document,
+    const editor::EditorState& state) {
+  const document::Operation* operation = state.selection.kind == editor::SelectionKind::Operation
+    ? document::findOperation(document, state.selection.operation) : nullptr;
+  if (operation != nullptr) {
+    for (const document::SignalDescriptor& output : operation->outputs)
+      if (output.kind == document::SignalKind::Spectrum16) return {output.id, 0};
+  }
+  for (const document::Operation& candidate : document.operations)
+    for (const document::SignalDescriptor& output : candidate.outputs)
+      if (output.kind == document::SignalKind::Spectrum16) return {output.id, 0};
+  return {};
+}
+
+void placeGraph(const document::Document& document, const bool force) {
+  static std::unordered_set<std::uint64_t> positioned;
+  const evaluation::EvaluationPlan plan = evaluation::compileDocument(document);
+  std::unordered_map<document::OperationId, int> levels;
+  std::unordered_map<int, int> lanes;
+  int maximumLevel = 0;
+  for (const evaluation::EvaluationNode& evaluationNode : plan.nodes) {
+    int level = 0;
+    for (const document::SignalRef& input : evaluationNode.inputs) {
+      if (input.frameOffset == 0)
+        level = std::max(level, levels[input.id.producer] + 1);
+    }
+    levels[evaluationNode.operation] = level;
+    maximumLevel = std::max(maximumLevel, level);
+    if (force || !positioned.contains(evaluationNode.operation.value)) {
+      ImNodes::SetNodeGridSpacePos(nodeId(evaluationNode.operation),
+        ImVec2(40.0f + level * 260.0f, 60.0f + lanes[level]++ * 210.0f));
+      positioned.insert(evaluationNode.operation.value);
+    }
+  }
+  if (force || !positioned.contains(0)) {
+    ImNodes::SetNodeGridSpacePos(outputNodeId, ImVec2(40.0f + (maximumLevel + 1) * 260.0f, 60.0f));
+    positioned.insert(0);
+  }
+}
+
+} // namespace
+
+SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
+    editor::EditorState& editorState, editor::CommandHistory& history) {
+  SceneWindowResult result;
+  if (!open) return result;
+  if (!ImGui::Begin("Operation Graph", &open)) {
+    ImGui::End();
+    return result;
+  }
+  keepCurrentWindowVisible();
+  static std::string message;
+  const auto execute = [&](const editor::Command& command) {
+    const editor::CommandResult commandResult = history.execute(document, command);
+    message = commandResult.error;
+    return commandResult.applied;
+  };
+
+  if (ImGui::Button("+ Add")) ImGui::OpenPopup("add-operation-graph");
+  if (ImGui::BeginPopup("add-operation-graph")) {
+    ImGui::TextDisabled("ADD OPERATION");
+    const document::SignalRef selected = selectedSignal(document, editorState);
+    const auto add = [&](document::Operation operation, const bool final) {
+      const document::OperationId id = operation.id;
+      if (execute(editor::AddOperation{std::move(operation), static_cast<std::size_t>(-1), final}))
+        editorState.selection = {editor::SelectionKind::Operation, id};
+    };
+    if (ImGui::MenuItem("Render")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeRenderOperation(id, "Render"), true);
+    }
+    if (ImGui::MenuItem("Composite")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeCompositeOperation(id, "Composite", document.presentation.input, selected), true);
+    }
+    if (ImGui::MenuItem("Interpret")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeInterpretOperation(id, "Interpret", spectrumFromSelection(document, editorState)), true);
+    }
+    if (ImGui::MenuItem("Measure")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeMeasureOperation(id, "Measure", selected), false);
+    }
+    ImGui::EndPopup();
+  }
+
+  ImGui::SameLine();
+  const document::Operation* selectedOperation = editorState.selection.kind == editor::SelectionKind::Operation
+    ? document::findOperation(document, editorState.selection.operation) : nullptr;
+  ImGui::BeginDisabled(selectedOperation == nullptr);
+  if (ImGui::Button("Duplicate")) {
+    const document::OperationId id = document::nextOperationId(document);
+    if (execute(editor::DuplicateOperation{selectedOperation->id, id, static_cast<std::size_t>(-1)}))
+      editorState.selection = {editor::SelectionKind::Operation, id};
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Duplicate + Blend")) ImGui::OpenPopup("duplicate-blend-mode");
+  if (ImGui::BeginPopup("duplicate-blend-mode")) {
+    ImGui::TextDisabled("BLEND MODE");
+    for (int index = 0; index <= static_cast<int>(RelationOperator::Normal); ++index) {
+      const RelationOperator operation = static_cast<RelationOperator>(index);
+      if (!ImGui::MenuItem(relationOperatorLabel(operation))) continue;
+      const document::OperationId duplicate = document::nextOperationId(document);
+      const document::OperationId composite{duplicate.value + 1};
+      if (execute(editor::DuplicateAndBlend{selectedOperation->id, duplicate, composite, operation})) {
+        editorState.selection = {editor::SelectionKind::Operation, duplicate};
+        editorState.viewer.viewed = document.presentation.input;
+      }
+    }
+    ImGui::EndPopup();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Delete")) {
+    const document::OperationId deleted = selectedOperation->id;
+    if (execute(editor::RemoveOperation{deleted})) editorState.selection = {};
+  }
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  if (ImGui::Button("View Output")) {
+    editorState.viewer.viewed = document.presentation.input;
+    editorState.viewer.mode = editor::ViewerMode::Single;
+  }
+  ImGui::SameLine();
+  const bool arrange = ImGui::Button("Arrange");
+  ImGui::SameLine();
+  if (ImGui::Button("Scene")) ImGui::OpenPopup("graph-scene");
+  if (ImGui::BeginPopup("graph-scene")) {
+    if (ImGui::MenuItem("Import model...")) result.importModel = true;
+    if (document.scene.importedModel != nullptr && ImGui::MenuItem("Unload model")) result.unloadModel = true;
+    ImGui::Separator();
+    constexpr std::array<const char*, 10> labels = {"Torus", "Texture plane", "Depth precision",
+      "Transparency", "Lighting", "Stencil mask", "Field interference", "SDF iso-surface",
+      "Spectral metamers", "Elemental chamber"};
+    for (int index = 0; index < static_cast<int>(labels.size()); ++index) {
+      if (document.hardwareProfile != HardwareProfile::Unrestricted && index >= 5) continue;
+      if (!ImGui::MenuItem(labels[index], nullptr, static_cast<int>(document.scene.testScene) == index)) continue;
+      document::Document edited = document;
+      edited.scene.testScene = static_cast<TestScene>(index);
+      execute(editor::ReplaceDocument{std::move(edited)});
+    }
+    ImGui::EndPopup();
+  }
+  if (!message.empty()) {
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f), "%s", message.c_str());
+  }
+  ImGui::Separator();
+
+  std::unordered_map<int, InputPort> inputPins;
+  std::unordered_map<int, OutputPort> outputPins;
+  std::unordered_map<int, document::OperationId> operationNodes;
+  ImNodes::BeginNodeEditor();
+  placeGraph(document, arrange);
+  for (document::Operation& operation : document.operations) {
+    const int id = nodeId(operation.id);
+    operationNodes[id] = operation.id;
+    ImNodes::BeginNode(id);
+    ImNodes::BeginNodeTitleBar();
+    ImGui::TextUnformatted(operation.name.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("  %s", document::operationTypeLabel(operation));
+    ImNodes::EndNodeTitleBar();
+    ImNodes::BeginStaticAttribute(10'000 + id);
+    bool enabled = operation.enabled;
+    if (ImGui::Checkbox("Enabled", &enabled))
+      execute(editor::SetOperationEnabled{operation.id, enabled});
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", executionClass(operation));
+    ImNodes::EndStaticAttribute();
+    for (const InputPort& input : inputsFor(operation)) {
+      inputPins[input.pin] = input;
+      const document::SignalDescriptor* descriptor = document::findSignal(document, input.signal.id);
+      const document::SignalKind kind = descriptor == nullptr ? document::SignalKind::Color : descriptor->kind;
+      ImNodes::PushColorStyle(ImNodesCol_Pin, signalColor(kind));
+      ImNodes::BeginInputAttribute(input.pin);
+      ImGui::TextUnformatted(input.label.c_str());
+      ImNodes::EndInputAttribute();
+      ImNodes::PopColorStyle();
+    }
+    for (std::size_t index = 0; index < operation.outputs.size(); ++index) {
+      const document::SignalDescriptor& output = operation.outputs[index];
+      const int pin = outputPin(operation.id, static_cast<int>(index));
+      outputPins[pin] = {{output.id, 0}, output.kind, pin};
+      ImNodes::PushColorStyle(ImNodesCol_Pin, signalColor(output.kind));
+      ImNodes::BeginOutputAttribute(pin);
+      const bool viewed = editorState.viewer.viewed.id == output.id;
+      if (viewed) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.9f, 1.0f, 1.0f));
+      if (ImGui::Selectable(output.name.c_str(), viewed, 0, ImVec2(120.0f, 0.0f))) {
+        const document::SignalRef signal{output.id, 0};
+        if (ImGui::GetIO().KeyShift) editorState.viewer.comparison = signal;
+        else editorState.viewer.viewed = signal;
+      }
+      if (viewed) ImGui::PopStyleColor();
+      ImNodes::EndOutputAttribute();
+      ImNodes::PopColorStyle();
+    }
+    ImNodes::EndNode();
+  }
+
+  ImNodes::BeginNode(outputNodeId);
+  ImNodes::BeginNodeTitleBar();
+  ImGui::TextUnformatted("Output");
+  ImNodes::EndNodeTitleBar();
+  ImNodes::BeginInputAttribute(outputInputPinId);
+  const document::SignalDescriptor* finalDescriptor = document::findSignal(document, document.presentation.input.id);
+  ImGui::Text("Input  %s", finalDescriptor == nullptr ? "Disconnected" : finalDescriptor->name.c_str());
+  ImNodes::EndInputAttribute();
+  ImNodes::BeginStaticAttribute(10'001);
+  ImGui::TextDisabled("DISPLAY / EXPORT");
+  ImNodes::EndStaticAttribute();
+  ImNodes::EndNode();
+
+  int link = 4'000'000;
+  for (const auto& [pin, input] : inputPins) {
+    if (!input.signal) continue;
+    const document::Operation* producer = document::findOperation(document, input.signal.id.producer);
+    if (producer == nullptr) continue;
+    const auto output = std::find_if(producer->outputs.begin(), producer->outputs.end(),
+      [&](const document::SignalDescriptor& descriptor) { return descriptor.id == input.signal.id; });
+    if (output == producer->outputs.end()) continue;
+    const int index = static_cast<int>(std::distance(producer->outputs.begin(), output));
+    ImNodes::PushColorStyle(ImNodesCol_Link, signalColor(output->kind));
+    ImNodes::Link(link++, outputPin(producer->id, index), pin);
+    ImNodes::PopColorStyle();
+  }
+  if (finalDescriptor != nullptr) {
+    const document::Operation* producer = document::findOperation(document, finalDescriptor->producer);
+    if (producer != nullptr) {
+      const auto output = std::find_if(producer->outputs.begin(), producer->outputs.end(),
+        [&](const document::SignalDescriptor& descriptor) { return descriptor.id == finalDescriptor->id; });
+      if (output != producer->outputs.end()) {
+        const int index = static_cast<int>(std::distance(producer->outputs.begin(), output));
+        ImNodes::PushColorStyle(ImNodesCol_Link, signalColor(output->kind));
+        ImNodes::Link(link++, outputPin(producer->id, index), outputInputPinId);
+        ImNodes::PopColorStyle();
+      }
+    }
+  }
+  ImNodes::MiniMap(0.16f, ImNodesMiniMapLocation_BottomRight);
+  ImNodes::EndNodeEditor();
+
+  int firstPin = 0;
+  int secondPin = 0;
+  if (ImNodes::IsLinkCreated(&firstPin, &secondPin)) {
+    const auto output = outputPins.contains(firstPin) ? outputPins.find(firstPin) : outputPins.find(secondPin);
+    const int destinationPin = outputPins.contains(firstPin) ? secondPin : firstPin;
+    if (output == outputPins.end()) message = "Connections must run from an output to an input.";
+    else if (destinationPin == outputInputPinId) {
+      if (output->second.kind == document::SignalKind::Scalar)
+        message = "Output requires an image or field, not a Scalar.";
+      else if (execute(editor::SetFinalSignal{output->second.signal}))
+        editorState.viewer.viewed = document.presentation.input;
+    } else if (const auto input = inputPins.find(destinationPin); input == inputPins.end()) {
+      message = "That pin is not a connectable input.";
+    } else if (!accepts(document, input->second, output->second)) {
+      message = "Those signal types are not compatible.";
+    } else if (execute(editor::ConnectSignal{input->second.operation, input->second.socket,
+        output->second.signal})) {
+      editorState.selection = {editor::SelectionKind::Operation, input->second.operation};
+    }
+  }
+
+  const int selectedCount = ImNodes::NumSelectedNodes();
+  if (selectedCount > 0) {
+    std::vector<int> selectedNodes(static_cast<std::size_t>(selectedCount));
+    ImNodes::GetSelectedNodes(selectedNodes.data());
+    const int selected = selectedNodes.back();
+    if (selected == outputNodeId) editorState.selection = {editor::SelectionKind::Presentation, {}};
+    else if (const auto found = operationNodes.find(selected); found != operationNodes.end())
+      editorState.selection = {editor::SelectionKind::Operation, found->second};
+  }
+
+  ImGui::End();
+  return result;
+}
+
+} // namespace gfxlab::ui

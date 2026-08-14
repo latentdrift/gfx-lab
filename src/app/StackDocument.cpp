@@ -170,7 +170,7 @@ void parseComposite(const Json& source, CompositeStep& composite,
   constexpr std::array maskIds = {"none", "pass_luminance", "pass_depth_0_to_10_units", "pass_image_edges",
     "pass_field"};
   const std::string operationId = source.value("operation", "absolute_difference");
-  for (int operation = 0; operation <= static_cast<int>(RelationOperator::BitwiseXor); ++operation)
+  for (int operation = 0; operation <= static_cast<int>(RelationOperator::Normal); ++operation)
     if (operationId == relationOperatorId(static_cast<RelationOperator>(operation)))
       composite.operation = static_cast<RelationOperator>(operation);
   if (source.contains("source_a")) {

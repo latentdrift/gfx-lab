@@ -22,6 +22,12 @@ struct DuplicateOperation {
   document::OperationId duplicate;
   std::size_t index = static_cast<std::size_t>(-1);
 };
+struct DuplicateAndBlend {
+  document::OperationId source;
+  document::OperationId duplicate;
+  document::OperationId composite;
+  RelationOperator operation = RelationOperator::Normal;
+};
 struct MoveOperation { document::OperationId operation; std::size_t index = 0; };
 struct SetOperationEnabled { document::OperationId operation; bool enabled = true; };
 struct ReplaceDocument { document::Document document; };
@@ -53,8 +59,8 @@ struct RemoveKeyframe {
 struct ConnectModulation { document::ModulationRoute route; };
 struct RemoveModulation { std::size_t index = 0; };
 
-using Command = std::variant<AddOperation, RemoveOperation, DuplicateOperation, MoveOperation, SetOperationEnabled,
-  ReplaceDocument, ConnectSignal,
+using Command = std::variant<AddOperation, RemoveOperation, DuplicateOperation, DuplicateAndBlend,
+  MoveOperation, SetOperationEnabled, ReplaceDocument, ConnectSignal,
   SetFinalSignal, SetRenderOverride, SetKeyframe, RemoveKeyframe, ConnectModulation,
   RemoveModulation>;
 

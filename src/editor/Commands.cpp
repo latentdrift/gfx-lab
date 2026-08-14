@@ -18,6 +18,61 @@ document::AnimationTrack* findTrack(document::Document& document,
   return found == document.automation.animation.end() ? nullptr : &*found;
 }
 
+std::string duplicateOperation(document::Document& document,
+    const document::OperationId sourceId, const document::OperationId duplicateId,
+    const std::size_t requestedIndex) {
+  const document::Operation* source = document::findOperation(document, sourceId);
+  if (source == nullptr) return "The source operation no longer exists.";
+  if (!duplicateId || document::findOperation(document, duplicateId) != nullptr)
+    return "The duplicate operation ID is invalid or already exists.";
+  document::Operation duplicate = *source;
+  duplicate.id = duplicateId;
+  duplicate.name += " copy";
+  for (document::SignalDescriptor& output : duplicate.outputs) {
+    output.id = document::operationSignal(duplicate.id, output.key);
+    output.producer = duplicate.id;
+  }
+  const auto remapSelf = [&](document::SignalRef& signal) {
+    if (signal.id.producer == sourceId) signal.id.producer = duplicateId;
+  };
+  std::visit([&](auto& operationData) {
+    using OperationType = std::decay_t<decltype(operationData)>;
+    if constexpr (std::is_same_v<OperationType, document::InterpretOperation>)
+      remapSelf(operationData.spectrum);
+    else if constexpr (std::is_same_v<OperationType, document::CompositeOperation>) {
+      remapSelf(operationData.a);
+      remapSelf(operationData.b);
+    } else if constexpr (std::is_same_v<OperationType, document::StereoOperation>) {
+      remapSelf(operationData.left);
+      remapSelf(operationData.right);
+    } else if constexpr (std::is_same_v<OperationType, document::MeasureOperation>)
+      remapSelf(operationData.input);
+  }, duplicate.data);
+  const std::size_t index = std::min(requestedIndex, document.operations.size());
+  document.operations.insert(document.operations.begin() + static_cast<std::ptrdiff_t>(index),
+    std::move(duplicate));
+  const document::ObjectId sourceOwner = document::operationObject(sourceId);
+  const document::ObjectId duplicateOwner = document::operationObject(duplicateId);
+  const std::size_t trackCount = document.automation.animation.size();
+  for (std::size_t track = 0; track < trackCount; ++track) {
+    if (document.automation.animation[track].target.owner != sourceOwner) continue;
+    document::AnimationTrack cloned = document.automation.animation[track];
+    cloned.target.owner = duplicateOwner;
+    document.automation.animation.push_back(std::move(cloned));
+  }
+  const std::size_t routeCount = document.automation.modulation.size();
+  for (std::size_t route = 0; route < routeCount; ++route) {
+    if (document.automation.modulation[route].target.owner != sourceOwner) continue;
+    document::ModulationRoute cloned = document.automation.modulation[route];
+    cloned.target.owner = duplicateOwner;
+    remapSelf(cloned.source);
+    document.automation.modulation.push_back(std::move(cloned));
+  }
+  document.nextOperationIdentity = std::max(document.nextOperationIdentity,
+    duplicateId.value + 1);
+  return {};
+}
+
 std::string mutate(document::Document& document, const Command& command) {
   return std::visit([&](const auto& data) -> std::string {
     using Type = std::decay_t<decltype(data)>;
@@ -46,55 +101,33 @@ std::string mutate(document::Document& document, const Command& command) {
           return route.target.owner == owner || route.source.id.producer == operation;
         });
     } else if constexpr (std::is_same_v<Type, DuplicateOperation>) {
+      if (const std::string error = duplicateOperation(document, data.source, data.duplicate,
+          data.index); !error.empty()) return error;
+    } else if constexpr (std::is_same_v<Type, DuplicateAndBlend>) {
       const document::Operation* source = document::findOperation(document, data.source);
       if (source == nullptr) return "The source operation no longer exists.";
-      if (!data.duplicate || document::findOperation(document, data.duplicate) != nullptr)
-        return "The duplicate operation ID is invalid or already exists.";
-      document::Operation duplicate = *source;
-      duplicate.id = data.duplicate;
-      duplicate.name += " copy";
-      for (document::SignalDescriptor& output : duplicate.outputs) {
-        output.id = document::operationSignal(duplicate.id, output.key);
-        output.producer = duplicate.id;
-      }
-      const auto remapSelf = [&](document::SignalRef& signal) {
-        if (signal.id.producer == data.source) signal.id.producer = data.duplicate;
-      };
-      std::visit([&](auto& operationData) {
-        using OperationType = std::decay_t<decltype(operationData)>;
-        if constexpr (std::is_same_v<OperationType, document::InterpretOperation>)
-          remapSelf(operationData.spectrum);
-        else if constexpr (std::is_same_v<OperationType, document::CompositeOperation>) {
-          remapSelf(operationData.a);
-          remapSelf(operationData.b);
-        } else if constexpr (std::is_same_v<OperationType, document::StereoOperation>) {
-          remapSelf(operationData.left);
-          remapSelf(operationData.right);
-        } else if constexpr (std::is_same_v<OperationType, document::MeasureOperation>)
-          remapSelf(operationData.input);
-      }, duplicate.data);
-      const std::size_t index = std::min(data.index, document.operations.size());
-      document.operations.insert(document.operations.begin() + static_cast<std::ptrdiff_t>(index),
-        std::move(duplicate));
-      const document::ObjectId sourceOwner = document::operationObject(data.source);
-      const document::ObjectId duplicateOwner = document::operationObject(data.duplicate);
-      const std::size_t trackCount = document.automation.animation.size();
-      for (std::size_t track = 0; track < trackCount; ++track) {
-        if (document.automation.animation[track].target.owner != sourceOwner) continue;
-        document::AnimationTrack cloned = document.automation.animation[track];
-        cloned.target.owner = duplicateOwner;
-        document.automation.animation.push_back(std::move(cloned));
-      }
-      const std::size_t routeCount = document.automation.modulation.size();
-      for (std::size_t route = 0; route < routeCount; ++route) {
-        if (document.automation.modulation[route].target.owner != sourceOwner) continue;
-        document::ModulationRoute cloned = document.automation.modulation[route];
-        cloned.target.owner = duplicateOwner;
-        remapSelf(cloned.source);
-        document.automation.modulation.push_back(std::move(cloned));
-      }
+      const document::SignalRef sourceOutput = document::primaryOutput(*source);
+      const document::SignalDescriptor* descriptor = document::findSignal(document, sourceOutput.id);
+      if (descriptor == nullptr || descriptor->kind != document::SignalKind::Color)
+        return "Duplicate + Blend requires a Color output.";
+      const std::string outputKey = descriptor->key;
+      if (!data.composite || data.composite == data.duplicate ||
+          document::findOperation(document, data.composite) != nullptr)
+        return "The Composite operation ID is invalid or already exists.";
+      const auto sourcePosition = std::find_if(document.operations.begin(), document.operations.end(),
+        [&](const document::Operation& operation) { return operation.id == data.source; });
+      const std::size_t duplicateIndex = static_cast<std::size_t>(
+        std::distance(document.operations.begin(), sourcePosition)) + 1;
+      if (const std::string error = duplicateOperation(document, data.source, data.duplicate,
+          duplicateIndex); !error.empty()) return error;
+      document::Operation composite = document::makeCompositeOperation(data.composite, "Composite",
+        sourceOutput, document::SignalRef{document::operationSignal(data.duplicate, outputKey), 0});
+      std::get<document::CompositeOperation>(composite.data).arithmetic.operation = data.operation;
+      document.presentation.input = document::primaryOutput(composite);
+      document.operations.insert(document.operations.begin() + static_cast<std::ptrdiff_t>(duplicateIndex + 1),
+        std::move(composite));
       document.nextOperationIdentity = std::max(document.nextOperationIdentity,
-        data.duplicate.value + 1);
+        data.composite.value + 1);
     } else if constexpr (std::is_same_v<Type, MoveOperation>) {
       const auto found = std::find_if(document.operations.begin(), document.operations.end(),
         [&data](const document::Operation& operation) { return operation.id == data.operation; });

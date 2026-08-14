@@ -182,12 +182,14 @@ bool drawOperation(document::Document& document, document::Operation& operation,
     changed |= signalPicker("Source B", document, operation.id, composite->b);
     ImGui::SeparatorText("BLEND");
     int blend = static_cast<int>(composite->arithmetic.operation);
-    if (ImGui::Combo("Mode", &blend, [](void*, int index, const char** text) {
-          *text = relationOperatorLabel(static_cast<RelationOperator>(index));
-          return true;
-        }, nullptr, static_cast<int>(RelationOperator::BitwiseXor) + 1)) {
-      composite->arithmetic.operation = static_cast<RelationOperator>(blend);
-      changed = true;
+    if (ImGui::BeginCombo("Mode", relationOperatorLabel(composite->arithmetic.operation))) {
+      for (int index = 0; index <= static_cast<int>(RelationOperator::Normal); ++index) {
+        if (!ImGui::Selectable(relationOperatorLabel(static_cast<RelationOperator>(index)),
+            blend == index)) continue;
+        composite->arithmetic.operation = static_cast<RelationOperator>(index);
+        changed = true;
+      }
+      ImGui::EndCombo();
     }
     changed |= ImGui::SliderFloat("Opacity", &composite->arithmetic.opacity, 0.0f, 1.0f);
     changed |= ImGui::DragFloat("Gain", &composite->arithmetic.gain, 0.01f, 0.0f, 16.0f);

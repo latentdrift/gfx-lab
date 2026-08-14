@@ -7,7 +7,9 @@ namespace gfxlab::editor {
 void synchronizeEditorState(EditorState& state, const document::Document& document) {
   if (state.selection.kind == SelectionKind::Operation &&
       document::findOperation(document, state.selection.operation) == nullptr) {
-    state.selection = {SelectionKind::RenderDefaults, {}};
+    state.selection = document.operations.empty()
+      ? ObjectSelection{SelectionKind::RenderDefaults, {}}
+      : ObjectSelection{SelectionKind::Operation, document.operations.front().id};
   }
   if (!state.viewer.viewed || document::findSignal(document, state.viewer.viewed.id) == nullptr)
     state.viewer.viewed = document.presentation.input;

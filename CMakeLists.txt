@@ -10,6 +10,7 @@ find_package(GLEW REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(glm REQUIRED)
 find_package(imgui REQUIRED)
+find_package(imnodes REQUIRED)
 find_package(assimp REQUIRED)
 find_package(nfd REQUIRED)
 find_package(ZLIB REQUIRED)
@@ -50,6 +51,7 @@ add_executable(graphics-lab
   src/ui/DocumentTimeline.cpp
   src/ui/Inspector.cpp
   src/ui/InstrumentWidgets.cpp
+  src/ui/OperationGraph.cpp
   src/ui/ScopePanel.cpp
   src/ui/TextureInspector.cpp
   src/ui/TextureMappingEditor.cpp
@@ -71,6 +73,7 @@ target_link_libraries(graphics-lab PRIVATE
   glfw
   glm::glm
   imgui::imgui
+  imnodes::imnodes
   assimp::assimp
   nfd::nfd
   ZLIB::ZLIB

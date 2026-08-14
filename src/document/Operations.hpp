@@ -47,7 +47,7 @@ struct InterpretOperation {
 };
 
 struct CompositeArithmetic {
-  RelationOperator operation = RelationOperator::AbsoluteDifference;
+  RelationOperator operation = RelationOperator::Normal;
   float gain = 1.0f;
   float bias = 0.0f;
   float opacity = 1.0f;

@@ -36,15 +36,9 @@ std::optional<OperationId> operationFromObject(const ObjectId object) {
 
 Document makeDefaultDocument() {
   Document result;
-  Operation a = makeRenderOperation({1}, "Base Render");
-  Operation b = makeRenderOperation({2}, "Variant");
-  Operation composite = makeCompositeOperation({3}, "Composite",
-    primaryOutput(a), primaryOutput(b));
-  result.operations.push_back(std::move(a));
-  result.operations.push_back(std::move(b));
-  result.operations.push_back(std::move(composite));
-  result.presentation.input = primaryOutput(result.operations.back());
-  result.nextOperationIdentity = 4;
+  result.operations.push_back(makeRenderOperation({1}, "Render"));
+  result.presentation.input = primaryOutput(result.operations.front());
+  result.nextOperationIdentity = 2;
   result.scene.cameraAuthored = true;
   return result;
 }
