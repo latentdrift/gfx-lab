@@ -9,6 +9,7 @@
 #include "app/StackDocument.hpp"
 #include "app/Spectral.hpp"
 #include "assets/ModelAsset.hpp"
+#include "document/LegacyAdapter.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
 #include "renderer/TextureReadback.hpp"
@@ -63,6 +64,14 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         spectralDocument.document->renderStack.passes()[1].composite.sourceA !=
           CompositeSource::RenderPassSpectrum)
       fail("spectral metamer example failed document validation");
+    const document::Document typedSpectral = document::migrateLegacyDocument(*spectralDocument.document);
+    if (typedSpectral.operations.size() != 2 ||
+        !std::holds_alternative<document::RenderOperation>(typedSpectral.operations[0].data) ||
+        !std::holds_alternative<document::CompositeOperation>(typedSpectral.operations[1].data) ||
+        document::findSignal(typedSpectral, typedSpectral.presentation.input.id) == nullptr ||
+        typedSpectral.operations[0].outputs.size() != 5 ||
+        typedSpectral.operations[0].outputs[4].kind != document::SignalKind::Spectrum16)
+      fail("legacy document did not migrate to typed operations and signals");
     const ModelImportResult importedFixture = importModelAsset("tests/fixtures/import_triangle.obj");
     if (!importedFixture || importedFixture.asset->triangleCount != 1 ||
         importedFixture.asset->vertices.size() != 3 || !importedFixture.asset->hasTextureCoordinates ||

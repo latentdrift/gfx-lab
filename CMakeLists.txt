@@ -31,6 +31,10 @@ add_executable(graphics-lab
   src/app/StackDocument.cpp
   src/app/Validation.cpp
   src/app/ViewportRecorder.cpp
+  src/document/Document.cpp
+  src/document/LegacyAdapter.cpp
+  src/document/Operations.cpp
+  src/document/Signals.cpp
   src/handbook/Handbook.cpp
   src/renderer/Renderer.cpp
   src/renderer/TestGeometry.cpp
