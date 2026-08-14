@@ -602,8 +602,11 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
         source.at("id").get<std::uint64_t>() + 1);
     struct LegacySdfExpansion { ObjectId original; ObjectId a; ObjectId b; ObjectId combine; };
     std::vector<LegacySdfExpansion> legacySdfExpansions;
+    std::vector<OperationId> rendersWithoutFieldMode;
     for (const Json& source : root.at("operations")) {
       if (source.value("type", "") != "sdf_field") {
+        if (source.value("type", "") == "render" && !source.contains("field_mode"))
+          rendersWithoutFieldMode.push_back({source.at("id").get<std::uint64_t>()});
         result.operations.push_back(operation(source, documentPath));
         continue;
       }
@@ -633,6 +636,23 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
     }
     for (const Operation& authored : result.operations)
       result.nextOperationIdentity = std::max(result.nextOperationIdentity, authored.id.value + 1);
+    for (const OperationId renderId : rendersWithoutFieldMode) {
+      Operation* operation = findOperation(result, renderId);
+      auto* render = operation == nullptr ? nullptr : std::get_if<RenderOperation>(&operation->data);
+      const SignalDescriptor* field = render == nullptr ? nullptr : findSignal(result, render->field.id);
+      if (field == nullptr || field->metadata.semantic != SignalSemantic::SignedDistance) continue;
+      const auto iso = std::find_if(render->overrides.begin(), render->overrides.end(),
+        [](const PropertyOverride& value) {
+          return value.property == AnimationProperty::IsoSurfaceEnabled;
+        });
+      if (iso == render->overrides.end()) {
+        render->overrides.push_back({AnimationProperty::IsoSurfaceEnabled, glm::vec4(1.0f)});
+        render->fieldMode = RenderFieldMode::SurfaceOnly;
+      } else {
+        render->fieldMode = iso->value.x >= 0.5f
+          ? RenderFieldMode::SceneAndSurface : RenderFieldMode::SampleOnly;
+      }
+    }
     struct FieldMigrationOwners {
       ObjectId render;
       ObjectId a;
