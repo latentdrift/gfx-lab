@@ -10,6 +10,7 @@
 #include "app/Spectral.hpp"
 #include "assets/ModelAsset.hpp"
 #include "document/LegacyAdapter.hpp"
+#include "editor/Commands.hpp"
 #include "evaluation/Compiler.hpp"
 #include "handbook/Handbook.hpp"
 #include "renderer/Renderer.hpp"
@@ -77,6 +78,22 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     if (!typedSpectralPlan.valid() || typedSpectralPlan.nodes.size() != typedSpectral.operations.size() ||
         typedSpectralPlan.finalSignal != typedSpectral.presentation.input)
       fail("typed document did not compile into a valid evaluation plan");
+    document::Document commandedDocument = typedSpectral;
+    editor::CommandHistory commandHistory;
+    const document::PropertyAddress ambientTarget{
+      document::operationObject(commandedDocument.operations.front().id), AnimationProperty::Ambient};
+    if (!commandHistory.execute(commandedDocument,
+          editor::SetKeyframe{ambientTarget, 1.0f, glm::vec4(0.42f)}).applied ||
+        commandedDocument.automation.animation.empty() || !commandHistory.canUndo() ||
+        !commandHistory.undo(commandedDocument) || !commandedDocument.automation.animation.empty() ||
+        !commandHistory.redo(commandedDocument) || commandedDocument.automation.animation.empty())
+      fail("typed document command history did not preserve animation edits");
+    const document::Document validCommandedDocument = commandedDocument;
+    const editor::CommandResult invalidMove = commandHistory.execute(commandedDocument,
+      editor::MoveOperation{commandedDocument.operations.back().id, 0});
+    if (invalidMove.applied || invalidMove.error.empty() ||
+        commandedDocument.operations.front().id != validCommandedDocument.operations.front().id)
+      fail("typed document command gate accepted an invalid dataflow reorder");
     const ModelImportResult importedFixture = importModelAsset("tests/fixtures/import_triangle.obj");
     if (!importedFixture || importedFixture.asset->triangleCount != 1 ||
         importedFixture.asset->vertices.size() != 3 || !importedFixture.asset->hasTextureCoordinates ||
