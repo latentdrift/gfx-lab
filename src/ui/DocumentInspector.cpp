@@ -159,7 +159,9 @@ bool signalPicker(const char* label, document::Document& document,
         if (requiredShape == document::SignalShape::Scalar &&
             output.metadata.domain != document::SignalDomain::Screen2D) continue;
         const std::string name = operation.name + " / " + output.name;
-        if (ImGui::Selectable(name.c_str(), selected.id == output.id)) {
+        const std::string widgetLabel = name + "##signal_" +
+          std::to_string(operation.id.value) + "_" + output.key;
+        if (ImGui::Selectable(widgetLabel.c_str(), selected.id == output.id)) {
           selected = {output.id, 0};
           changed = true;
         }
@@ -268,7 +270,9 @@ bool drawOperation(document::Document& document, document::Operation& operation,
         for (document::Operation& candidate : document.operations) {
           if (candidate.id == operation.id || std::holds_alternative<document::MeasureOperation>(candidate.data))
             continue;
-          if (ImGui::Selectable(candidate.name.c_str(), target != nullptr && candidate.id == target->id)) {
+          const std::string candidateLabel = candidate.name + "##operation_" +
+            std::to_string(candidate.id.value);
+          if (ImGui::Selectable(candidateLabel.c_str(), target != nullptr && candidate.id == target->id)) {
             route->target.owner = document::operationObject(candidate.id);
             target = &candidate;
             changed = true;
