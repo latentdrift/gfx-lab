@@ -39,15 +39,39 @@ struct RenderOperation {
   TimeTransform time;
 };
 
-// An authored analytic world-space field. The renderer currently evaluates two
-// primitives and one relationship as a single semantic execution unit; keeping
-// that boundary explicit avoids pretending the GPU backend supports arbitrary
-// SDF expression trees yet.
-struct SdfFieldOperation {
-  RendererState::Field::SdfProducer a{};
-  RendererState::Field::SdfProducer b{};
+struct SdfPrimitiveOperation {
+  int type = 0;
+  glm::vec3 position{0.0f};
+  glm::vec3 parameters{1.0f, 0.35f, 0.35f};
+};
+
+struct SdfCombineOperation {
+  SignalRef a;
+  SignalRef b;
   int combination = 3;
   float smoothness = 0.45f;
+};
+
+struct WaveFieldOperation {
+  glm::vec3 sourceA{-1.35f, 0.0f, 0.0f};
+  glm::vec3 sourceB{1.35f, 0.0f, 0.0f};
+  float wavelength = 0.72f;
+  float phaseOffset = 0.0f;
+  float amplitudeA = 1.0f;
+  float amplitudeB = 1.0f;
+  float falloff = 0.08f;
+  float bandSharpness = 1.35f;
+  int output = 3;
+};
+
+struct ElementalFieldOperation {
+  glm::vec3 injectorPosition{-2.6f, 0.0f, -1.7f};
+  float injectorRadius = 0.8f;
+  float heatRate = 1.0f;
+  float fuelRate = 1.0f;
+  float jetDirection = 0.0f;
+  float jetStrength = 0.4f;
+  int channel = 0;
 };
 
 struct InterpretOperation {
@@ -155,7 +179,8 @@ struct MeasureOperation {
   bool absoluteMagnitude = true;
 };
 
-using OperationData = std::variant<RenderOperation, SdfFieldOperation, InterpretOperation, CompositeOperation,
+using OperationData = std::variant<RenderOperation, SdfPrimitiveOperation, SdfCombineOperation,
+  WaveFieldOperation, ElementalFieldOperation, InterpretOperation, CompositeOperation,
   ConstantOperation, StereoOperation, MeasureOperation, LuminanceOperation, RemapOperation,
   EdgeOperation, BlurOperation, ThresholdOperation, GradientMapOperation, WarpOperation>;
 
@@ -171,7 +196,11 @@ struct Operation {
 [[nodiscard]] SignalRef primaryOutput(const Operation& operation);
 void synchronizeOperationSignalMetadata(Operation& operation);
 [[nodiscard]] Operation makeRenderOperation(OperationId id, std::string name);
-[[nodiscard]] Operation makeSdfFieldOperation(OperationId id, std::string name);
+[[nodiscard]] Operation makeSdfPrimitiveOperation(OperationId id, std::string name);
+[[nodiscard]] Operation makeSdfCombineOperation(OperationId id, std::string name,
+  SignalRef a = {}, SignalRef b = {});
+[[nodiscard]] Operation makeWaveFieldOperation(OperationId id, std::string name);
+[[nodiscard]] Operation makeElementalFieldOperation(OperationId id, std::string name);
 [[nodiscard]] Operation makeInterpretOperation(OperationId id, std::string name, SignalRef spectrum);
 [[nodiscard]] Operation makeCompositeOperation(OperationId id, std::string name,
   SignalRef a, SignalRef b);

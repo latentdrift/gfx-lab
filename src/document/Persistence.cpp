@@ -17,6 +17,20 @@ namespace {
 
 using Json = nlohmann::json;
 
+bool embeddedFieldProducerProperty(const AnimationProperty property) {
+  return property == AnimationProperty::FieldEnabled ||
+    property == AnimationProperty::FieldProducerKind ||
+    property == AnimationProperty::FieldSourceA || property == AnimationProperty::FieldSourceB ||
+    property == AnimationProperty::FieldWavelength || property == AnimationProperty::FieldPhaseOffset ||
+    property == AnimationProperty::FieldAmplitudeA || property == AnimationProperty::FieldAmplitudeB ||
+    property == AnimationProperty::FieldFalloff || property == AnimationProperty::FieldBandSharpness ||
+    property == AnimationProperty::FieldVisualization || property == AnimationProperty::SdfAType ||
+    property == AnimationProperty::SdfAPosition || property == AnimationProperty::SdfAParameters ||
+    property == AnimationProperty::SdfBType || property == AnimationProperty::SdfBPosition ||
+    property == AnimationProperty::SdfBParameters || property == AnimationProperty::SdfOperation ||
+    property == AnimationProperty::SdfSmoothness;
+}
+
 SignalShape legacyShape(const int kind) {
   if (kind == 1 || kind == 3 || kind == 5 || kind == 7) return SignalShape::Scalar;
   if (kind == 6) return SignalShape::Vector2;
@@ -101,7 +115,8 @@ Json rendererProperties(const RenderDefaults& defaults) {
   carrier.importedTextureSrgb = defaults.texture.srgb;
   Json result = Json::object();
   for (const PropertyDescriptor& descriptor : propertyDescriptors()) {
-    if (descriptor.rendererProperty == AnimationProperty::Count) continue;
+    if (descriptor.rendererProperty == AnimationProperty::Count ||
+        embeddedFieldProducerProperty(descriptor.rendererProperty)) continue;
     result[descriptor.stableName] = vector(animationPropertyValue(carrier,
       descriptor.rendererProperty), descriptor.components);
   }
@@ -217,14 +232,27 @@ Json operation(const Operation& value) {
       result["perturbation"] = perturbation(data.perturbation);
       result["output"] = static_cast<int>(data.presentedOutput); result["texture"] = texture(data.texture);
       result["time"] = {{"scale", data.time.scale}, {"offset_seconds", data.time.offsetSeconds}};
-    } else if constexpr (std::is_same_v<Type, SdfFieldOperation>) {
-      result["type"] = "sdf_field";
-      const auto producer = [](const RendererState::Field::SdfProducer& value) {
-        return Json{{"type", value.type}, {"position", vector(glm::vec4(value.position, 0.0f), 3)},
-          {"parameters", vector(glm::vec4(value.parameters, 0.0f), 3)}};
-      };
-      result["a"] = producer(data.a); result["b"] = producer(data.b);
+    } else if constexpr (std::is_same_v<Type, SdfPrimitiveOperation>) {
+      result["type"] = "sdf_primitive"; result["primitive"] = data.type;
+      result["position"] = vector(glm::vec4(data.position, 0.0f), 3);
+      result["parameters"] = vector(glm::vec4(data.parameters, 0.0f), 3);
+    } else if constexpr (std::is_same_v<Type, SdfCombineOperation>) {
+      result["type"] = "sdf_combine"; result["a"] = signal(data.a); result["b"] = signal(data.b);
       result["combination"] = data.combination; result["smoothness"] = data.smoothness;
+    } else if constexpr (std::is_same_v<Type, WaveFieldOperation>) {
+      result["type"] = "wave_field";
+      result["source_a"] = vector(glm::vec4(data.sourceA, 0.0f), 3);
+      result["source_b"] = vector(glm::vec4(data.sourceB, 0.0f), 3);
+      result["wavelength"] = data.wavelength; result["phase"] = data.phaseOffset;
+      result["amplitude_a"] = data.amplitudeA; result["amplitude_b"] = data.amplitudeB;
+      result["falloff"] = data.falloff; result["sharpness"] = data.bandSharpness;
+      result["output"] = data.output;
+    } else if constexpr (std::is_same_v<Type, ElementalFieldOperation>) {
+      result["type"] = "elemental_field";
+      result["injector"] = vector(glm::vec4(data.injectorPosition, 0.0f), 3);
+      result["radius"] = data.injectorRadius; result["heat"] = data.heatRate;
+      result["fuel"] = data.fuelRate; result["jet_direction"] = data.jetDirection;
+      result["jet_strength"] = data.jetStrength; result["channel"] = data.channel;
     } else if constexpr (std::is_same_v<Type, InterpretOperation>) {
       result["type"] = "interpret"; result["input"] = signal(data.spectrum);
       result["observer"] = static_cast<int>(data.observer); result["exposure"] = data.exposureStops;
@@ -313,20 +341,39 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
     const Json time = source.value("time", Json::object());
     data.time.scale = time.value("scale", data.time.scale);
     data.time.offsetSeconds = time.value("offset_seconds", data.time.offsetSeconds);
-  } else if (type == "sdf_field") {
-    result = makeSdfFieldOperation(id, name);
-    auto& data = std::get<SdfFieldOperation>(result.data);
-    const auto readProducer = [](const Json& value,
-        RendererState::Field::SdfProducer fallback) {
-      fallback.type = value.value("type", fallback.type);
-      if (value.contains("position")) fallback.position = glm::vec3(vector(value.at("position"), 3));
-      if (value.contains("parameters")) fallback.parameters = glm::vec3(vector(value.at("parameters"), 3));
-      return fallback;
-    };
-    if (source.contains("a")) data.a = readProducer(source.at("a"), data.a);
-    if (source.contains("b")) data.b = readProducer(source.at("b"), data.b);
+  } else if (type == "sdf_primitive") {
+    result = makeSdfPrimitiveOperation(id, name);
+    auto& data = std::get<SdfPrimitiveOperation>(result.data);
+    data.type = source.value("primitive", data.type);
+    if (source.contains("position")) data.position = glm::vec3(vector(source.at("position"), 3));
+    if (source.contains("parameters")) data.parameters = glm::vec3(vector(source.at("parameters"), 3));
+  } else if (type == "sdf_combine") {
+    result = makeSdfCombineOperation(id, name, signal(source.at("a")), signal(source.at("b")));
+    auto& data = std::get<SdfCombineOperation>(result.data);
     data.combination = source.value("combination", data.combination);
     data.smoothness = source.value("smoothness", data.smoothness);
+  } else if (type == "wave_field") {
+    result = makeWaveFieldOperation(id, name);
+    auto& data = std::get<WaveFieldOperation>(result.data);
+    if (source.contains("source_a")) data.sourceA = glm::vec3(vector(source.at("source_a"), 3));
+    if (source.contains("source_b")) data.sourceB = glm::vec3(vector(source.at("source_b"), 3));
+    data.wavelength = source.value("wavelength", data.wavelength);
+    data.phaseOffset = source.value("phase", data.phaseOffset);
+    data.amplitudeA = source.value("amplitude_a", data.amplitudeA);
+    data.amplitudeB = source.value("amplitude_b", data.amplitudeB);
+    data.falloff = source.value("falloff", data.falloff);
+    data.bandSharpness = source.value("sharpness", data.bandSharpness);
+    data.output = source.value("output", data.output);
+  } else if (type == "elemental_field") {
+    result = makeElementalFieldOperation(id, name);
+    auto& data = std::get<ElementalFieldOperation>(result.data);
+    if (source.contains("injector")) data.injectorPosition = glm::vec3(vector(source.at("injector"), 3));
+    data.injectorRadius = source.value("radius", data.injectorRadius);
+    data.heatRate = source.value("heat", data.heatRate);
+    data.fuelRate = source.value("fuel", data.fuelRate);
+    data.jetDirection = source.value("jet_direction", data.jetDirection);
+    data.jetStrength = source.value("jet_strength", data.jetStrength);
+    data.channel = source.value("channel", data.channel);
   } else if (type == "interpret") {
     result = makeInterpretOperation(id, name, signal(source.at("input")));
     auto& data = std::get<InterpretOperation>(result.data);
@@ -455,7 +502,7 @@ Operation operation(const Json& source, const std::filesystem::path& path) {
 
 std::string documentJson(const Document& document) {
   Json root;
-  root["schema"] = "graphics-lab.document.v13";
+  root["schema"] = "graphics-lab.document.v14";
   root["next_operation_id"] = document.nextOperationIdentity;
   root["scene"] = {{"type", static_cast<int>(document.scene.testScene)},
     {"model", document.scene.importedModel != nullptr ? document.scene.importedModel->sourcePath : ""},
@@ -522,7 +569,8 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
     Json root; input >> root;
     const std::string schema = root.value("schema", "");
     if (schema != "graphics-lab.document.v10" && schema != "graphics-lab.document.v11" &&
-        schema != "graphics-lab.document.v12" && schema != "graphics-lab.document.v13")
+        schema != "graphics-lab.document.v12" && schema != "graphics-lab.document.v13" &&
+        schema != "graphics-lab.document.v14")
       return {std::nullopt, "Unsupported typed document schema."};
     Document result;
     result.nextOperationIdentity = root.value("next_operation_id", std::uint64_t{1});
@@ -546,10 +594,51 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
     const Json& defaults = root.at("render_defaults");
     parseRendererProperties(defaults.at("properties"), result.renderDefaults);
     result.renderDefaults.texture = texture(defaults.value("texture", Json::object()), documentPath);
-    for (const Json& source : root.at("operations")) result.operations.push_back(operation(source, documentPath));
+    for (const Json& source : root.at("operations"))
+      result.nextOperationIdentity = std::max(result.nextOperationIdentity,
+        source.at("id").get<std::uint64_t>() + 1);
+    struct LegacySdfExpansion { ObjectId original; ObjectId a; ObjectId b; ObjectId combine; };
+    std::vector<LegacySdfExpansion> legacySdfExpansions;
+    for (const Json& source : root.at("operations")) {
+      if (source.value("type", "") != "sdf_field") {
+        result.operations.push_back(operation(source, documentPath));
+        continue;
+      }
+      const OperationId combineId{source.at("id").get<std::uint64_t>()};
+      const OperationId aId{result.nextOperationIdentity++};
+      const OperationId bId{result.nextOperationIdentity++};
+      Operation a = makeSdfPrimitiveOperation(aId, source.value("name", "SDF") + " A");
+      Operation b = makeSdfPrimitiveOperation(bId, source.value("name", "SDF") + " B");
+      const auto readLegacy = [&](const Json& value, SdfPrimitiveOperation& primitive) {
+        primitive.type = value.value("type", primitive.type);
+        if (value.contains("position")) primitive.position = glm::vec3(vector(value.at("position"), 3));
+        if (value.contains("parameters")) primitive.parameters = glm::vec3(vector(value.at("parameters"), 3));
+      };
+      if (source.contains("a")) readLegacy(source.at("a"), std::get<SdfPrimitiveOperation>(a.data));
+      if (source.contains("b")) readLegacy(source.at("b"), std::get<SdfPrimitiveOperation>(b.data));
+      Operation combine = makeSdfCombineOperation(combineId, source.value("name", "SDF Combine"),
+        primaryOutput(a), primaryOutput(b));
+      auto& combineData = std::get<SdfCombineOperation>(combine.data);
+      combineData.combination = source.value("combination", combineData.combination);
+      combineData.smoothness = source.value("smoothness", combineData.smoothness);
+      combine.enabled = source.value("enabled", true);
+      result.operations.push_back(std::move(a));
+      result.operations.push_back(std::move(b));
+      result.operations.push_back(std::move(combine));
+      legacySdfExpansions.push_back({operationObject(combineId), operationObject(aId),
+        operationObject(bId), operationObject(combineId)});
+    }
     for (const Operation& authored : result.operations)
       result.nextOperationIdentity = std::max(result.nextOperationIdentity, authored.id.value + 1);
-    std::vector<std::pair<ObjectId, ObjectId>> sdfOwnerMigrations;
+    struct FieldMigrationOwners {
+      ObjectId render;
+      ObjectId a;
+      ObjectId b;
+      ObjectId combine;
+      ObjectId wave;
+      ObjectId elemental;
+    };
+    std::vector<FieldMigrationOwners> fieldOwnerMigrations;
     const auto isSdfDefinitionProperty = [](const AnimationProperty property) {
       return property == AnimationProperty::SdfAType ||
         property == AnimationProperty::SdfAPosition ||
@@ -560,8 +649,9 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
         property == AnimationProperty::SdfOperation ||
         property == AnimationProperty::SdfSmoothness;
     };
-    if (schema != "graphics-lab.document.v13") {
+    if (schema != "graphics-lab.document.v14") {
       const std::size_t authoredCount = result.operations.size();
+      result.operations.reserve(result.operations.size() + authoredCount * 3);
       for (std::size_t index = 0; index < authoredCount; ++index) {
         Operation& operation = result.operations[index];
         auto* render = std::get_if<RenderOperation>(&operation.data);
@@ -570,21 +660,62 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
         effective.renderer = result.renderDefaults.renderer;
         for (const PropertyOverride& overrideValue : render->overrides)
           setAnimationPropertyValue(effective, overrideValue.property, overrideValue.value);
-        if (!effective.renderer.field.enabled || effective.renderer.field.producerKind != 1) continue;
-        const OperationId fieldId{result.nextOperationIdentity++};
-        Operation field = makeSdfFieldOperation(fieldId, operation.name + " SDF");
-        auto& definition = std::get<SdfFieldOperation>(field.data);
-        definition.a = effective.renderer.field.sdfA;
-        definition.b = effective.renderer.field.sdfB;
-        definition.combination = effective.renderer.field.sdfOperation;
-        definition.smoothness = effective.renderer.field.sdfSmoothness;
-        render->field = primaryOutput(field);
+        if (!effective.renderer.field.enabled || render->field) continue;
+        FieldMigrationOwners owners;
+        owners.render = operationObject(operation.id);
+        if (effective.renderer.field.producerKind == 0) {
+          const OperationId id{result.nextOperationIdentity++};
+          Operation field = makeWaveFieldOperation(id, operation.name + " Wave");
+          auto& wave = std::get<WaveFieldOperation>(field.data);
+          wave.sourceA = effective.renderer.field.sourceA; wave.sourceB = effective.renderer.field.sourceB;
+          wave.wavelength = effective.renderer.field.wavelength; wave.phaseOffset = effective.renderer.field.phaseOffset;
+          wave.amplitudeA = effective.renderer.field.amplitudeA; wave.amplitudeB = effective.renderer.field.amplitudeB;
+          wave.falloff = effective.renderer.field.falloff; wave.bandSharpness = effective.renderer.field.bandSharpness;
+          wave.output = effective.renderer.field.visualization;
+          render->field = primaryOutput(field); owners.wave = operationObject(id);
+          result.operations.push_back(std::move(field));
+        } else if (effective.renderer.field.producerKind == 2) {
+          const OperationId id{result.nextOperationIdentity++};
+          Operation field = makeElementalFieldOperation(id, operation.name + " Elemental");
+          auto& elemental = std::get<ElementalFieldOperation>(field.data);
+          elemental.injectorPosition = effective.renderer.field.sourceA;
+          elemental.injectorRadius = effective.renderer.field.wavelength;
+          elemental.heatRate = effective.renderer.field.amplitudeA; elemental.fuelRate = effective.renderer.field.amplitudeB;
+          elemental.jetDirection = effective.renderer.field.phaseOffset; elemental.jetStrength = effective.renderer.field.falloff;
+          elemental.channel = effective.renderer.field.visualization;
+          render->field = primaryOutput(field); owners.elemental = operationObject(id);
+          result.operations.push_back(std::move(field));
+        } else {
+          const OperationId aId{result.nextOperationIdentity++};
+          const OperationId bId{result.nextOperationIdentity++};
+          const OperationId combineId{result.nextOperationIdentity++};
+          Operation a = makeSdfPrimitiveOperation(aId, operation.name + " SDF A");
+          Operation b = makeSdfPrimitiveOperation(bId, operation.name + " SDF B");
+          auto& aData = std::get<SdfPrimitiveOperation>(a.data);
+          auto& bData = std::get<SdfPrimitiveOperation>(b.data);
+          aData = {effective.renderer.field.sdfA.type, effective.renderer.field.sdfA.position,
+            effective.renderer.field.sdfA.parameters};
+          bData = {effective.renderer.field.sdfB.type, effective.renderer.field.sdfB.position,
+            effective.renderer.field.sdfB.parameters};
+          Operation combine = makeSdfCombineOperation(combineId, operation.name + " SDF",
+            primaryOutput(a), primaryOutput(b));
+          auto& definition = std::get<SdfCombineOperation>(combine.data);
+          definition.combination = effective.renderer.field.sdfOperation;
+          definition.smoothness = effective.renderer.field.sdfSmoothness;
+          render->field = primaryOutput(combine);
+          owners.a = operationObject(aId); owners.b = operationObject(bId);
+          owners.combine = operationObject(combineId);
+          result.operations.push_back(std::move(a)); result.operations.push_back(std::move(b));
+          result.operations.push_back(std::move(combine));
+        }
         std::erase_if(render->overrides, [&](const PropertyOverride& value) {
-          return isSdfDefinitionProperty(value.property);
+          return embeddedFieldProducerProperty(value.property);
         });
-        sdfOwnerMigrations.push_back({operationObject(operation.id), operationObject(fieldId)});
-        result.operations.push_back(std::move(field));
+        fieldOwnerMigrations.push_back(owners);
       }
+      // Producer enablement is now derived exclusively from a Render's field
+      // connection. Keep only sampling/consumer defaults in renderer state.
+      result.renderDefaults.renderer.field.enabled = false;
     }
     if (schema == "graphics-lab.document.v10") {
       const Json& sources = root.at("operations");
@@ -634,9 +765,29 @@ DocumentLoadResult loadDocumentFile(const std::string& path) {
       AnimationTrack track;
       track.target = {object(source.at("owner")), property->id};
       if (isSdfDefinitionProperty(property->rendererProperty)) {
-        const auto migratedOwner = std::find_if(sdfOwnerMigrations.begin(), sdfOwnerMigrations.end(),
-          [&](const auto& migration) { return migration.first == track.target.owner; });
-        if (migratedOwner != sdfOwnerMigrations.end()) track.target.owner = migratedOwner->second;
+        const auto expanded = std::find_if(legacySdfExpansions.begin(), legacySdfExpansions.end(),
+          [&](const LegacySdfExpansion& value) { return value.original == track.target.owner; });
+        if (expanded != legacySdfExpansions.end()) {
+          const AnimationProperty p = property->rendererProperty;
+          track.target.owner = p == AnimationProperty::SdfAType || p == AnimationProperty::SdfAPosition ||
+              p == AnimationProperty::SdfAParameters ? expanded->a
+            : p == AnimationProperty::SdfBType || p == AnimationProperty::SdfBPosition ||
+              p == AnimationProperty::SdfBParameters ? expanded->b : expanded->combine;
+        }
+        const auto migrated = std::find_if(fieldOwnerMigrations.begin(), fieldOwnerMigrations.end(),
+          [&](const FieldMigrationOwners& value) { return value.render == track.target.owner; });
+        if (migrated != fieldOwnerMigrations.end()) {
+          const AnimationProperty p = property->rendererProperty;
+          track.target.owner = p == AnimationProperty::SdfAType || p == AnimationProperty::SdfAPosition ||
+              p == AnimationProperty::SdfAParameters ? migrated->a
+            : p == AnimationProperty::SdfBType || p == AnimationProperty::SdfBPosition ||
+              p == AnimationProperty::SdfBParameters ? migrated->b : migrated->combine;
+        }
+      } else if (embeddedFieldProducerProperty(property->rendererProperty)) {
+        const auto migrated = std::find_if(fieldOwnerMigrations.begin(), fieldOwnerMigrations.end(),
+          [&](const FieldMigrationOwners& value) { return value.render == track.target.owner; });
+        if (migrated != fieldOwnerMigrations.end())
+          track.target.owner = migrated->wave ? migrated->wave : migrated->elemental;
       }
       track.interpolation = static_cast<KeyframeInterpolation>(source.value("interpolation", 1));
       for (const Json& key : source.value("keys", Json::array()))

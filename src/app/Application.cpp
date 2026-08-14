@@ -608,8 +608,7 @@ int runApplication() {
       requiredSignals.push_back(route.source);
     const evaluation::EvaluationPlan evaluationPlan = evaluation::restrictEvaluationPlan(
       fullEvaluationPlan, requiredSignals);
-    renderer.updateElementalSimulation(deltaSeconds, evaluatedDocument.renderDefaults.renderer,
-      evaluatedDocument.scene.testScene);
+    renderer.updateElementalSimulation(deltaSeconds, evaluatedDocument);
     const GLuint renderedComposite = renderer.evaluate(evaluatedDocument, evaluationPlan,
       signalRegistry, ++signalRevision,
       evaluateAnimation ? animationTimeline.timeSeconds : 0.0f);

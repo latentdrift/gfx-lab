@@ -18,6 +18,10 @@ std::vector<document::SignalRef> operationInputs(const document::Operation& oper
   std::visit([&](const auto& data) {
     using Type = std::decay_t<decltype(data)>;
     if constexpr (std::is_same_v<Type, document::RenderOperation>) addInput(result, data.field);
+    if constexpr (std::is_same_v<Type, document::SdfCombineOperation>) {
+      addInput(result, data.a);
+      addInput(result, data.b);
+    }
     if constexpr (std::is_same_v<Type, document::InterpretOperation>) addInput(result, data.spectrum);
     if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
       addInput(result, data.a);
@@ -147,9 +151,22 @@ EvaluationPlan compileDocument(const document::Document& document) {
       const auto* field = descriptorOf(render->field);
       if (field != nullptr && (field->metadata.domain != document::SignalDomain::World3D ||
           field->shape != document::SignalShape::Scalar ||
-          field->metadata.semantic != document::SignalSemantic::SignedDistance))
+          (field->metadata.semantic != document::SignalSemantic::SignedDistance &&
+           field->metadata.semantic != document::SignalSemantic::FieldStrength)))
         result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
-          "Render Field requires a World3D Scalar with Signed distance semantics."});
+          "Render Field requires a World3D Scalar field."});
+    }
+    if (const auto* combine = std::get_if<document::SdfCombineOperation>(&operation.data)) {
+      requireInput(combine->a, "SDF input A");
+      requireInput(combine->b, "SDF input B");
+      for (const document::SignalRef& input : {combine->a, combine->b}) {
+        const auto* descriptor = descriptorOf(input);
+        if (descriptor != nullptr && (descriptor->metadata.domain != document::SignalDomain::World3D ||
+            descriptor->shape != document::SignalShape::Scalar ||
+            descriptor->metadata.semantic != document::SignalSemantic::SignedDistance))
+          result.diagnostics.push_back({operation.id, DiagnosticSeverity::Error,
+            "SDF Combine inputs require World3D signed-distance Scalars."});
+      }
     }
     if (const auto* composite = std::get_if<document::CompositeOperation>(&operation.data)) {
       requireInput(composite->a, "Composite Input A");

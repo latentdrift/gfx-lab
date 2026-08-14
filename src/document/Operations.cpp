@@ -70,7 +70,10 @@ const char* operationTypeLabel(const Operation& operation) {
   return std::visit([](const auto& data) -> const char* {
     using Type = std::decay_t<decltype(data)>;
     if constexpr (std::is_same_v<Type, RenderOperation>) return "Render";
-    if constexpr (std::is_same_v<Type, SdfFieldOperation>) return "SDF Field";
+    if constexpr (std::is_same_v<Type, SdfPrimitiveOperation>) return "SDF Primitive";
+    if constexpr (std::is_same_v<Type, SdfCombineOperation>) return "SDF Combine";
+    if constexpr (std::is_same_v<Type, WaveFieldOperation>) return "Wave Field";
+    if constexpr (std::is_same_v<Type, ElementalFieldOperation>) return "Elemental Field";
     if constexpr (std::is_same_v<Type, InterpretOperation>) return "Interpret";
     if constexpr (std::is_same_v<Type, CompositeOperation>) return "Composite";
     if constexpr (std::is_same_v<Type, ConstantOperation>) return "Constant";
@@ -97,14 +100,20 @@ void synchronizeOperationSignalMetadata(Operation& operation) {
     output.metadata = metadataFor(output.metadata.semantic);
     output.metadata.extent = extent;
   }
-  if (const auto* render = std::get_if<RenderOperation>(&operation.data)) {
+  if (std::holds_alternative<RenderOperation>(operation.data)) {
     for (SignalDescriptor& output : operation.outputs) {
       if (output.key != "field") continue;
-      if (render->field) output.metadata = metadataFor(SignalSemantic::SignedDistance);
       // Render publishes a camera-sampled image of its world field. The
-      // connected SDF definition itself remains a separate World3D signal.
+      // connected field definition itself remains a separate World3D signal.
       output.metadata.domain = SignalDomain::Screen2D;
       output.metadata.space = SignalSpace::Screen;
+    }
+  }
+  if (std::holds_alternative<WaveFieldOperation>(operation.data) ||
+      std::holds_alternative<ElementalFieldOperation>(operation.data)) {
+    for (SignalDescriptor& output : operation.outputs) {
+      output.metadata.domain = SignalDomain::World3D;
+      output.metadata.space = SignalSpace::World;
     }
   }
   if (const auto* constant = std::get_if<ConstantOperation>(&operation.data)) {
@@ -141,12 +150,31 @@ Operation makeRenderOperation(const OperationId id, std::string name) {
     {"spectrum16", SignalShape::Spectrum16, SignalSemantic::Spectrum, "Spectrum16"}});
 }
 
-Operation makeSdfFieldOperation(const OperationId id, std::string name) {
-  SdfFieldOperation field;
-  field.a = {0, {-0.85f, 0.0f, 0.0f}, {1.15f, 0.35f, 0.35f}};
-  field.b = {2, {0.85f, 0.0f, 0.0f}, {0.85f, 0.28f, 0.28f}};
-  return operation(id, std::move(name), std::move(field),
+Operation makeSdfPrimitiveOperation(const OperationId id, std::string name) {
+  return operation(id, std::move(name), SdfPrimitiveOperation{},
     {{"distance", SignalShape::Scalar, SignalSemantic::SignedDistance, "Signed distance"}});
+}
+
+Operation makeSdfCombineOperation(const OperationId id, std::string name,
+    const SignalRef a, const SignalRef b) {
+  return operation(id, std::move(name), SdfCombineOperation{a, b},
+    {{"distance", SignalShape::Scalar, SignalSemantic::SignedDistance, "Signed distance"}});
+}
+
+Operation makeWaveFieldOperation(const OperationId id, std::string name) {
+  Operation result = operation(id, std::move(name), WaveFieldOperation{},
+    {{"field", SignalShape::Scalar, SignalSemantic::FieldStrength, "Wave field"}});
+  result.outputs.front().metadata.domain = SignalDomain::World3D;
+  result.outputs.front().metadata.space = SignalSpace::World;
+  return result;
+}
+
+Operation makeElementalFieldOperation(const OperationId id, std::string name) {
+  Operation result = operation(id, std::move(name), ElementalFieldOperation{},
+    {{"field", SignalShape::Scalar, SignalSemantic::FieldStrength, "Elemental channel"}});
+  result.outputs.front().metadata.domain = SignalDomain::World3D;
+  result.outputs.front().metadata.space = SignalSpace::World;
+  return result;
 }
 
 Operation makeInterpretOperation(const OperationId id, std::string name,

@@ -36,7 +36,7 @@ public:
     const RendererState& state, std::size_t targetIndex);
   unsigned int reconstructDisplay(unsigned int sourceTexture, const DisplayReconstructionState& state,
     std::size_t targetIndex);
-  void updateElementalSimulation(float deltaSeconds, const RendererState& state, TestScene scene);
+  void updateElementalSimulation(float deltaSeconds, const document::Document& document);
   void resetElementalSimulation();
   void resetFrameHistory();
   unsigned int texturePreview(const TextureAsset* texture);

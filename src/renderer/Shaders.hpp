@@ -40,14 +40,11 @@ uniform int uFieldVisualization;
 uniform float uFieldVertexDisplacement;
 uniform bool uFieldSignedDisplacement;
 uniform int uFieldProducerKind;
-uniform int uFieldSdfAType;
-uniform vec3 uFieldSdfAPosition;
-uniform vec3 uFieldSdfAParameters;
-uniform int uFieldSdfBType;
-uniform vec3 uFieldSdfBPosition;
-uniform vec3 uFieldSdfBParameters;
-uniform int uFieldSdfOperation;
-uniform float uFieldSdfSmoothness;
+uniform int uFieldSdfInstructionCount;
+uniform int uFieldSdfInstructionKind[32];
+uniform vec3 uFieldSdfInstructionPosition[32];
+uniform vec3 uFieldSdfInstructionParameters[32];
+uniform float uFieldSdfInstructionSmoothness[32];
 uniform float uFieldSdfPreviewRange;
 uniform float uFieldIsoLevel;
 uniform float uTimeSeconds;
@@ -86,14 +83,27 @@ float sdfPrimitive(vec3 p, int type, vec3 parameters) {
 }
 
 float sdfScene(vec3 p) {
-  float a = sdfPrimitive(p - uFieldSdfAPosition, uFieldSdfAType, uFieldSdfAParameters);
-  float b = sdfPrimitive(p - uFieldSdfBPosition, uFieldSdfBType, uFieldSdfBParameters);
-  if (uFieldSdfOperation == 0) return min(a, b);
-  if (uFieldSdfOperation == 1) return max(a, b);
-  if (uFieldSdfOperation == 2) return max(a, -b);
-  float k = max(uFieldSdfSmoothness, 0.0001);
-  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
-  return mix(b, a, h) - k * h * (1.0 - h);
+  float stack[32];
+  int top = 0;
+  for (int i = 0; i < 32; ++i) {
+    if (i >= uFieldSdfInstructionCount) break;
+    int kind = uFieldSdfInstructionKind[i];
+    if (kind < 5) stack[top++] = sdfPrimitive(p - uFieldSdfInstructionPosition[i], kind,
+      uFieldSdfInstructionParameters[i]);
+    else if (top >= 2) {
+      float b = stack[--top];
+      float a = stack[top - 1];
+      if (kind == 5) stack[top - 1] = min(a, b);
+      else if (kind == 6) stack[top - 1] = max(a, b);
+      else if (kind == 7) stack[top - 1] = max(a, -b);
+      else {
+        float k = max(uFieldSdfInstructionSmoothness[i], 0.0001);
+        float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+        stack[top - 1] = mix(b, a, h) - k * h * (1.0 - h);
+      }
+    }
+  }
+  return top > 0 ? stack[top - 1] : 1000000.0;
 }
 
 float evaluateField(vec3 worldPosition) {
@@ -997,14 +1007,11 @@ uniform float uFalloff;
 uniform float uBandSharpness;
 uniform int uVisualization;
 uniform int uProducerKind;
-uniform int uSdfAType;
-uniform vec3 uSdfAPosition;
-uniform vec3 uSdfAParameters;
-uniform int uSdfBType;
-uniform vec3 uSdfBPosition;
-uniform vec3 uSdfBParameters;
-uniform int uSdfOperation;
-uniform float uSdfSmoothness;
+uniform int uSdfInstructionCount;
+uniform int uSdfInstructionKind[32];
+uniform vec3 uSdfInstructionPosition[32];
+uniform vec3 uSdfInstructionParameters[32];
+uniform float uSdfInstructionSmoothness[32];
 uniform float uTimeSeconds;
 uniform sampler2D uSimulationMatter;
 uniform sampler2D uSimulationDynamics;
@@ -1029,14 +1036,23 @@ float sdfPrimitive(vec3 p, int type, vec3 parameters) {
 }
 
 float sdfScene(vec3 p) {
-  float a = sdfPrimitive(p - uSdfAPosition, uSdfAType, uSdfAParameters);
-  float b = sdfPrimitive(p - uSdfBPosition, uSdfBType, uSdfBParameters);
-  if (uSdfOperation == 0) return min(a, b);
-  if (uSdfOperation == 1) return max(a, b);
-  if (uSdfOperation == 2) return max(a, -b);
-  float k = max(uSdfSmoothness, 0.0001);
-  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
-  return mix(b, a, h) - k * h * (1.0 - h);
+  float stack[32]; int top = 0;
+  for (int i = 0; i < 32; ++i) {
+    if (i >= uSdfInstructionCount) break;
+    int kind = uSdfInstructionKind[i];
+    if (kind < 5) stack[top++] = sdfPrimitive(p - uSdfInstructionPosition[i], kind,
+      uSdfInstructionParameters[i]);
+    else if (top >= 2) {
+      float b = stack[--top]; float a = stack[top - 1];
+      if (kind == 5) stack[top - 1] = min(a, b);
+      else if (kind == 6) stack[top - 1] = max(a, b);
+      else if (kind == 7) stack[top - 1] = max(a, -b);
+      else { float k = max(uSdfInstructionSmoothness[i], 0.0001);
+        float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+        stack[top - 1] = mix(b, a, h) - k * h * (1.0 - h); }
+    }
+  }
+  return top > 0 ? stack[top - 1] : 1000000.0;
 }
 
 void main() {
@@ -1096,14 +1112,11 @@ uniform mat4 uInverseViewProjection;
 uniform mat4 uViewProjection;
 uniform vec3 uCameraPosition;
 uniform bool uOrthographic;
-uniform int uSdfAType;
-uniform vec3 uSdfAPosition;
-uniform vec3 uSdfAParameters;
-uniform int uSdfBType;
-uniform vec3 uSdfBPosition;
-uniform vec3 uSdfBParameters;
-uniform int uSdfOperation;
-uniform float uSdfSmoothness;
+uniform int uSdfInstructionCount;
+uniform int uSdfInstructionKind[32];
+uniform vec3 uSdfInstructionPosition[32];
+uniform vec3 uSdfInstructionParameters[32];
+uniform float uSdfInstructionSmoothness[32];
 uniform float uIsoLevel;
 uniform float uTimeSeconds;
 uniform int uMaximumSteps;
@@ -1133,18 +1146,23 @@ float sdfPrimitive(vec3 p, int type, vec3 parameters) {
 }
 
 float sceneDistance(vec3 p) {
-  float a = sdfPrimitive(p - uSdfAPosition, uSdfAType, uSdfAParameters);
-  float b = sdfPrimitive(p - uSdfBPosition, uSdfBType, uSdfBParameters);
-  float distance;
-  if (uSdfOperation == 0) distance = min(a, b);
-  else if (uSdfOperation == 1) distance = max(a, b);
-  else if (uSdfOperation == 2) distance = max(a, -b);
-  else {
-    float k = max(uSdfSmoothness, 0.0001);
-    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
-    distance = mix(b, a, h) - k * h * (1.0 - h);
+  float stack[32]; int top = 0;
+  for (int i = 0; i < 32; ++i) {
+    if (i >= uSdfInstructionCount) break;
+    int kind = uSdfInstructionKind[i];
+    if (kind < 5) stack[top++] = sdfPrimitive(p - uSdfInstructionPosition[i], kind,
+      uSdfInstructionParameters[i]);
+    else if (top >= 2) {
+      float b = stack[--top]; float a = stack[top - 1];
+      if (kind == 5) stack[top - 1] = min(a, b);
+      else if (kind == 6) stack[top - 1] = max(a, b);
+      else if (kind == 7) stack[top - 1] = max(a, -b);
+      else { float k = max(uSdfInstructionSmoothness[i], 0.0001);
+        float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+        stack[top - 1] = mix(b, a, h) - k * h * (1.0 - h); }
+    }
   }
-  return distance - uIsoLevel;
+  return (top > 0 ? stack[top - 1] : 1000000.0) - uIsoLevel;
 }
 
 vec3 normalAt(vec3 p) {
@@ -1411,14 +1429,11 @@ uniform int uFieldVisualization;
 uniform float uFieldVertexDisplacement;
 uniform bool uFieldSignedDisplacement;
 uniform int uFieldProducerKind;
-uniform int uFieldSdfAType;
-uniform vec3 uFieldSdfAPosition;
-uniform vec3 uFieldSdfAParameters;
-uniform int uFieldSdfBType;
-uniform vec3 uFieldSdfBPosition;
-uniform vec3 uFieldSdfBParameters;
-uniform int uFieldSdfOperation;
-uniform float uFieldSdfSmoothness;
+uniform int uFieldSdfInstructionCount;
+uniform int uFieldSdfInstructionKind[32];
+uniform vec3 uFieldSdfInstructionPosition[32];
+uniform vec3 uFieldSdfInstructionParameters[32];
+uniform float uFieldSdfInstructionSmoothness[32];
 uniform float uFieldSdfPreviewRange;
 uniform float uFieldIsoLevel;
 uniform float uTimeSeconds;
@@ -1442,14 +1457,23 @@ float sdfPrimitive(vec3 p, int type, vec3 parameters) {
 }
 
 float sdfScene(vec3 p) {
-  float a = sdfPrimitive(p - uFieldSdfAPosition, uFieldSdfAType, uFieldSdfAParameters);
-  float b = sdfPrimitive(p - uFieldSdfBPosition, uFieldSdfBType, uFieldSdfBParameters);
-  if (uFieldSdfOperation == 0) return min(a, b);
-  if (uFieldSdfOperation == 1) return max(a, b);
-  if (uFieldSdfOperation == 2) return max(a, -b);
-  float k = max(uFieldSdfSmoothness, 0.0001);
-  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
-  return mix(b, a, h) - k * h * (1.0 - h);
+  float stack[32]; int top = 0;
+  for (int i = 0; i < 32; ++i) {
+    if (i >= uFieldSdfInstructionCount) break;
+    int kind = uFieldSdfInstructionKind[i];
+    if (kind < 5) stack[top++] = sdfPrimitive(p - uFieldSdfInstructionPosition[i], kind,
+      uFieldSdfInstructionParameters[i]);
+    else if (top >= 2) {
+      float b = stack[--top]; float a = stack[top - 1];
+      if (kind == 5) stack[top - 1] = min(a, b);
+      else if (kind == 6) stack[top - 1] = max(a, b);
+      else if (kind == 7) stack[top - 1] = max(a, -b);
+      else { float k = max(uFieldSdfInstructionSmoothness[i], 0.0001);
+        float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+        stack[top - 1] = mix(b, a, h) - k * h * (1.0 - h); }
+    }
+  }
+  return top > 0 ? stack[top - 1] : 1000000.0;
 }
 
 float evaluateField(vec3 worldPosition) {

@@ -224,38 +224,38 @@ bool signalPicker(const char* label, document::Document& document,
 bool drawOperation(document::Document& document, document::Operation& operation,
     editor::EditorState& editorState, const SignalMeasurement* measurement) {
   bool changed = false;
-  if (auto* sdf = std::get_if<document::SdfFieldOperation>(&operation.data)) {
+  if (auto* sdf = std::get_if<document::SdfPrimitiveOperation>(&operation.data)) {
     constexpr const char* primitiveTypes[] = {"Sphere", "Box", "Torus", "4D Hypersphere Slice",
       "Pulsating Sphere"};
-    const auto primitive = [&](const char* id, const char* heading,
-        RendererState::Field::SdfProducer& producer) {
-      ImGui::PushID(id);
-      ImGui::SeparatorText(heading);
-      changed |= ImGui::Combo("Primitive", &producer.type, primitiveTypes, 5);
-      changed |= ImGui::DragFloat3("Position", &producer.position.x, 0.01f, -8.0f, 8.0f, "%.2f");
-      if (producer.type == 0) {
-        changed |= ImGui::DragFloat("Radius", &producer.parameters.x, 0.01f, 0.01f, 8.0f, "%.2f units");
-      } else if (producer.type == 1) {
-        changed |= ImGui::DragFloat3("Half extents", &producer.parameters.x,
-          0.01f, 0.01f, 8.0f, "%.2f units");
-      } else if (producer.type == 2) {
-        changed |= ImGui::DragFloat("Major radius", &producer.parameters.x,
-          0.01f, 0.01f, 8.0f, "%.2f units");
-        changed |= ImGui::DragFloat("Tube radius", &producer.parameters.y,
-          0.01f, 0.01f, 8.0f, "%.2f units");
-      } else {
-        changed |= ImGui::DragFloat(producer.type == 3 ? "4D radius" : "Base radius",
-          &producer.parameters.x, 0.01f, 0.01f, 8.0f, "%.2f units");
-        changed |= ImGui::DragFloat("Evolution speed", &producer.parameters.y,
-          0.01f, -8.0f, 8.0f, "%.2f");
-        changed |= ImGui::DragFloat(producer.type == 3 ? "Fourth-axis span" : "Pulse amplitude",
-          &producer.parameters.z, 0.01f, 0.0f, 8.0f, "%.2f units");
-      }
-      ImGui::PopID();
-    };
     ImGui::TextWrapped("Produces signed distance throughout world space. Negative is inside; zero is the surface.");
-    primitive("a", "PRIMITIVE A", sdf->a);
-    primitive("b", "PRIMITIVE B", sdf->b);
+    changed |= ImGui::Combo("Primitive", &sdf->type, primitiveTypes, 5);
+    changed |= ImGui::DragFloat3("Position", &sdf->position.x, 0.01f, -8.0f, 8.0f, "%.2f");
+    if (sdf->type == 0) {
+      changed |= ImGui::DragFloat("Radius", &sdf->parameters.x, 0.01f, 0.01f, 8.0f, "%.2f units");
+    } else if (sdf->type == 1) {
+      changed |= ImGui::DragFloat3("Half extents", &sdf->parameters.x,
+          0.01f, 0.01f, 8.0f, "%.2f units");
+    } else if (sdf->type == 2) {
+      changed |= ImGui::DragFloat("Major radius", &sdf->parameters.x,
+          0.01f, 0.01f, 8.0f, "%.2f units");
+      changed |= ImGui::DragFloat("Tube radius", &sdf->parameters.y,
+          0.01f, 0.01f, 8.0f, "%.2f units");
+    } else {
+      changed |= ImGui::DragFloat(sdf->type == 3 ? "4D radius" : "Base radius",
+          &sdf->parameters.x, 0.01f, 0.01f, 8.0f, "%.2f units");
+      changed |= ImGui::DragFloat("Evolution speed", &sdf->parameters.y,
+          0.01f, -8.0f, 8.0f, "%.2f");
+      changed |= ImGui::DragFloat(sdf->type == 3 ? "Fourth-axis span" : "Pulse amplitude",
+          &sdf->parameters.z, 0.01f, 0.0f, 8.0f, "%.2f units");
+    }
+  } else if (auto* sdf = std::get_if<document::SdfCombineOperation>(&operation.data)) {
+    ImGui::SeparatorText("INPUTS");
+    changed |= signalPicker("A", document, editorState, operation.id, sdf->a,
+      document::SignalShape::Scalar, document::SignalSemantic::SignedDistance,
+      document::SignalDomain::World3D);
+    changed |= signalPicker("B", document, editorState, operation.id, sdf->b,
+      document::SignalShape::Scalar, document::SignalSemantic::SignedDistance,
+      document::SignalDomain::World3D);
     ImGui::SeparatorText("RELATIONSHIP");
     constexpr const char* combinations[] = {"Union", "Intersection", "A subtract B", "Smooth union"};
     changed |= ImGui::Combo("Combination", &sdf->combination, combinations, 4);
@@ -263,6 +263,32 @@ bool drawOperation(document::Document& document, document::Operation& operation,
     changed |= ImGui::DragFloat("Smooth radius", &sdf->smoothness,
       0.005f, 0.001f, 4.0f, "%.3f units");
     ImGui::EndDisabled();
+  } else if (auto* wave = std::get_if<document::WaveFieldOperation>(&operation.data)) {
+    ImGui::TextWrapped("Produces a continuous interference signal throughout world space.");
+    changed |= ImGui::DragFloat3("Source A", &wave->sourceA.x, 0.01f, -8.0f, 8.0f);
+    changed |= ImGui::DragFloat3("Source B", &wave->sourceB.x, 0.01f, -8.0f, 8.0f);
+    changed |= ImGui::DragFloat("Wavelength", &wave->wavelength, 0.005f, 0.01f, 8.0f);
+    changed |= ImGui::DragFloat("Phase offset", &wave->phaseOffset, 0.01f, -20.0f, 20.0f);
+    changed |= ImGui::DragFloat("Amplitude A", &wave->amplitudeA, 0.01f, -8.0f, 8.0f);
+    changed |= ImGui::DragFloat("Amplitude B", &wave->amplitudeB, 0.01f, -8.0f, 8.0f);
+    changed |= ImGui::DragFloat("Falloff", &wave->falloff, 0.005f, 0.0f, 4.0f);
+    changed |= ImGui::DragFloat("Band sharpness", &wave->bandSharpness, 0.01f, 0.05f, 16.0f);
+    constexpr const char* outputs[] = {"Source A phase", "Source B phase", "Phase difference",
+      "Interference intensity", "Absolute distance difference", "Distance-difference contours"};
+    changed |= ImGui::Combo("Output", &wave->output, outputs, 6);
+  } else if (auto* elemental = std::get_if<document::ElementalFieldOperation>(&operation.data)) {
+    ImGui::TextWrapped("Injects and exposes a persistent simulated world-space field.");
+    changed |= ImGui::DragFloat3("Injector position", &elemental->injectorPosition.x,
+      0.01f, -8.0f, 8.0f);
+    changed |= ImGui::DragFloat("Injector radius", &elemental->injectorRadius,
+      0.01f, 0.05f, 8.0f);
+    changed |= ImGui::DragFloat("Heat rate", &elemental->heatRate, 0.01f, 0.0f, 8.0f);
+    changed |= ImGui::DragFloat("Fuel rate", &elemental->fuelRate, 0.01f, 0.0f, 8.0f);
+    changed |= ImGui::DragFloat("Jet direction", &elemental->jetDirection, 0.01f, -6.3f, 6.3f);
+    changed |= ImGui::DragFloat("Jet strength", &elemental->jetStrength, 0.01f, 0.0f, 8.0f);
+    constexpr const char* channels[] = {"Temperature", "Smoke density", "Fuel", "Pressure",
+      "Flow speed", "Moisture", "Combustion rate"};
+    changed |= ImGui::Combo("Channel", &elemental->channel, channels, 7);
   } else if (auto* composite = std::get_if<document::CompositeOperation>(&operation.data)) {
     ImGui::SeparatorText("INPUTS");
     changed |= signalPicker("Source A", document, editorState, operation.id, composite->a);
@@ -664,25 +690,27 @@ void drawDocumentInspector(bool& open, document::Document& document,
         };
 
         ImGui::TextDisabled("WORLD FIELD");
-        changed |= signalPicker("Signed distance", edited, editorState, *operation, render->field,
-          document::SignalShape::Scalar, document::SignalSemantic::SignedDistance,
-          document::SignalDomain::World3D);
+        changed |= signalPicker("Field input", edited, editorState, *operation, render->field,
+          document::SignalShape::Scalar, std::nullopt, document::SignalDomain::World3D);
         if (render->field) {
           if (ImGui::SmallButton("Disconnect##render-field")) {
             render->field = {};
             changed = true;
           }
-          animationKeyControl(view, AnimationProperty::IsoSurfaceEnabled, timeline,
-            ImGui::Checkbox("Render field surface", &view.renderer.field.isoSurfaceEnabled));
-          ImGui::BeginDisabled(!view.renderer.field.isoSurfaceEnabled);
-          animationKeyControl(view, AnimationProperty::IsoLevel, timeline,
-            ImGui::DragFloat("Surface level", &view.renderer.field.isoLevel,
-              0.005f, -4.0f, 4.0f, "%.3f units"));
-          animationKeyControl(view, AnimationProperty::IsoColor, timeline,
-            ImGui::ColorEdit3("Surface color", &view.renderer.field.isoColor.x));
-          ImGui::EndDisabled();
+          const document::SignalDescriptor* field = document::findSignal(edited, render->field.id);
+          if (field != nullptr && field->metadata.semantic == document::SignalSemantic::SignedDistance) {
+            animationKeyControl(view, AnimationProperty::IsoSurfaceEnabled, timeline,
+              ImGui::Checkbox("Render field surface", &view.renderer.field.isoSurfaceEnabled));
+            ImGui::BeginDisabled(!view.renderer.field.isoSurfaceEnabled);
+            animationKeyControl(view, AnimationProperty::IsoLevel, timeline,
+              ImGui::DragFloat("Surface level", &view.renderer.field.isoLevel,
+                0.005f, -4.0f, 4.0f, "%.3f units"));
+            animationKeyControl(view, AnimationProperty::IsoColor, timeline,
+              ImGui::ColorEdit3("Surface color", &view.renderer.field.isoColor.x));
+            ImGui::EndDisabled();
+          }
         }
-        ImGui::TextDisabled("A connected field drives iso-surfaces and field-aware surface controls.");
+        ImGui::TextDisabled("A connected world field drives field-aware surface controls.");
         ImGui::Separator();
 
         ImGui::TextDisabled("OBJECT VARIATION");

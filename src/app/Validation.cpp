@@ -108,14 +108,25 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
         presentedDraft.applied || draftGraph.presentation.input == draftOutput)
       fail("detached draft nodes were rejected or allowed to become an invalid final graph");
     document::Document sdfGraph = document::makeDefaultDocument();
-    document::Operation sdfField = document::makeSdfFieldOperation({2}, "Animated volume");
-    auto& sdfDefinition = std::get<document::SdfFieldOperation>(sdfField.data);
-    sdfDefinition.a.type = 3;
-    sdfDefinition.a.parameters = {1.8f, 0.7f, 1.25f};
-    sdfDefinition.combination = 2;
-    const document::SignalRef worldDistance = document::primaryOutput(sdfField);
-    sdfGraph.operations.push_back(std::move(sdfField));
-    sdfGraph.nextOperationIdentity = 3;
+    document::Operation sdfA = document::makeSdfPrimitiveOperation({2}, "Animated volume");
+    auto& sdfDefinition = std::get<document::SdfPrimitiveOperation>(sdfA.data);
+    sdfDefinition.type = 3;
+    sdfDefinition.parameters = {1.8f, 0.7f, 1.25f};
+    document::Operation sdfB = document::makeSdfPrimitiveOperation({3}, "Cutting volume");
+    document::Operation sdfCombine = document::makeSdfCombineOperation({4}, "Difference",
+      document::primaryOutput(sdfA), document::primaryOutput(sdfB));
+    std::get<document::SdfCombineOperation>(sdfCombine.data).combination = 2;
+    const document::SignalRef worldDistance = document::primaryOutput(sdfCombine);
+    sdfGraph.operations.push_back(std::move(sdfA));
+    sdfGraph.operations.push_back(std::move(sdfB));
+    sdfGraph.operations.push_back(std::move(sdfCombine));
+    document::Operation waveField = document::makeWaveFieldOperation({5}, "Wave field");
+    std::get<document::WaveFieldOperation>(waveField.data).wavelength = 1.25f;
+    document::Operation elementalField = document::makeElementalFieldOperation({6}, "Elemental field");
+    std::get<document::ElementalFieldOperation>(elementalField.data).heatRate = 2.25f;
+    sdfGraph.operations.push_back(std::move(waveField));
+    sdfGraph.operations.push_back(std::move(elementalField));
+    sdfGraph.nextOperationIdentity = 7;
     std::get<document::RenderOperation>(sdfGraph.operations.front().data).field = worldDistance;
     const document::SignalDescriptor* worldDistanceDescriptor =
       document::findSignal(sdfGraph, worldDistance.id);
@@ -130,11 +141,17 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
     if (!sdfPlan.valid() || worldDistanceDescriptor == nullptr ||
         worldDistanceDescriptor->metadata.domain != document::SignalDomain::World3D ||
         worldDistanceDescriptor->metadata.semantic != document::SignalSemantic::SignedDistance ||
-        !sdfRoundTrip || sdfRoundTrip.document->operations.size() != 2 ||
+        !sdfRoundTrip || sdfRoundTrip.document->operations.size() != 6 ||
         std::get<document::RenderOperation>(sdfRoundTrip.document->operations.front().data).field !=
           worldDistance ||
-        std::get<document::SdfFieldOperation>(sdfRoundTrip.document->operations.back().data)
-          .combination != 2 || !evaluation::compileDocument(*sdfRoundTrip.document).valid())
+        std::get<document::SdfCombineOperation>(sdfRoundTrip.document->operations[3].data)
+          .combination != 2 ||
+        std::abs(std::get<document::WaveFieldOperation>(sdfRoundTrip.document->operations[4].data)
+          .wavelength - 1.25f) > 0.0001f ||
+        std::abs(std::get<document::ElementalFieldOperation>(sdfRoundTrip.document->operations[5].data)
+          .heatRate - 2.25f) > 0.0001f ||
+        document::documentJson(*sdfRoundTrip.document).find("field_producer_kind") != std::string::npos ||
+        !evaluation::compileDocument(*sdfRoundTrip.document).valid())
       fail("world-space SDF graph typing, connection, or persistence failed validation");
     document::Document workingSignals = document::makeDefaultDocument();
     workingSignals.renderDefaults.renderer.output.width = 384;
@@ -479,7 +496,12 @@ void runStartupValidationIfRequested(Renderer& renderer, RendererState& current,
           static_cast<std::size_t>(ElementalSimulation::width * ElementalSimulation::height))
       fail("persistent elemental simulation failed validation");
     renderer.resetElementalSimulation();
-    renderer.updateElementalSimulation(1.0f / 30.0f, RendererState{}, TestScene::ElementalChamber);
+    document::Document elementalDocument = document::makeDefaultDocument();
+    document::Operation elementalProducer = document::makeElementalFieldOperation({2}, "Elemental Field");
+    std::get<document::RenderOperation>(elementalDocument.operations.front().data).field =
+      document::primaryOutput(elementalProducer);
+    elementalDocument.operations.push_back(std::move(elementalProducer));
+    renderer.updateElementalSimulation(1.0f / 30.0f, elementalDocument);
     CameraOrbit stereoCamera;
     stereoCamera.yaw = 0.0f;
     stereoCamera.pitch = 0.0f;

@@ -94,7 +94,10 @@ const char* executionClass(const document::Operation& operation) {
   return std::visit([](const auto& data) -> const char* {
     using Type = std::decay_t<decltype(data)>;
     if constexpr (std::is_same_v<Type, document::RenderOperation>) return "SCENE RENDER";
-    if constexpr (std::is_same_v<Type, document::SdfFieldOperation>) return "ANALYTIC WORLD FIELD";
+    if constexpr (std::is_same_v<Type, document::SdfPrimitiveOperation>) return "ANALYTIC WORLD FIELD";
+    if constexpr (std::is_same_v<Type, document::SdfCombineOperation>) return "SDF EXPRESSION";
+    if constexpr (std::is_same_v<Type, document::WaveFieldOperation>) return "ANALYTIC WORLD FIELD";
+    if constexpr (std::is_same_v<Type, document::ElementalFieldOperation>) return "PERSISTENT WORLD FIELD";
     if constexpr (std::is_same_v<Type, document::MeasureOperation>) return "GPU READBACK";
     if constexpr (std::is_same_v<Type, document::ConstantOperation>) return "VALUE";
     if constexpr (std::is_same_v<Type, document::EdgeOperation>) return "2 FULLSCREEN PASSES · 2 OUTPUTS";
@@ -115,6 +118,10 @@ std::vector<InputPort> inputsFor(const document::Operation& operation) {
       add(editor::InputSocket::Field, "Field", data.field);
     else if constexpr (std::is_same_v<Type, document::InterpretOperation>)
       add(editor::InputSocket::Primary, "Spectrum", data.spectrum);
+    else if constexpr (std::is_same_v<Type, document::SdfCombineOperation>) {
+      add(editor::InputSocket::A, "A", data.a);
+      add(editor::InputSocket::B, "B", data.b);
+    }
     else if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
       add(editor::InputSocket::A, "Input A", data.a);
       if (!data.feedback.has_value()) add(editor::InputSocket::B, "Input B", data.b);
@@ -148,6 +155,11 @@ bool accepts(const document::Document& document, const InputPort& input,
   if (std::holds_alternative<document::RenderOperation>(target->data))
     return input.socket == editor::InputSocket::Field &&
       descriptor.metadata.domain == document::SignalDomain::World3D &&
+      descriptor.shape == document::SignalShape::Scalar &&
+      (descriptor.metadata.semantic == document::SignalSemantic::SignedDistance ||
+       descriptor.metadata.semantic == document::SignalSemantic::FieldStrength);
+  if (std::holds_alternative<document::SdfCombineOperation>(target->data))
+    return descriptor.metadata.domain == document::SignalDomain::World3D &&
       descriptor.shape == document::SignalShape::Scalar &&
       descriptor.metadata.semantic == document::SignalSemantic::SignedDistance;
   if (std::holds_alternative<document::InterpretOperation>(target->data))
@@ -301,29 +313,25 @@ SceneWindowResult drawOperationGraph(bool& open, document::Document& document,
       const document::OperationId id = document::nextOperationId(document);
       add(document::makeRenderOperation(id, "Render"), true);
     }
-    if (ImGui::MenuItem("SDF Field")) {
+    if (ImGui::MenuItem("SDF Primitive")) {
       const document::OperationId id = document::nextOperationId(document);
-      const document::OperationId selectedOperationId =
-        editorState.selection.kind == editor::SelectionKind::Operation
-        ? editorState.selection.operation : document::OperationId{};
-      const document::Operation* selectedOperation = document::findOperation(document,
-        selectedOperationId);
-      if (selectedOperation != nullptr &&
-          std::holds_alternative<document::RenderOperation>(selectedOperation->data)) {
-        document::Document edited = document;
-        document::Operation field = document::makeSdfFieldOperation(id,
-          selectedOperation->name + " SDF");
-        const document::SignalRef distance = document::primaryOutput(field);
-        edited.operations.push_back(std::move(field));
-        edited.nextOperationIdentity = id.value + 1;
-        auto& render = std::get<document::RenderOperation>(
-          document::findOperation(edited, selectedOperationId)->data);
-        render.field = distance;
-        document::synchronizeOperationSignalMetadata(
-          *document::findOperation(edited, selectedOperationId));
-        if (execute(editor::ReplaceDocument{std::move(edited)}))
-          editorState.selection = {editor::SelectionKind::Operation, id};
-      } else add(document::makeSdfFieldOperation(id, "SDF Field"), false);
+      add(document::makeSdfPrimitiveOperation(id, "SDF Primitive"), false);
+    }
+    if (ImGui::MenuItem("SDF Combine")) {
+      const document::OperationId id = document::nextOperationId(document);
+      const bool selectedSdf = selectedDescriptor != nullptr &&
+        selectedDescriptor->metadata.domain == document::SignalDomain::World3D &&
+        selectedDescriptor->metadata.semantic == document::SignalSemantic::SignedDistance;
+      add(document::makeSdfCombineOperation(id, "SDF Combine",
+        selectedSdf ? selected : document::SignalRef{}, {}), false);
+    }
+    if (ImGui::MenuItem("Wave Field")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeWaveFieldOperation(id, "Wave Field"), false);
+    }
+    if (ImGui::MenuItem("Elemental Field")) {
+      const document::OperationId id = document::nextOperationId(document);
+      add(document::makeElementalFieldOperation(id, "Elemental Field"), false);
     }
     if (ImGui::MenuItem("Composite")) {
       const document::OperationId id = document::nextOperationId(document);

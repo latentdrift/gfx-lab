@@ -96,6 +96,7 @@ int n64TextureBytes(const RendererState::N64& state) {
 void drawInspector(Category category, RenderPass& pass, HardwareProfile profile, AnimationTimeline& timeline,
     const ModelAsset* importedModel, const TestScene scene, const bool textureSamplingOnly,
     const bool editingSceneDefaults) {
+  (void)editingSceneDefaults;
   RendererState& state = pass.renderer;
   const ProfileCapabilities& capabilities = hardwareProfileCapabilities(profile);
   switch (category) {
@@ -551,143 +552,14 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       break;
     }
     case Category::Field: {
-      ImGui::TextUnformatted("FIELD"); ImGui::Separator();
-      animationKeyControl(pass, AnimationProperty::FieldEnabled, timeline,
-        ImGui::Checkbox("Evaluate world-space field", &state.field.enabled));
-      const char* producerKinds[] = {"Wave interference", "Signed distance field", "Persistent elemental simulation"};
-      bool producerKindChanged = ImGui::Combo("Producer family", &state.field.producerKind,
-        producerKinds, 3);
-      animationKeyControl(pass, AnimationProperty::FieldProducerKind, timeline, producerKindChanged);
-      description("Selects what scalar quantity the pass field buffer stores. SDF mode preserves signed distance in world units.");
-      ImGui::BeginDisabled(!state.field.enabled);
-      ImGui::BeginDisabled(state.field.producerKind != 0);
-      ImGui::TextUnformatted("Source positions and interference preview");
-      const FieldSourceCanvasResult sourceCanvas = fieldSourceCanvas("##field-sources",
-        state.field.sourceA, state.field.sourceB, state.field.wavelength, state.field.phaseOffset,
-        state.field.amplitudeA, state.field.amplitudeB, state.field.falloff);
-      ImGui::PushID("field-source-canvas-animation-keys");
-      animationKeyControl(pass, AnimationProperty::FieldSourceA, timeline, sourceCanvas.sourceAChanged);
-      animationKeyControl(pass, AnimationProperty::FieldSourceB, timeline, sourceCanvas.sourceBChanged);
-      ImGui::PopID();
-      animationKeyControl(pass, AnimationProperty::FieldSourceA, timeline,
-        ImGui::DragFloat3("Source A position", &state.field.sourceA.x, 0.01f, -8.0f, 8.0f, "%.2f"));
-      animationKeyControl(pass, AnimationProperty::FieldSourceB, timeline,
-        ImGui::DragFloat3("Source B position", &state.field.sourceB.x, 0.01f, -8.0f, 8.0f, "%.2f"));
-      ImGui::SeparatorText("WAVE MODEL");
-      animationKeyControl(pass, AnimationProperty::FieldWavelength, timeline,
-        ImGui::DragFloat("Wavelength", &state.field.wavelength, 0.005f, 0.05f, 8.0f, "%.3f units"));
-      animationKeyControl(pass, AnimationProperty::FieldPhaseOffset, timeline,
-        ImGui::SliderAngle("Relative phase", &state.field.phaseOffset, -180.0f, 180.0f, "%.1f deg"));
-      ImGui::SetNextItemWidth(std::max(90.0f, ImGui::GetContentRegionAvail().x * 0.5f - 5.0f));
-      const bool amplitudeAChanged = ImGui::DragFloat("##field-amplitude-a", &state.field.amplitudeA,
-        0.01f, 0.0f, 4.0f, "A amplitude %.2f");
-      animationKeyControl(pass, AnimationProperty::FieldAmplitudeA, timeline, amplitudeAChanged);
-      ImGui::SameLine();
-      ImGui::SetNextItemWidth(-1.0f);
-      const bool amplitudeBChanged = ImGui::DragFloat("##field-amplitude-b", &state.field.amplitudeB,
-        0.01f, 0.0f, 4.0f, "B amplitude %.2f");
-      animationKeyControl(pass, AnimationProperty::FieldAmplitudeB, timeline, amplitudeBChanged);
-      animationKeyControl(pass, AnimationProperty::FieldFalloff, timeline,
-        ImGui::DragFloat("Distance falloff", &state.field.falloff, 0.005f, 0.0f, 2.0f, "%.3f"));
-      ImGui::SeparatorText("VISUALIZE");
-      constexpr const char* viewLabels[] = {"Source A phase", "Source B phase", "Phase difference",
-        "Interference intensity", "Absolute distance difference", "Distance-difference contours"};
-      bool fieldVisualizationChanged = false;
-      if (ImGui::BeginTable("field-visualizations", 2, ImGuiTableFlags_SizingStretchSame)) {
-        for (int view = 0; view < 6; ++view) {
-          ImGui::TableNextColumn();
-          if (ImGui::Selectable(viewLabels[view], state.field.visualization == view,
-              ImGuiSelectableFlags_None, ImVec2(0.0f, ImGui::GetFrameHeight())))
-            { state.field.visualization = view; fieldVisualizationChanged = true; }
-        }
-        ImGui::EndTable();
-      }
-      animationKeyControl(pass, AnimationProperty::FieldVisualization, timeline, fieldVisualizationChanged);
-      animationKeyControl(pass, AnimationProperty::FieldBandSharpness, timeline,
-        ImGui::DragFloat("Band sharpness", &state.field.bandSharpness, 0.01f, 0.1f, 8.0f, "%.2f"));
-      description("Interference intensity evaluates |E_A + E_B| squared.");
-      ImGui::EndDisabled();
-      ImGui::SeparatorText("PERSISTENT ELEMENTAL MEDIUM");
-      ImGui::BeginDisabled(state.field.producerKind != 2);
-      if (!editingSceneDefaults)
-        description("The medium is shared by the whole scene. Edit its injector under Scene Defaults; passes independently choose which persistent channel they expose.");
-      ImGui::BeginDisabled(!editingSceneDefaults);
-      animationKeyControl(pass, AnimationProperty::FieldSourceA, timeline,
-        ImGui::DragFloat3("Injector position XYZ", &state.field.sourceA.x, 0.01f, -8.0f, 8.0f, "%.2f"));
-      animationKeyControl(pass, AnimationProperty::FieldWavelength, timeline,
-        ImGui::DragFloat("Injector radius", &state.field.wavelength, 0.01f, 0.08f, 4.0f, "%.2f units"));
-      animationKeyControl(pass, AnimationProperty::FieldAmplitudeA, timeline,
-        ImGui::DragFloat("Heat injection rate", &state.field.amplitudeA, 0.01f, 0.0f, 4.0f, "%.2f"));
-      animationKeyControl(pass, AnimationProperty::FieldAmplitudeB, timeline,
-        ImGui::DragFloat("Fuel injection rate", &state.field.amplitudeB, 0.01f, 0.0f, 4.0f, "%.2f"));
-      animationKeyControl(pass, AnimationProperty::FieldPhaseOffset, timeline,
-        ImGui::SliderAngle("Jet direction", &state.field.phaseOffset, -180.0f, 180.0f, "%.1f deg"));
-      animationKeyControl(pass, AnimationProperty::FieldFalloff, timeline,
-        ImGui::DragFloat("Jet strength", &state.field.falloff, 0.01f, 0.0f, 2.0f, "%.2f"));
-      ImGui::EndDisabled();
-      constexpr const char* simulationChannels[] = {"Temperature", "Smoke density", "Fuel", "Pressure",
-        "Flow speed", "Moisture", "Combustion rate"};
-      bool simulationChannelChanged = ImGui::Combo("Exposed field channel", &state.field.visualization,
-        simulationChannels, 7);
-      animationKeyControl(pass, AnimationProperty::FieldVisualization, timeline, simulationChannelChanged);
-      description("The chamber retains these quantities between frames. This pass selects one channel for surface consumers and its named R16F field output.");
-      ImGui::EndDisabled();
-      ImGui::SeparatorText("SIGNED DISTANCE PRODUCERS");
-      ImGui::BeginDisabled(state.field.producerKind != 1);
-      constexpr const char* sdfTypes[] = {"Sphere", "Box", "Torus", "4D Hypersphere Slice",
-        "Pulsating Sphere"};
-      const auto sdfParameterControls = [&](const char* id, RendererState::Field::SdfProducer& producer,
-          const AnimationProperty property) {
-        ImGui::PushID(id);
-        bool changed = false;
-        if (producer.type == 0) {
-          changed = ImGui::DragFloat("Radius", &producer.parameters.x, 0.01f, 0.01f, 8.0f, "%.2f units");
-        } else if (producer.type == 1) {
-          changed = ImGui::DragFloat3("Half-extents XYZ", &producer.parameters.x,
-            0.01f, 0.01f, 8.0f, "%.2f units");
-        } else if (producer.type == 2) {
-          changed = ImGui::DragFloat("Major radius", &producer.parameters.x,
-            0.01f, 0.01f, 8.0f, "%.2f units");
-          changed |= ImGui::DragFloat("Tube radius", &producer.parameters.y,
-            0.01f, 0.01f, 8.0f, "%.2f units");
-        } else {
-          changed = ImGui::DragFloat(producer.type == 3 ? "4D radius" : "Base radius",
-            &producer.parameters.x, 0.01f, 0.01f, 8.0f, "%.2f units");
-          changed |= ImGui::DragFloat("Evolution speed", &producer.parameters.y,
-            0.01f, -8.0f, 8.0f, "%.2f");
-          changed |= ImGui::DragFloat(producer.type == 3 ? "Fourth-axis span" : "Pulse amplitude",
-            &producer.parameters.z, 0.01f, 0.0f, 8.0f, "%.2f units");
-        }
-        animationKeyControl(pass, property, timeline, changed);
-        ImGui::PopID();
-      };
-      bool sdfATypeChanged = ImGui::Combo("Producer A", &state.field.sdfA.type, sdfTypes, 5);
-      animationKeyControl(pass, AnimationProperty::SdfAType, timeline, sdfATypeChanged);
-      animationKeyControl(pass, AnimationProperty::SdfAPosition, timeline,
-        ImGui::DragFloat3("A position", &state.field.sdfA.position.x, 0.01f, -8.0f, 8.0f, "%.2f"));
-      sdfParameterControls("producer-a-parameters", state.field.sdfA, AnimationProperty::SdfAParameters);
-      bool sdfBTypeChanged = ImGui::Combo("Producer B", &state.field.sdfB.type, sdfTypes, 5);
-      animationKeyControl(pass, AnimationProperty::SdfBType, timeline, sdfBTypeChanged);
-      animationKeyControl(pass, AnimationProperty::SdfBPosition, timeline,
-        ImGui::DragFloat3("B position", &state.field.sdfB.position.x, 0.01f, -8.0f, 8.0f, "%.2f"));
-      sdfParameterControls("producer-b-parameters", state.field.sdfB, AnimationProperty::SdfBParameters);
-      constexpr const char* sdfOperations[] = {"Union: min(A, B)", "Intersection: max(A, B)",
-        "Difference: max(A, -B)", "Smooth union"};
-      bool sdfOperationChanged = ImGui::Combo("Combination", &state.field.sdfOperation,
-        sdfOperations, 4);
-      animationKeyControl(pass, AnimationProperty::SdfOperation, timeline, sdfOperationChanged);
-      ImGui::BeginDisabled(state.field.sdfOperation != 3);
-      animationKeyControl(pass, AnimationProperty::SdfSmoothness, timeline,
-        ImGui::DragFloat("Smooth-union radius", &state.field.sdfSmoothness,
-          0.005f, 0.001f, 4.0f, "%.3f units"));
-      ImGui::EndDisabled();
+      ImGui::TextUnformatted("FIELD SAMPLING"); ImGui::Separator();
+      description("Field definitions live in graph producer nodes. These controls only describe how this Render consumes its connected world-space field.");
       animationKeyControl(pass, AnimationProperty::SdfPreviewRange, timeline,
         ImGui::DragFloat("Signed preview range", &state.field.sdfPreviewRange,
           0.01f, 0.01f, 10.0f, "%.2f units"));
-      description("Each producer evaluates signed distance in world space: negative inside, zero at its boundary, positive outside.");
       ImGui::SeparatorText("ISO-SURFACE");
       animationKeyControl(pass, AnimationProperty::IsoSurfaceEnabled, timeline,
-        ImGui::Checkbox("Ray-march iso-surface", &state.field.isoSurfaceEnabled));
+        ImGui::Checkbox("Ray-march connected SDF", &state.field.isoSurfaceEnabled));
       animationKeyControl(pass, AnimationProperty::IsoLevel, timeline,
         ImGui::DragFloat("Iso level", &state.field.isoLevel, 0.005f, -4.0f, 4.0f, "%.3f units"));
       animationKeyControl(pass, AnimationProperty::IsoColor, timeline,
@@ -700,42 +572,30 @@ void drawInspector(Category category, RenderPass& pass, HardwareProfile profile,
       animationKeyControl(pass, AnimationProperty::IsoMaximumDistance, timeline,
         ImGui::DragFloat("Maximum ray distance", &state.field.isoMaxDistance,
           0.1f, 1.0f, 100.0f, "%.1f units"));
-      description("The zero crossing is a real implicit surface. Ray marching writes window depth, so raster geometry and iso-surfaces occlude one another.");
-      ImGui::EndDisabled();
-      ImGui::SeparatorText("FIELD PREVIEW");
+      ImGui::SeparatorText("PREVIEW");
       animationKeyControl(pass, AnimationProperty::FieldLowColor, timeline,
-        ImGui::ColorEdit3(state.field.producerKind == 1 ? "Negative-distance color" : "Low-value color",
-          &state.field.lowColor.x));
+        ImGui::ColorEdit3("Low / negative color", &state.field.lowColor.x));
       animationKeyControl(pass, AnimationProperty::FieldHighColor, timeline,
-        ImGui::ColorEdit3(state.field.producerKind == 1 ? "Positive-distance color" : "High-value color",
-          &state.field.highColor.x));
-      description("These colors affect only Field signal preview. Named pass-field inputs retain the raw scalar value, including negative SDF distances.");
-      ImGui::SeparatorText("CONSUMERS");
+        ImGui::ColorEdit3("High / positive color", &state.field.highColor.x));
+      ImGui::SeparatorText("SURFACE CONSUMERS");
       animationKeyControl(pass, AnimationProperty::FieldVertexDisplacement, timeline,
         ImGui::DragFloat("Vertex normal displacement", &state.field.vertexDisplacement,
           0.005f, -2.0f, 2.0f, "%.3f units"));
       animationKeyControl(pass, AnimationProperty::FieldSignedDisplacement, timeline,
-        ImGui::Checkbox("Signed displacement (-1..1)", &state.field.signedDisplacement));
-      description("Samples the field once per mesh vertex, then moves that vertex along its transformed normal. Mesh density therefore changes the result.");
-      description(state.field.producerKind == 0
-        ? "The Field interference scene places a 16x8 torus beside a 64x32 torus so the sampling difference is directly visible."
-        : "SDF consumers convert distance to proximity around the selected iso-level. Mesh density still controls how finely vertex deformation can follow that field.");
+        ImGui::Checkbox("Signed displacement", &state.field.signedDisplacement));
       animationKeyControl(pass, AnimationProperty::FieldDiscardEnabled, timeline,
-        ImGui::Checkbox("Discard below field threshold", &state.field.discardBelowEnabled));
+        ImGui::Checkbox("Discard below threshold", &state.field.discardBelowEnabled));
       ImGui::BeginDisabled(!state.field.discardBelowEnabled);
       animationKeyControl(pass, AnimationProperty::FieldDiscardThreshold, timeline,
         ImGui::SliderFloat("Discard threshold", &state.field.discardThreshold, 0.0f, 1.0f, "%.3f"));
       ImGui::EndDisabled();
-      description("Interpolates the per-vertex signal across each triangle and discards fragments below the threshold. This opens actual holes in depth and color.");
       animationKeyControl(pass, AnimationProperty::FieldSurfaceColorInfluence, timeline,
         ImGui::SliderFloat("Surface color influence", &state.field.surfaceColorInfluence,
           0.0f, 1.0f, "%.2f"));
       animationKeyControl(pass, AnimationProperty::FieldEmissionInfluence, timeline,
         ImGui::SliderFloat("Emission influence", &state.field.emissionInfluence,
           0.0f, 8.0f, "%.2fx", ImGuiSliderFlags_Logarithmic));
-      description("Surface color replaces shaded material color; emission adds field color after lighting. They are independent consumers of the same scalar signal.");
-      ImGui::EndDisabled();
-      break;
+      return;
     }
     case Category::Spectral: {
       ImGui::TextUnformatted("SPECTRAL LIGHT"); ImGui::Separator();

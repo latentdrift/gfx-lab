@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <iterator>
 #include <string>
 #include <unordered_map>
@@ -250,6 +251,32 @@ struct RenderTarget {
     glDeleteTextures(static_cast<GLsizei>(spectralTextures.size()), spectralTextures.data());
   }
 };
+
+constexpr std::size_t maximumSdfInstructions = 32;
+
+struct SdfInstructionProgram {
+  std::array<int, maximumSdfInstructions> kinds{};
+  std::array<glm::vec3, maximumSdfInstructions> positions{};
+  std::array<glm::vec3, maximumSdfInstructions> parameters{};
+  std::array<float, maximumSdfInstructions> smoothness{};
+  std::size_t count = 0;
+};
+
+void uploadSdfProgram(const GLuint program, const char* prefix,
+    const SdfInstructionProgram& sdf) {
+  const std::string base(prefix);
+  glUniform1i(glGetUniformLocation(program, (base + "InstructionCount").c_str()),
+    static_cast<GLint>(sdf.count));
+  if (sdf.count == 0) return;
+  glUniform1iv(glGetUniformLocation(program, (base + "InstructionKind[0]").c_str()),
+    static_cast<GLsizei>(sdf.count), sdf.kinds.data());
+  glUniform3fv(glGetUniformLocation(program, (base + "InstructionPosition[0]").c_str()),
+    static_cast<GLsizei>(sdf.count), glm::value_ptr(sdf.positions.front()));
+  glUniform3fv(glGetUniformLocation(program, (base + "InstructionParameters[0]").c_str()),
+    static_cast<GLsizei>(sdf.count), glm::value_ptr(sdf.parameters.front()));
+  glUniform1fv(glGetUniformLocation(program, (base + "InstructionSmoothness[0]").c_str()),
+    static_cast<GLsizei>(sdf.count), sdf.smoothness.data());
+}
 
 class Renderer::Impl {
 public:
@@ -494,10 +521,31 @@ public:
     uploadGeometry(nullptr);
   }
 
-  void updateElementalSimulation(const float deltaSeconds, const RendererState& state,
-      const TestScene scene) {
-    if (scene != TestScene::ElementalChamber) return;
-    elementalSimulation_.update(deltaSeconds, state.field);
+  void updateElementalSimulation(const float deltaSeconds, const document::Document& document) {
+    const document::ElementalFieldOperation* elemental = nullptr;
+    for (const document::Operation& operation : document.operations) {
+      if (!operation.enabled) continue;
+      const auto* candidate = std::get_if<document::ElementalFieldOperation>(&operation.data);
+      if (candidate == nullptr) continue;
+      const bool consumed = std::any_of(document.operations.begin(), document.operations.end(),
+        [&](const document::Operation& consumer) {
+          const auto* render = consumer.enabled
+            ? std::get_if<document::RenderOperation>(&consumer.data) : nullptr;
+          return render != nullptr && render->field.id.producer == operation.id;
+        });
+      if (consumed) { elemental = candidate; break; }
+    }
+    if (elemental == nullptr) return;
+    RendererState::Field controls;
+    controls.producerKind = 2;
+    controls.sourceA = elemental->injectorPosition;
+    controls.wavelength = elemental->injectorRadius;
+    controls.amplitudeA = elemental->heatRate;
+    controls.amplitudeB = elemental->fuelRate;
+    controls.phaseOffset = elemental->jetDirection;
+    controls.falloff = elemental->jetStrength;
+    controls.visualization = elemental->channel;
+    elementalSimulation_.update(deltaSeconds, controls);
     if (uploadedSimulationRevision_ == elementalSimulation_.revision()) return;
     glBindTexture(GL_TEXTURE_2D, simulationMatterTexture_);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, ElementalSimulation::width,
@@ -517,7 +565,7 @@ public:
       const PassPerturbation& perturbation = {}, const PassOutput output = PassOutput::Color,
       const TextureSource textureSource = TextureSource::SceneMaterial,
       const TextureAsset* importedTexture = nullptr, const bool importedTextureSrgb = true,
-      const float localTimeSeconds = 0.0f) {
+      const float localTimeSeconds = 0.0f, const SdfInstructionProgram& sdfProgram = {}) {
     ensureGraphTargets(targetIndex + 1);
     RenderTarget& target = passTargets_[targetIndex];
     const glm::mat4 passTransform = glm::translate(glm::mat4(1.0f), perturbation.modelTranslation) *
@@ -562,18 +610,7 @@ public:
       glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldVertexDisplacement"), state.field.vertexDisplacement);
       glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldSignedDisplacement"), state.field.signedDisplacement);
       glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldProducerKind"), state.field.producerKind);
-      glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldSdfAType"), state.field.sdfA.type);
-      glUniform3fv(glGetUniformLocation(shadowProgram_, "uFieldSdfAPosition"), 1,
-        glm::value_ptr(state.field.sdfA.position));
-      glUniform3fv(glGetUniformLocation(shadowProgram_, "uFieldSdfAParameters"), 1,
-        glm::value_ptr(state.field.sdfA.parameters));
-      glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldSdfBType"), state.field.sdfB.type);
-      glUniform3fv(glGetUniformLocation(shadowProgram_, "uFieldSdfBPosition"), 1,
-        glm::value_ptr(state.field.sdfB.position));
-      glUniform3fv(glGetUniformLocation(shadowProgram_, "uFieldSdfBParameters"), 1,
-        glm::value_ptr(state.field.sdfB.parameters));
-      glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldSdfOperation"), state.field.sdfOperation);
-      glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldSdfSmoothness"), state.field.sdfSmoothness);
+      uploadSdfProgram(shadowProgram_, "uFieldSdf", sdfProgram);
       glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldSdfPreviewRange"), state.field.sdfPreviewRange);
       glUniform1f(glGetUniformLocation(shadowProgram_, "uFieldIsoLevel"), state.field.isoLevel);
       glUniform1i(glGetUniformLocation(shadowProgram_, "uFieldDiscardEnabled"), state.field.discardBelowEnabled);
@@ -748,14 +785,7 @@ public:
     glBindTexture(GL_TEXTURE_2D, simulationDynamicsTexture_);
     glUniform1i(location("uSimulationDynamics"), 10);
     glUniform1i(location("uSimulationChannel"), state.field.visualization);
-    glUniform1i(location("uFieldSdfAType"), state.field.sdfA.type);
-    glUniform3fv(location("uFieldSdfAPosition"), 1, glm::value_ptr(state.field.sdfA.position));
-    glUniform3fv(location("uFieldSdfAParameters"), 1, glm::value_ptr(state.field.sdfA.parameters));
-    glUniform1i(location("uFieldSdfBType"), state.field.sdfB.type);
-    glUniform3fv(location("uFieldSdfBPosition"), 1, glm::value_ptr(state.field.sdfB.position));
-    glUniform3fv(location("uFieldSdfBParameters"), 1, glm::value_ptr(state.field.sdfB.parameters));
-    glUniform1i(location("uFieldSdfOperation"), state.field.sdfOperation);
-    glUniform1f(location("uFieldSdfSmoothness"), state.field.sdfSmoothness);
+    uploadSdfProgram(sceneProgram_, "uFieldSdf", sdfProgram);
     glUniform1f(location("uFieldSdfPreviewRange"), state.field.sdfPreviewRange);
     glUniform1f(location("uFieldIsoLevel"), state.field.isoLevel);
     glUniform1i(location("uFieldDiscardEnabled"), state.field.discardBelowEnabled);
@@ -1058,18 +1088,7 @@ public:
       glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uCameraPosition"), 1,
         glm::value_ptr(passCamera.eye));
       glUniform1i(glGetUniformLocation(sdfIsoProgram_, "uOrthographic"), state.camera.orthographic);
-      glUniform1i(glGetUniformLocation(sdfIsoProgram_, "uSdfAType"), state.field.sdfA.type);
-      glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uSdfAPosition"), 1,
-        glm::value_ptr(state.field.sdfA.position));
-      glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uSdfAParameters"), 1,
-        glm::value_ptr(state.field.sdfA.parameters));
-      glUniform1i(glGetUniformLocation(sdfIsoProgram_, "uSdfBType"), state.field.sdfB.type);
-      glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uSdfBPosition"), 1,
-        glm::value_ptr(state.field.sdfB.position));
-      glUniform3fv(glGetUniformLocation(sdfIsoProgram_, "uSdfBParameters"), 1,
-        glm::value_ptr(state.field.sdfB.parameters));
-      glUniform1i(glGetUniformLocation(sdfIsoProgram_, "uSdfOperation"), state.field.sdfOperation);
-      glUniform1f(glGetUniformLocation(sdfIsoProgram_, "uSdfSmoothness"), state.field.sdfSmoothness);
+      uploadSdfProgram(sdfIsoProgram_, "uSdf", sdfProgram);
       glUniform1f(glGetUniformLocation(sdfIsoProgram_, "uIsoLevel"), state.field.isoLevel);
       glUniform1i(glGetUniformLocation(sdfIsoProgram_, "uMaximumSteps"),
         std::clamp(state.field.isoMaxSteps, 8, 512));
@@ -1122,18 +1141,7 @@ public:
     glBindTexture(GL_TEXTURE_2D, simulationDynamicsTexture_);
     glUniform1i(glGetUniformLocation(fieldProgram_, "uSimulationDynamics"), 10);
     glUniform1i(glGetUniformLocation(fieldProgram_, "uSimulationChannel"), state.field.visualization);
-    glUniform1i(glGetUniformLocation(fieldProgram_, "uSdfAType"), state.field.sdfA.type);
-    glUniform3fv(glGetUniformLocation(fieldProgram_, "uSdfAPosition"), 1,
-      glm::value_ptr(state.field.sdfA.position));
-    glUniform3fv(glGetUniformLocation(fieldProgram_, "uSdfAParameters"), 1,
-      glm::value_ptr(state.field.sdfA.parameters));
-    glUniform1i(glGetUniformLocation(fieldProgram_, "uSdfBType"), state.field.sdfB.type);
-    glUniform3fv(glGetUniformLocation(fieldProgram_, "uSdfBPosition"), 1,
-      glm::value_ptr(state.field.sdfB.position));
-    glUniform3fv(glGetUniformLocation(fieldProgram_, "uSdfBParameters"), 1,
-      glm::value_ptr(state.field.sdfB.parameters));
-    glUniform1i(glGetUniformLocation(fieldProgram_, "uSdfOperation"), state.field.sdfOperation);
-    glUniform1f(glGetUniformLocation(fieldProgram_, "uSdfSmoothness"), state.field.sdfSmoothness);
+    uploadSdfProgram(fieldProgram_, "uSdf", sdfProgram);
     glBindVertexArray(fullscreenVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
@@ -1506,7 +1514,10 @@ public:
       if (std::holds_alternative<document::RenderOperation>(operation->data)) {
         renderSlots.emplace(operation->id, allocateSlot(renderSlotRelease, index, release));
       } else if (!std::holds_alternative<document::ConstantOperation>(operation->data) &&
-          !std::holds_alternative<document::SdfFieldOperation>(operation->data) &&
+          !std::holds_alternative<document::SdfPrimitiveOperation>(operation->data) &&
+          !std::holds_alternative<document::SdfCombineOperation>(operation->data) &&
+          !std::holds_alternative<document::WaveFieldOperation>(operation->data) &&
+          !std::holds_alternative<document::ElementalFieldOperation>(operation->data) &&
           !std::holds_alternative<document::MeasureOperation>(operation->data)) {
         relationSlots.emplace(operation->id, allocateSlot(relationSlotRelease, index, release));
       }
@@ -1655,11 +1666,24 @@ public:
         carrier.stereoAnalysis = data->mode;
         carrier.stereoMaximumDisparityPixels = data->maximumDisparityPixels;
         carrier.stereoOcclusionTolerance = data->occlusionTolerance;
-      } else if (const auto* data = std::get_if<document::SdfFieldOperation>(&source.data)) {
-        carrier.renderer.field.sdfA = data->a;
-        carrier.renderer.field.sdfB = data->b;
+      } else if (const auto* data = std::get_if<document::SdfPrimitiveOperation>(&source.data)) {
+        carrier.renderer.field.sdfA = {data->type, data->position, data->parameters};
+        carrier.renderer.field.sdfB = carrier.renderer.field.sdfA;
+      } else if (const auto* data = std::get_if<document::SdfCombineOperation>(&source.data)) {
         carrier.renderer.field.sdfOperation = data->combination;
         carrier.renderer.field.sdfSmoothness = data->smoothness;
+      } else if (const auto* data = std::get_if<document::WaveFieldOperation>(&source.data)) {
+        carrier.renderer.field.sourceA = data->sourceA; carrier.renderer.field.sourceB = data->sourceB;
+        carrier.renderer.field.wavelength = data->wavelength; carrier.renderer.field.phaseOffset = data->phaseOffset;
+        carrier.renderer.field.amplitudeA = data->amplitudeA; carrier.renderer.field.amplitudeB = data->amplitudeB;
+        carrier.renderer.field.falloff = data->falloff; carrier.renderer.field.bandSharpness = data->bandSharpness;
+        carrier.renderer.field.visualization = data->output;
+      } else if (const auto* data = std::get_if<document::ElementalFieldOperation>(&source.data)) {
+        carrier.renderer.field.sourceA = data->injectorPosition;
+        carrier.renderer.field.wavelength = data->injectorRadius;
+        carrier.renderer.field.amplitudeA = data->heatRate; carrier.renderer.field.amplitudeB = data->fuelRate;
+        carrier.renderer.field.phaseOffset = data->jetDirection; carrier.renderer.field.falloff = data->jetStrength;
+        carrier.renderer.field.visualization = data->channel;
       }
       applyTracks(carrier, document::operationObject(source.id));
       result.enabled = carrier.enabled;
@@ -1683,11 +1707,32 @@ public:
         data->mode = carrier.stereoAnalysis;
         data->maximumDisparityPixels = carrier.stereoMaximumDisparityPixels;
         data->occlusionTolerance = carrier.stereoOcclusionTolerance;
-      } else if (auto* data = std::get_if<document::SdfFieldOperation>(&result.data)) {
-        data->a = carrier.renderer.field.sdfA;
-        data->b = carrier.renderer.field.sdfB;
+      } else if (auto* data = std::get_if<document::SdfPrimitiveOperation>(&result.data)) {
+        bool usesBProperties = false;
+        for (const document::AnimationTrack& track : document.automation.animation) {
+          if (track.target.owner != document::operationObject(source.id)) continue;
+          const std::optional<AnimationProperty> property = document::animationProperty(track.target.property);
+          usesBProperties = property == AnimationProperty::SdfBType ||
+            property == AnimationProperty::SdfBPosition || property == AnimationProperty::SdfBParameters;
+          if (usesBProperties) break;
+        }
+        const auto& primitive = usesBProperties ? carrier.renderer.field.sdfB : carrier.renderer.field.sdfA;
+        data->type = primitive.type; data->position = primitive.position; data->parameters = primitive.parameters;
+      } else if (auto* data = std::get_if<document::SdfCombineOperation>(&result.data)) {
         data->combination = carrier.renderer.field.sdfOperation;
         data->smoothness = carrier.renderer.field.sdfSmoothness;
+      } else if (auto* data = std::get_if<document::WaveFieldOperation>(&result.data)) {
+        data->sourceA = carrier.renderer.field.sourceA; data->sourceB = carrier.renderer.field.sourceB;
+        data->wavelength = carrier.renderer.field.wavelength; data->phaseOffset = carrier.renderer.field.phaseOffset;
+        data->amplitudeA = carrier.renderer.field.amplitudeA; data->amplitudeB = carrier.renderer.field.amplitudeB;
+        data->falloff = carrier.renderer.field.falloff; data->bandSharpness = carrier.renderer.field.bandSharpness;
+        data->output = carrier.renderer.field.visualization;
+      } else if (auto* data = std::get_if<document::ElementalFieldOperation>(&result.data)) {
+        data->injectorPosition = carrier.renderer.field.sourceA;
+        data->injectorRadius = carrier.renderer.field.wavelength;
+        data->heatRate = carrier.renderer.field.amplitudeA; data->fuelRate = carrier.renderer.field.amplitudeB;
+        data->jetDirection = carrier.renderer.field.phaseOffset; data->jetStrength = carrier.renderer.field.falloff;
+        data->channel = carrier.renderer.field.visualization;
       }
       return result;
     };
@@ -1717,21 +1762,70 @@ public:
       glm::ivec2 outputExtent(relationWidth_, relationHeight_);
       if (const auto* data = std::get_if<document::RenderOperation>(&operation->data)) {
         RenderPass pass = renderState(*operation, *data);
+        SdfInstructionProgram sdfProgram;
         if (data->field) {
           const document::SignalDescriptor* fieldSignal = document::findSignal(document, data->field.id);
           const document::Operation* fieldProducer = fieldSignal == nullptr ? nullptr
             : document::findOperation(document, fieldSignal->producer);
           const document::Operation evaluatedField = fieldProducer == nullptr
             ? document::Operation{} : evaluatedOperation(*fieldProducer);
-          const auto* sdf = fieldProducer == nullptr ? nullptr
-            : std::get_if<document::SdfFieldOperation>(&evaluatedField.data);
-          if (sdf != nullptr) {
+          if (const auto* wave = std::get_if<document::WaveFieldOperation>(&evaluatedField.data)) {
             pass.renderer.field.enabled = true;
-            pass.renderer.field.producerKind = 1;
-            pass.renderer.field.sdfA = sdf->a;
-            pass.renderer.field.sdfB = sdf->b;
-            pass.renderer.field.sdfOperation = sdf->combination;
-            pass.renderer.field.sdfSmoothness = sdf->smoothness;
+            pass.renderer.field.producerKind = 0;
+            pass.renderer.field.sourceA = wave->sourceA;
+            pass.renderer.field.sourceB = wave->sourceB;
+            pass.renderer.field.wavelength = wave->wavelength;
+            pass.renderer.field.phaseOffset = wave->phaseOffset;
+            pass.renderer.field.amplitudeA = wave->amplitudeA;
+            pass.renderer.field.amplitudeB = wave->amplitudeB;
+            pass.renderer.field.falloff = wave->falloff;
+            pass.renderer.field.bandSharpness = wave->bandSharpness;
+            pass.renderer.field.visualization = wave->output;
+          } else if (const auto* elemental =
+              std::get_if<document::ElementalFieldOperation>(&evaluatedField.data)) {
+            pass.renderer.field.enabled = true;
+            pass.renderer.field.producerKind = 2;
+            pass.renderer.field.sourceA = elemental->injectorPosition;
+            pass.renderer.field.wavelength = elemental->injectorRadius;
+            pass.renderer.field.amplitudeA = elemental->heatRate;
+            pass.renderer.field.amplitudeB = elemental->fuelRate;
+            pass.renderer.field.phaseOffset = elemental->jetDirection;
+            pass.renderer.field.falloff = elemental->jetStrength;
+            pass.renderer.field.visualization = elemental->channel;
+          } else {
+            std::unordered_set<document::OperationId> active;
+            std::function<bool(document::SignalRef)> emitSdf = [&](const document::SignalRef signal) {
+              if (!signal || sdfProgram.count >= maximumSdfInstructions) return false;
+              const document::Operation* producer = document::findOperation(document, signal.id.producer);
+              if (producer == nullptr || active.contains(producer->id)) return false;
+              active.insert(producer->id);
+              const document::Operation evaluatedProducer = evaluatedOperation(*producer);
+              if (const auto* primitive =
+                  std::get_if<document::SdfPrimitiveOperation>(&evaluatedProducer.data)) {
+                const std::size_t index = sdfProgram.count++;
+                sdfProgram.kinds[index] = std::clamp(primitive->type, 0, 4);
+                sdfProgram.positions[index] = primitive->position;
+                sdfProgram.parameters[index] = primitive->parameters;
+                active.erase(producer->id);
+                return true;
+              }
+              const auto* combine = std::get_if<document::SdfCombineOperation>(&evaluatedProducer.data);
+              const bool valid = combine != nullptr && emitSdf(combine->a) && emitSdf(combine->b) &&
+                sdfProgram.count < maximumSdfInstructions;
+              if (valid) {
+                const std::size_t index = sdfProgram.count++;
+                sdfProgram.kinds[index] = 5 + std::clamp(combine->combination, 0, 3);
+                sdfProgram.smoothness[index] = combine->smoothness;
+              }
+              active.erase(producer->id);
+              return valid;
+            };
+            if (emitSdf(data->field)) {
+              pass.renderer.field.enabled = true;
+              pass.renderer.field.producerKind = 1;
+            } else {
+              sdfProgram.count = 0;
+            }
           }
         }
         document::TimeTransform time = data->time;
@@ -1747,10 +1841,13 @@ public:
         normalizeForHardwareProfile(document.hardwareProfile, pass.renderer);
         output = render(pass.renderer, document.scene.authoredCamera, document.scene.testScene,
           renderSlot, pass.perturbation, pass.output, pass.textureSource,
-          pass.importedTexture.get(), pass.importedTextureSrgb, time.apply(timeSeconds));
+          pass.importedTexture.get(), pass.importedTextureSrgb, time.apply(timeSeconds), sdfProgram);
         outputExtent = {passTargets_[renderSlot].width, passTargets_[renderSlot].height};
       } else if (std::holds_alternative<document::ConstantOperation>(operation->data) ||
-          std::holds_alternative<document::SdfFieldOperation>(operation->data)) {
+          std::holds_alternative<document::SdfPrimitiveOperation>(operation->data) ||
+          std::holds_alternative<document::SdfCombineOperation>(operation->data) ||
+          std::holds_alternative<document::WaveFieldOperation>(operation->data) ||
+          std::holds_alternative<document::ElementalFieldOperation>(operation->data)) {
         for (const document::SignalDescriptor& descriptor : operation->outputs) {
           evaluation::SignalResource resource;
           resource.descriptor = descriptor;
@@ -2225,8 +2322,8 @@ unsigned int Renderer::reconstructDisplay(const unsigned int sourceTexture,
     const DisplayReconstructionState& state, const std::size_t targetIndex) {
   return impl_->reconstructDisplay(sourceTexture, state, targetIndex);
 }
-void Renderer::updateElementalSimulation(const float deltaSeconds, const RendererState& state,
-    const TestScene scene) { impl_->updateElementalSimulation(deltaSeconds, state, scene); }
+void Renderer::updateElementalSimulation(const float deltaSeconds,
+    const document::Document& document) { impl_->updateElementalSimulation(deltaSeconds, document); }
 void Renderer::resetElementalSimulation() { impl_->resetElementalSimulation(); }
 void Renderer::resetFrameHistory() { impl_->resetFrameHistory(); }
 

@@ -27,6 +27,9 @@ bool referencesOperation(const document::Operation& operation,
   std::visit([&](const auto& data) {
     using Type = std::decay_t<decltype(data)>;
     if constexpr (std::is_same_v<Type, document::RenderOperation>) check(data.field);
+    else if constexpr (std::is_same_v<Type, document::SdfCombineOperation>) {
+      check(data.a); check(data.b);
+    }
     else if constexpr (std::is_same_v<Type, document::InterpretOperation>) check(data.spectrum);
     else if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
       check(data.a);
@@ -54,6 +57,9 @@ document::SignalRef* inputSignal(document::Operation& operation, const InputSock
     using Type = std::decay_t<decltype(data)>;
     if constexpr (std::is_same_v<Type, document::RenderOperation>) {
       if (socket == InputSocket::Field) result = &data.field;
+    } else if constexpr (std::is_same_v<Type, document::SdfCombineOperation>) {
+      if (socket == InputSocket::A) result = &data.a;
+      else if (socket == InputSocket::B) result = &data.b;
     } else if constexpr (std::is_same_v<Type, document::InterpretOperation>) {
       if (socket == InputSocket::Primary) result = &data.spectrum;
     } else if constexpr (std::is_same_v<Type, document::CompositeOperation>) {
@@ -119,6 +125,9 @@ std::string duplicateOperation(document::Document& document,
     using OperationType = std::decay_t<decltype(operationData)>;
     if constexpr (std::is_same_v<OperationType, document::RenderOperation>)
       remapSelf(operationData.field);
+    else if constexpr (std::is_same_v<OperationType, document::SdfCombineOperation>) {
+      remapSelf(operationData.a); remapSelf(operationData.b);
+    }
     else if constexpr (std::is_same_v<OperationType, document::InterpretOperation>)
       remapSelf(operationData.spectrum);
     else if constexpr (std::is_same_v<OperationType, document::CompositeOperation>) {
